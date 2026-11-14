@@ -94,12 +94,21 @@ async function syncCore(it) {
 // ---------- tampilan ----------
 async function render() {
   if (!session) return loginView();
-  if (!me) { app.innerHTML = `<div class="card"><h2>Akun belum terdaftar</h2><p>Email ${esc(session.user.email)} sudah bisa login, tetapi belum didaftarkan admin TGEP sebagai geologist/verifier/admin. Hubungi admin.</p><button class="sec" id="out">Keluar</button></div>`; $("#out").onclick = () => sb.auth.signOut(); return; }
-  const navs = [["prog", "Progres bor"], ["foto", "Foto formulir"], ["core", "Foto core"], ...(["verifier", "admin"].includes(me?.role) ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"]] : [])];
+  if (!me) {
+    app.innerHTML = `<div class="card"><h2>Menunggu persetujuan admin</h2><p>Akun <b>${esc(session.user.email)}</b> sudah terdaftar, tetapi belum disetujui admin TGEP. Coba masuk lagi setelah admin menyetujui.</p><p id="rq" class="muted"></p><button class="sec" id="out">Keluar</button></div>`;
+    $("#out").onclick = () => { localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); sb.auth.signOut(); };
+    sb.from("registration_request").select("status,decision_note,created_at").eq("user_id", session.user.id).maybeSingle().then(({ data }) => {
+      if (data) $("#rq").textContent = data.status === "REJECTED" ? `Pendaftaran ditolak${data.decision_note ? ": " + data.decision_note : ""}.` : `Status: ${data.status === "PENDING" ? "menunggu" : data.status} · didaftarkan ${new Date(data.created_at).toLocaleString("id-ID")}`;
+    });
+    return;
+  }
+  const navs = [["prog", "Progres bor"], ["foto", "Foto formulir"], ["core", "Foto core"], ...(["verifier", "admin"].includes(me?.role) ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ...(me?.role === "admin" ? [["users", "Pengguna"]] : [])] : [])];
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
   app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div>`;
   app.querySelectorAll("nav [data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; localStorage.setItem("tab", tab); render(); }));
   $("#out").onclick = async () => { if (!confirm("Keluar dari akun? Foto di antrean tetap tersimpan di HP.")) return; localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); session = null; await sb.auth.signOut().catch(() => {}); render(); };
+  if (me?.role === "admin" && navigator.onLine && !session.offline) sb.from("registration_request").select("user_id", { count: "exact", head: true }).eq("status", "PENDING")
+    .then(({ count }) => { const b = app.querySelector('nav [data-t="users"]'); if (b && count) b.textContent = `Pengguna (${count} baru)`; });
   document.querySelector("main").style.maxWidth = tab === "db" ? "none" : "";
   if (tab === "foto") return fotoView($("#v"));
   if (tab === "review") return reviewList($("#v"));
@@ -107,12 +116,17 @@ async function render() {
   if (tab === "core") return coreView($("#v"));
   if (tab === "db") return dbView($("#v"));
   if (tab === "prog") return progView($("#v"));
+  if (tab === "users") return usersView($("#v"));
 }
 
 function loginView() {
-  app.innerHTML = `<div class="card"><h2>Masuk</h2><p class="muted">Akun dibuat oleh admin. Setelah sekali masuk, aplikasi tetap bisa memotret saat offline.</p>
+  const qp = new URLSearchParams(location.search);
+  const after = qp.get("daftar") === "ok" ? `<div class="card" style="background:#DCEFE4"><b>Pendaftaran terkirim.</b> Akun Anda menunggu persetujuan admin TGEP. Setelah disetujui, masuk dengan email dan kata sandi yang Anda buat.</div>` : "";
+  app.innerHTML = after + `<div class="card"><h2>Masuk</h2><p class="muted">Akun dibuat oleh admin. Setelah sekali masuk, aplikasi tetap bisa memotret saat offline.</p>
   <label>Email</label><input id="em" type="email" autocomplete="username"><label>Kata sandi</label><input id="pw" type="password" autocomplete="current-password">
-  <div style="margin-top:12px"><button id="go">Masuk</button></div><div id="e" class="err"></div></div>`;
+  <div style="margin-top:12px"><button id="go">Masuk</button></div><div id="e" class="err"></div>
+  <p class="muted" style="margin-top:12px">Belum punya akun? <a href="daftar.html">Daftar di sini</a> — akun aktif setelah disetujui admin.</p></div>`;
+  if (qp.get("email")) $("#em").value = qp.get("email");
   $("#go").onclick = async () => {
     const { error } = await sb.auth.signInWithPassword({ email: $("#em").value.trim(), password: $("#pw").value });
     if (error) $("#e").textContent = error.message;
@@ -511,6 +525,36 @@ async function p2hForm() {
     await qPut({ kind: "p2h", client_uuid: crypto.randomUUID(), row, blob });
     m.remove(); if (nNot) alert(`P2H: ${nNot} item TIDAK OK — rig dinyatakan TIDAK LAYAK operasi sampai diperbaiki.`); render(); sync();
   };
+}
+
+// ---------- pengguna (admin) ----------
+async function usersView(v) {
+  const { data: rq, error } = await sb.from("registration_request").select("*").order("created_at", { ascending: false });
+  if (error) return (v.innerHTML = `<p class="err">${esc(error.message)}</p>`);
+  const { data: au } = await sb.from("app_user").select("user_id,role");
+  const roleOf = Object.fromEntries((au ?? []).map((x) => [x.user_id, x.role]));
+  const pend = rq.filter((r) => r.status === "PENDING"), rest = rq.filter((r) => r.status !== "PENDING");
+  const link = new URL("daftar.html", location.href).href;
+  const opt = (sel) => ["geologist", "verifier", "admin"].map((r) => `<option ${r === sel ? "selected" : ""}>${r}</option>`).join("");
+  const row = (r, pending) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>${esc(r.full_name)}</b> · ${esc(r.email)}<br><span class="muted">${esc(r.position ?? "")} · ${esc(r.company ?? "")} · ${esc(r.phone ?? "")}${r.reason ? " · " + esc(r.reason) : ""}<br>
+      ${pending ? `minta: ${esc(r.requested_role)} · daftar ${new Date(r.created_at).toLocaleString("id-ID")}` : `status: ${roleOf[r.user_id] ? "AKTIF (" + roleOf[r.user_id] + ")" : r.status === "REJECTED" ? "DITOLAK/NONAKTIF" : r.status}${r.decision_note ? " · " + esc(r.decision_note) : ""}`}</span></span>
+      <select data-role="${r.user_id}" style="flex:0;width:auto">${opt(roleOf[r.user_id] ?? r.requested_role)}</select>
+      <button data-ok="${r.user_id}" style="flex:0">${pending ? "Setujui" : roleOf[r.user_id] ? "Ubah peran" : "Aktifkan"}</button>
+      ${pending || roleOf[r.user_id] ? `<button class="danger" data-no="${r.user_id}" style="flex:0">${pending ? "Tolak" : "Nonaktifkan"}</button>` : ""}</li>`;
+  v.innerHTML = `<div class="card"><h2>Pengguna</h2>
+    <p>Link pendaftaran untuk dibagikan: <b>${esc(link)}</b> <button class="sec" id="cp" style="padding:4px 10px">Salin</button></p>
+    <p class="muted">Pendaftar tidak bisa melihat atau mengirim data sampai disetujui. Periksa nama, perusahaan dan nomor HP sebelum menyetujui — email belum diverifikasi otomatis.</p></div>
+    <div class="card"><h3>Menunggu persetujuan (${pend.length})</h3><ul class="list">${pend.map((r) => row(r, true)).join("") || `<li class="muted">Tidak ada.</li>`}</ul></div>
+    <div class="card"><h3>Semua pengguna</h3><ul class="list">${rest.map((r) => row(r, false)).join("") || `<li class="muted">-</li>`}</ul></div>`;
+  $("#cp").onclick = async () => { await navigator.clipboard?.writeText(link); $("#cp").textContent = "Tersalin"; };
+  const act = async (uid, role) => {
+    const note = role ? prompt("Catatan (opsional), mis. 'kru RIG-03':") ?? "" : prompt("Alasan menolak / menonaktifkan (wajib):");
+    if (!role && !note) return;
+    const { error } = await sb.rpc("admin_set_user", { p_user: uid, p_role: role, p_note: note || null });
+    if (error) alert(error.message); else usersView(v);
+  };
+  v.querySelectorAll("[data-ok]").forEach((b) => (b.onclick = () => act(b.dataset.ok, v.querySelector(`[data-role="${b.dataset.ok}"]`).value)));
+  v.querySelectorAll("[data-no]").forEach((b) => (b.onclick = () => act(b.dataset.no, null)));
 }
 
 // ---------- hapus (admin) dengan arsip ----------

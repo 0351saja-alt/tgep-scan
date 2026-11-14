@@ -1,5 +1,5 @@
-const CACHE = "tgep-scan-v5";
-const SHELL = ["./", "index.html", "app.js", "config.js", "vendor/supabase.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
+const CACHE = "tgep-scan-v6";
+const SHELL = ["./", "index.html", "daftar.html", "daftar.js", "app.js", "config.js", "vendor/supabase.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener("activate", (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener("fetch", (e) => {
