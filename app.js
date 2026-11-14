@@ -6,7 +6,7 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: tr
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const app = $("#app");
-let session = null, me = null, tab = "foto";
+let session = null, me = null, tab = localStorage.getItem("tab") || "prog";
 
 // ---------- kolom formulir (harus sama dengan fungsi process-scan) ----------
 const LOG = [["seq","No"],["depth_from","From"],["depth_to","To"],["core_length","Core L"],["lose_from","Lose F"],["lose_to","Lose T"],["geozone_id","Zona"],
@@ -58,11 +58,12 @@ async function shrink(file, max = 2400) {
 // ---------- sinkronisasi ----------
 let syncing = false;
 async function sync() {
-  if (syncing || !navigator.onLine || !session) return;
+  if (syncing || !navigator.onLine || !session || session.offline) return;
   syncing = true;
   try {
     for (const it of await qAll()) {
       if (it.kind === "core") { await syncCore(it); continue; }
+      if (it.kind === "event" || it.kind === "p2h") { await syncProg(it); continue; }
       const path = `${session.user.id}/${it.client_uuid}.jpg`;
       const up = await sb.storage.from("scan-photos").upload(path, it.blob, { contentType: "image/jpeg", upsert: false });
       if (up.error && !/exists|Duplicate/i.test(up.error.message)) { it.error = up.error.message; await qPut(it); continue; }
@@ -73,7 +74,7 @@ async function sync() {
       if (job) await sb.functions.invoke("process-scan", { body: { job_id: job.id } });
       await qDel(it.client_uuid);
     }
-  } finally { syncing = false; if (tab === "foto" || tab === "core") render(); }
+  } finally { syncing = false; if (["foto", "core", "prog"].includes(tab)) render(); }
 }
 async function syncCore(it) {
   const base = `${session.user.id}/${it.bhid}/${it.client_uuid}`;
@@ -94,16 +95,18 @@ async function syncCore(it) {
 async function render() {
   if (!session) return loginView();
   if (!me) { app.innerHTML = `<div class="card"><h2>Akun belum terdaftar</h2><p>Email ${esc(session.user.email)} sudah bisa login, tetapi belum didaftarkan admin TGEP sebagai geologist/verifier/admin. Hubungi admin.</p><button class="sec" id="out">Keluar</button></div>`; $("#out").onclick = () => sb.auth.signOut(); return; }
-  const navs = [["foto", "Foto formulir"], ["core", "Foto core"], ...(["verifier", "admin"].includes(me?.role) ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"]] : [])];
-  app.innerHTML = `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div>`;
-  app.querySelectorAll("nav [data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; render(); }));
-  $("#out").onclick = async () => { await sb.auth.signOut(); };
+  const navs = [["prog", "Progres bor"], ["foto", "Foto formulir"], ["core", "Foto core"], ...(["verifier", "admin"].includes(me?.role) ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"]] : [])];
+  const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
+  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div>`;
+  app.querySelectorAll("nav [data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; localStorage.setItem("tab", tab); render(); }));
+  $("#out").onclick = async () => { if (!confirm("Keluar dari akun? Foto di antrean tetap tersimpan di HP.")) return; localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); session = null; await sb.auth.signOut().catch(() => {}); render(); };
   document.querySelector("main").style.maxWidth = tab === "db" ? "none" : "";
   if (tab === "foto") return fotoView($("#v"));
   if (tab === "review") return reviewList($("#v"));
   if (tab === "data") return dataView($("#v"));
   if (tab === "core") return coreView($("#v"));
   if (tab === "db") return dbView($("#v"));
+  if (tab === "prog") return progView($("#v"));
 }
 
 function loginView() {
@@ -118,7 +121,7 @@ function loginView() {
 
 async function fotoView(v) {
   const lastB = localStorage.getItem("bhid") || "";
-  const queue = (await qAll()).filter((x) => x.kind !== "core");
+  const queue = (await qAll()).filter((x) => !x.kind);
   v.innerHTML = `<div class="card"><h2>Foto formulir lapangan</h2>
    <label>BHID lubang bor</label><input id="bh" value="${esc(lastB)}" placeholder="mis. TGE0012" autocapitalize="characters">
    <p class="muted">Letakkan formulir di permukaan datar, cahaya merata, keempat kotak hitam di sudut harus masuk foto.</p>
@@ -239,15 +242,15 @@ async function reviewDetail(v, id) {
 }
 
 async function dataView(v) {
-  v.innerHTML = `<div class="card"><h2>Data tersimpan & hasil cek</h2><div class="row"><input id="bh" placeholder="BHID" value="${esc(localStorage.getItem("bhid") || "")}"><button id="go" style="flex:0">Tampilkan</button></div><div id="out"></div></div>`;
+  v.innerHTML = `<div class="card"><h2>Data tersimpan & hasil cek</h2><div class="row"><input id="bh" placeholder="BHID" value="${esc(localStorage.getItem("bhid") || "")}"><button id="go" style="flex:0">Tampilkan</button></div><div id="dout"></div></div>`;
   $("#go").onclick = async () => {
     const bh = $("#bh").value.trim().toUpperCase();
     const { data, error } = await sb.from("v_sample_qc").select("sample_no,sample_id,depth_from,depth_to,core_length,core_recovery,geozone_id,geolithcode_id_1,d_wet_density,d_wet_arch,d_dry_density,d_dry_arch,d_arch_diff_pct,d_moisture_pct,d_wet_weight,chk_interval,chk_recovery,chk_lith,chk_code,chk_zone,chk_density,chk_arch,chk_weight").eq("bhid", bh).order("depth_from");
-    if (error) return ($("#out").innerHTML = `<p class="err">${esc(error.message)}</p>`);
+    if (error) return ($("#dout").innerHTML = `<p class="err">${esc(error.message)}</p>`);
     const cols = data?.length ? Object.keys(data[0]) : [];
     const bad = (k, x) => k.startsWith("chk_") && x && !["OK", "OK-SW", "BELUM OVEN"].includes(x);
-    $("#out").innerHTML = data?.length ? `<p class="muted">Ketuk satu baris untuk mengoreksi atau menambah data (mis. berat kering oven). Setiap koreksi wajib alasan dan tercatat.</p><div class="tw" style="margin-top:10px"><table><tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>${data.map((r) => `<tr data-s="${esc(r.sample_no)}" style="cursor:pointer">${cols.map((c) => `<td style="padding:5px 7px;${bad(c, r[c]) ? "background:#F6C9C3" : ""}">${esc(r[c])}</td>`).join("")}</tr>`).join("")}</table></div><div id="ed"></div>` : `<p class="muted">Belum ada data untuk ${esc(bh)}.</p>`;
-    $("#out").querySelectorAll("tr[data-s]").forEach((tr) => (tr.onclick = () => editSample(tr.dataset.s, () => $("#go").onclick())));
+    $("#dout").innerHTML = data?.length ? `<p class="muted">Ketuk satu baris untuk mengoreksi atau menambah data (mis. berat kering oven). Setiap koreksi wajib alasan dan tercatat.</p><div class="tw" style="margin-top:10px"><table><tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>${data.map((r) => `<tr data-s="${esc(r.sample_no)}" style="cursor:pointer">${cols.map((c) => `<td style="padding:5px 7px;${bad(c, r[c]) ? "background:#F6C9C3" : ""}">${esc(r[c])}</td>`).join("")}</tr>`).join("")}</table></div><div id="ed"></div>` : `<p class="muted">Belum ada data untuk ${esc(bh)}.</p>`;
+    $("#dout").querySelectorAll("tr[data-s]").forEach((tr) => (tr.onclick = () => editSample(tr.dataset.s, () => $("#go").onclick())));
   };
 }
 
@@ -356,6 +359,160 @@ async function coverage(bh) {
   ko.querySelectorAll("[data-re]").forEach((b) => (b.onclick = async () => { await sb.functions.invoke("check-core-photo", { body: { photo_id: b.dataset.re } }); coverage(bh); }));
 }
 
+// ---------- progres pemboran (foto bergeotag) & P2H ----------
+const EV = { MASUK: "Masuk shift", MULAI_BOR: "Mulai bor", RUN: "Angkat run (core)", GANTI_MATA_BOR: "Ganti mata bor", TAMBAH_STANG: "Tambah stang",
+  STANDBY: "Standby", PERBAIKAN: "Perbaikan / kerusakan", SELESAI_BOR: "Selesai bor", PINDAH_TITIK: "Pindah titik", KELUAR: "Keluar shift", LAINNYA: "Lainnya" };
+const P2H_DEFAULT = ["Oli mesin (level & bocoran)", "Oli hidrolik (level & bocoran)", "Air radiator / pendingin", "Bahan bakar", "Aki & kabel kelistrikan", "Selang hidrolik & sambungan",
+  "Wire rope / winch / hoist", "Mast / menara & pengunci", "Stang bor (rod) & core barrel", "Pompa air & selang sirkulasi", "Pelindung bagian berputar (guard)", "Tombol emergency stop",
+  "APAR (alat pemadam)", "Kotak P3K", "Rambu & barikade area bor", "Kebersihan & tumpahan oli (housekeeping)", "APD kru lengkap"];
+function getPos() {
+  return new Promise((res) => {
+    if (!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition((p) => res({ lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy), t: new Date(p.timestamp).toISOString() }),
+      () => res(null), { enableHighAccuracy: true, timeout: 25000, maximumAge: 60000 });
+  });
+}
+const fmtT = (d) => new Date(d).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+async function stampPhoto(file, lines) {
+  const bmp = await createImageBitmap(file), k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const c = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) }), x = c.getContext("2d");
+  x.drawImage(bmp, 0, 0, c.width, c.height);
+  const fs = Math.max(16, Math.round(c.width / 45)), h = fs * 1.35 * lines.length + fs;
+  x.fillStyle = "rgba(0,0,0,0.6)"; x.fillRect(0, c.height - h, c.width, h);
+  x.fillStyle = "#fff"; x.font = `600 ${fs}px sans-serif`;
+  lines.forEach((l, i) => x.fillText(l, fs * 0.6, c.height - h + fs * 1.25 * (i + 1)));
+  return await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82));
+}
+async function syncProg(it) {
+  const path = `${session.user.id}/${it.rig}/${it.client_uuid}.jpg`;
+  if (it.blob) {
+    const up = await sb.storage.from("progress-photos").upload(path, it.blob, { contentType: "image/jpeg", upsert: false });
+    if (up.error && !/exists|Duplicate/i.test(up.error.message)) { it.error = up.error.message; await qPut(it); return; }
+  }
+  const row = { ...it.row, client_uuid: it.client_uuid, photo_path: it.blob ? path : null };
+  const ins = await sb.from(it.kind === "p2h" ? "p2h_check" : "drill_event").upsert(row, { onConflict: "client_uuid", ignoreDuplicates: true });
+  if (ins.error) { it.error = ins.error.message; await qPut(it); return; }
+  await qDel(it.client_uuid);
+}
+function modal(html) {
+  const m = document.createElement("div");
+  m.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:flex-end;justify-content:center";
+  m.innerHTML = `<div class="card" style="width:min(560px,100%);max-height:92vh;overflow:auto;margin:0;border-radius:16px 16px 0 0">${html}</div>`;
+  document.body.appendChild(m); return m;
+}
+async function progView(v) {
+  const rig = localStorage.getItem("rig") || "", bh = localStorage.getItem("bhid") || "", shift = localStorage.getItem("shift") || "PAGI";
+  const q = (await qAll()).filter((x) => x.kind === "event" || x.kind === "p2h");
+  v.innerHTML = `<div class="card"><h2>Progres pemboran</h2>
+   <div class="row"><div><label>Rig</label><input id="rg" value="${esc(rig)}" placeholder="mis. RIG-03" autocapitalize="characters"></div>
+   <div><label>BHID</label><input id="pb" value="${esc(bh)}" autocapitalize="characters"></div>
+   <div style="flex:0.7"><label>Shift</label><select id="sh"><option ${shift === "PAGI" ? "selected" : ""}>PAGI</option><option ${shift === "MALAM" ? "selected" : ""}>MALAM</option></select></div></div>
+   <p class="muted">Setiap tombol membuka kamera. Koordinat GPS dan jam dicatat otomatis dan dicetak di foto. GPS tetap jalan tanpa sinyal internet.</p>
+   <div class="big">
+    <button data-ev="MASUK">Masuk shift<small>foto kru di lokasi</small></button>
+    <button data-p2h="1" class="sec">P2H rig<small>wajib sebelum mulai bor</small></button>
+    <button data-ev="MULAI_BOR">Mulai bor<small>foto rig di titik bor</small></button>
+    <button data-ev="ACT">Foto aktivitas<small>angkat run · ganti mata bor · tambah stang · standby · lainnya</small></button>
+    <button data-ev="SELESAI_BOR">Selesai bor / stop<small>foto akhir</small></button>
+    <button data-ev="KELUAR" class="sec">Keluar shift</button>
+   </div>
+   <input id="pf" type="file" accept="image/*" capture="environment" class="hide"><div id="e" class="err"></div></div>
+   <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean progres di HP (${q.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
+   <ul class="list">${q.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "p2h" ? "P2H " + (x.row.layak_operasi ? "LAYAK" : "TIDAK LAYAK") : EV[x.row.event_type])} · ${esc(x.row.rig)} ${esc(x.row.bhid ?? "")}<br><span class="muted">${fmtT(x.row.captured_at)}${x.row.lat ? "" : " · tanpa GPS"}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
+   <div class="card"><h3>Hari ini (terkirim)</h3><div id="today" class="muted">${navigator.onLine && !session.offline ? "Memuat…" : "Offline — tampil saat ada sinyal."}</div></div>`;
+  const keep = () => { localStorage.setItem("rig", $("#rg").value.trim().toUpperCase()); localStorage.setItem("bhid", $("#pb").value.trim().toUpperCase()); localStorage.setItem("shift", $("#sh").value); };
+  let pending = null;
+  v.querySelectorAll("[data-ev]").forEach((b) => (b.onclick = () => {
+    keep(); if (!localStorage.getItem("rig")) return ($("#e").textContent = "Isi nama rig dulu.");
+    if (b.dataset.ev !== "MASUK" && b.dataset.ev !== "KELUAR" && !localStorage.getItem("bhid")) return ($("#e").textContent = "Isi BHID dulu.");
+    $("#e").textContent = ""; pending = b.dataset.ev; $("#pf").click();
+  }));
+  v.querySelector("[data-p2h]").onclick = () => { keep(); if (!localStorage.getItem("rig")) return ($("#e").textContent = "Isi nama rig dulu."); p2hForm(); };
+  $("#pf").onchange = async (ev) => {
+    const file = ev.target.files[0]; ev.target.value = ""; if (!file) return;
+    const capturedAt = new Date(), age = Math.round((Date.now() - file.lastModified) / 1000);
+    const posP = getPos();
+    const r = { rig: localStorage.getItem("rig"), bhid: localStorage.getItem("bhid") || null };
+    let lastTo = Number(localStorage.getItem(`lastTo_${r.bhid}`) || 0);
+    const m = modal(`<h3>Konfirmasi foto</h3><p class="muted">${fmtT(capturedAt)} · ${esc(r.rig)} · ${esc(r.bhid ?? "")}</p>
+      ${age > 300 ? `<p class="err">Foto ini dibuat ${Math.round(age / 60)} menit lalu — kemungkinan dari galeri, akan ditandai.</p>` : ""}
+      <label>Foto ini untuk:</label>
+      <div class="list" id="types">${(pending === "ACT" ? ["RUN", "GANTI_MATA_BOR", "TAMBAH_STANG", "STANDBY", "PERBAIKAN", "PINDAH_TITIK", "LAINNYA"] : [pending]).map((k, i) =>
+        `<label style="display:flex;gap:8px;align-items:center;padding:8px 0"><input type="radio" name="et" value="${k}" ${i === 0 ? "checked" : ""} style="width:auto">${EV[k]}</label>`).join("")}</div>
+      <div id="runf" class="row"><div><label>FROM (m)</label><input id="rf" inputmode="decimal" value="${fmtD(lastTo)}"></div><div><label>TO (m)</label><input id="rt" inputmode="decimal"></div><div><label>Core (m)</label><input id="rc" inputmode="decimal"></div></div>
+      <div id="rsn"><label>Alasan / keterangan</label><input id="rn" placeholder="mis. mata bor aus, pompa rusak, hujan"></div>
+      <p id="gps" class="muted">Mengambil GPS…</p>
+      <div class="row" style="margin-top:10px"><button id="ok">Ya, simpan</button><button class="sec" id="cx">Batal</button></div><div id="me" class="err"></div>`);
+    const tp = () => m.querySelector('input[name="et"]:checked').value;
+    const upd = () => { const t = tp(); m.querySelector("#runf").style.display = t === "RUN" ? "" : "none"; m.querySelector("#ok").textContent = `Ya, simpan sebagai ${EV[t]}`; };
+    m.querySelectorAll('input[name="et"]').forEach((x) => (x.onchange = upd)); upd();
+    let pos = null; posP.then((p) => { pos = p; m.querySelector("#gps").textContent = p ? `GPS: ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} (±${p.acc} m)` : "GPS tidak didapat — aktifkan Lokasi di HP. Foto tetap disimpan dan ditandai."; });
+    m.querySelector("#cx").onclick = () => m.remove();
+    m.querySelector("#ok").onclick = async () => {
+      const t = tp(), num = (s) => (String(s).trim() === "" ? null : Number(String(s).replace(",", ".")));
+      const row = { ...r, event_type: t, reason: m.querySelector("#rn").value || null, captured_at: capturedAt.toISOString(), photo_age_s: age };
+      if (t === "RUN") {
+        Object.assign(row, { depth_from: num(m.querySelector("#rf").value), depth_to: num(m.querySelector("#rt").value), core_length: num(m.querySelector("#rc").value) });
+        if (!(row.depth_to > row.depth_from)) return (m.querySelector("#me").textContent = "Isi FROM dan TO run (TO > FROM).");
+        if (row.core_length === null) return (m.querySelector("#me").textContent = "Isi panjang core yang terambil.");
+      }
+      m.querySelector("#ok").disabled = true;
+      if (!pos) pos = await Promise.race([posP, new Promise((r2) => setTimeout(() => r2(null), 4000))]);
+      if (pos) Object.assign(row, { lat: pos.lat, lon: pos.lon, gps_accuracy_m: pos.acc, gps_time: pos.t });
+      const line2 = t === "RUN" ? `RUN ${fmtD(row.depth_from)}–${fmtD(row.depth_to)} m · core ${fmtD(row.core_length)} m` : EV[t] + (row.reason ? ` · ${row.reason}` : "");
+      const blob = await stampPhoto(file, [`TGEP · ${r.rig} · ${r.bhid ?? "-"} · ${me?.full_name ?? ""}`, line2,
+        `${fmtT(capturedAt)} WIB · ${pos ? `${pos.lat.toFixed(6)}, ${pos.lon.toFixed(6)} ±${pos.acc} m` : "TANPA GPS"}`]);
+      await qPut({ kind: "event", client_uuid: crypto.randomUUID(), row, blob });
+      if (t === "RUN") localStorage.setItem(`lastTo_${r.bhid}`, row.depth_to);
+      m.remove(); render(); sync();
+    };
+  };
+  $("#sy").onclick = sync;
+  if (navigator.onLine && !session.offline) {
+    const day = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+    const [{ data: evs }, { data: sum }] = await Promise.all([
+      sb.from("v_drill_event_qc").select("event_type,bhid,depth_from,depth_to,core_length,captured_at,flags,photo_path,reason").eq("rig", localStorage.getItem("rig") || "-").eq("tanggal", day).order("captured_at"),
+      sb.from("v_drill_progress_daily").select("bhid,meter_bor,jumlah_run,recovery_pct,standby_menit,jam_p2h,chk_harian").eq("rig", localStorage.getItem("rig") || "-").eq("tanggal", day),
+    ]);
+    $("#today").innerHTML = `${(sum ?? []).map((s) => `<p><b>${esc(s.bhid)}</b>: ${s.meter_bor} m · ${s.jumlah_run} run · recovery ${s.recovery_pct ?? "-"}% · standby ${s.standby_menit} mnt · P2H ${s.jam_p2h ? fmtT(s.jam_p2h).slice(-8) : "BELUM"}${s.chk_harian ? `<br><span class="err">${esc(s.chk_harian)}</span>` : ""}</p>`).join("")}
+      <ul class="list">${(evs ?? []).map((x) => `<li><span style="flex:1">${fmtT(x.captured_at).slice(-8)} · <b>${esc(EV[x.event_type])}</b>${x.event_type === "RUN" ? ` ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m (core ${fmtD(x.core_length)})` : ""}${x.reason ? " · " + esc(x.reason) : ""}${x.flags ? `<br><span class="err">${esc(x.flags)}</span>` : ""}</span>${x.photo_path ? `<button class="sec" data-ph="${esc(x.photo_path)}" style="flex:0">Foto</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada aktivitas terkirim hari ini untuk rig ini.</li>`}</ul><div id="phv"></div>`;
+    $("#today").querySelectorAll("[data-ph]").forEach((b) => (b.onclick = async () => { const { data } = await sb.storage.from("progress-photos").createSignedUrl(b.dataset.ph, 600); $("#phv").innerHTML = `<img src="${data?.signedUrl ?? ""}" alt="Foto aktivitas bor" style="width:100%;border-radius:8px">`; }));
+  }
+}
+async function p2hForm() {
+  let items = JSON.parse(localStorage.getItem("p2hItems") || "null") ?? P2H_DEFAULT;
+  if (navigator.onLine && !session.offline) { const { data } = await sb.from("p2h_item").select("item").eq("active", true).order("sort"); if (data?.length) { items = data.map((x) => x.item); localStorage.setItem("p2hItems", JSON.stringify(items)); } }
+  const m = modal(`<h3>P2H rig ${esc(localStorage.getItem("rig"))} · shift ${esc(localStorage.getItem("shift"))}</h3>
+    <label>Hour meter</label><input id="hm" inputmode="decimal">
+    <div class="row" style="margin:8px 0"><button class="sec" id="allok">Tandai semua OK</button></div>
+    <div class="list">${items.map((it, i) => `<div style="padding:6px 0;border-bottom:1px solid #e3e8e1"><div>${esc(it)}</div><div class="row" style="gap:4px;margin-top:4px">${["OK", "TIDAK OK", "N/A"].map((s) => `<label style="flex:1;display:flex;gap:4px;align-items:center"><input type="radio" name="i${i}" value="${s}" ${s === "OK" ? "" : ""} style="width:auto">${s}</label>`).join("")}</div><input data-n="${i}" placeholder="catatan (wajib bila TIDAK OK)" style="margin-top:4px"></div>`).join("")}</div>
+    <p class="muted">Setelah tombol simpan, kamera terbuka untuk foto unit rig.</p>
+    <div class="row"><button id="ok">Simpan & foto rig</button><button class="sec" id="cx">Batal</button></div><div id="me" class="err"></div>
+    <input id="pf2" type="file" accept="image/*" capture="environment" class="hide">`);
+  m.querySelector("#cx").onclick = () => m.remove();
+  m.querySelector("#allok").onclick = () => m.querySelectorAll('input[value="OK"]').forEach((x) => (x.checked = true));
+  let res = null;
+  m.querySelector("#ok").onclick = () => {
+    res = items.map((it, i) => ({ item: it, status: m.querySelector(`input[name="i${i}"]:checked`)?.value ?? null, note: m.querySelector(`[data-n="${i}"]`).value.trim() || null }));
+    const kosong = res.filter((x) => !x.status), tanpaCatatan = res.filter((x) => x.status === "TIDAK OK" && !x.note);
+    if (kosong.length) return (m.querySelector("#me").textContent = `${kosong.length} item belum diisi.`);
+    if (tanpaCatatan.length) return (m.querySelector("#me").textContent = `Isi catatan untuk item TIDAK OK: ${tanpaCatatan.map((x) => x.item).join(", ")}`);
+    m.querySelector("#pf2").click();
+  };
+  m.querySelector("#pf2").onchange = async (ev) => {
+    const file = ev.target.files[0]; if (!file) return;
+    const capturedAt = new Date(), age = Math.round((Date.now() - file.lastModified) / 1000), pos = await Promise.race([getPos(), new Promise((r) => setTimeout(() => r(null), 15000))]);
+    const nNot = res.filter((x) => x.status === "TIDAK OK").length;
+    const row = { rig: localStorage.getItem("rig"), shift: localStorage.getItem("shift"), hour_meter: Number(String(m.querySelector("#hm").value).replace(",", ".")) || null,
+      items: res, n_not_ok: nNot, layak_operasi: nNot === 0, captured_at: capturedAt.toISOString(), photo_age_s: age,
+      ...(pos ? { lat: pos.lat, lon: pos.lon, gps_accuracy_m: pos.acc } : {}) };
+    const blob = await stampPhoto(file, [`TGEP · P2H ${row.rig} · shift ${row.shift} · ${me?.full_name ?? ""}`, nNot ? `TIDAK LAYAK: ${nNot} item TIDAK OK` : "LAYAK OPERASI",
+      `${fmtT(capturedAt)} WIB · ${pos ? `${pos.lat.toFixed(6)}, ${pos.lon.toFixed(6)} ±${pos.acc} m` : "TANPA GPS"}`]);
+    await qPut({ kind: "p2h", client_uuid: crypto.randomUUID(), row, blob });
+    m.remove(); if (nNot) alert(`P2H: ${nNot} item TIDAK OK — rig dinyatakan TIDAK LAYAK operasi sampai diperbaiki.`); render(); sync();
+  };
+}
+
 // ---------- hapus (admin) dengan arsip ----------
 async function adminDelete(table, key, label) {
   const reason = prompt(`Hapus ${label} ${key}?\nData dipindah ke arsip dan bisa dipulihkan admin.\n\nAlasan (wajib):`);
@@ -374,6 +531,9 @@ const DATASETS = {
   assay: { t: "Assay (hasil lab)", v: "v_dh_assay", order: ["holeid", "from"], bh: "holeid" },
   qaqc: { t: "QAQC (blank, CRM, duplikat)", v: "v_dh_qaqc", order: ["dispatch_id", "seq_in_batch"], bh: null },
   foto: { t: "Kelengkapan foto core", v: "v_sample_photo", order: ["bhid", "depth_from"], bh: "bhid", bad: ["chk_foto_utuh", "chk_foto_belah"] },
+  progres: { t: "Progres harian bor", v: "v_drill_progress_daily", order: ["tanggal", "rig"], bh: "bhid", bad: ["chk_harian"] },
+  aktivitas: { t: "Log aktivitas bor (foto bergeotag)", v: "v_drill_event_qc", order: ["captured_at"], bh: "bhid", bad: ["flags"] },
+  p2h: { t: "P2H rig", v: "p2h_check", order: ["captured_at"], bh: null },
   koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
   arsip: { t: "Arsip terhapus (admin)", v: "deleted_record", order: ["deleted_at"], bh: "bhid", admin: true },
 };
@@ -381,8 +541,10 @@ const OKV = new Set(["OK", "OK-SW", "BELUM OVEN", "MENUNGGU CEK"]);
 function dbQuery(d, f) {
   let q = sb.from(d.v).select("*", { count: "exact" });
   if (f.bh && d.bh) q = q.ilike(d.bh, `%${f.bh}%`);
-  if (f.bad && d.bad) q = q.or(d.bad.map((c) => `and(${c}.not.is.null,${c}.not.in.(${[...OKV].map((x) => `"${x}"`).join(",")}))`).join(","));
-  for (const o of d.order) q = q.order(o, { ascending: d.v === "deleted_record" || d.v === "sample_edit_log" ? false : true });
+  if (f.bad && d.bad && ["chk_harian", "flags"].includes(d.bad[0])) q = q.neq(d.bad[0], "");
+  else if (f.bad && d.bad) q = q.or(d.bad.map((c) => `and(${c}.not.is.null,${c}.not.in.(${[...OKV].map((x) => `"${x}"`).join(",")}))`).join(","));
+  const desc = ["deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check"].includes(d.v);
+  for (const o of d.order) q = q.order(o, { ascending: !desc });
   return q;
 }
 async function fetchAll(d, f) {
@@ -436,11 +598,11 @@ async function dbView(v) {
     const f = read(); $("#info").textContent = "Menyiapkan Excel…";
     try {
       const X = await import("./vendor/xlsx.js"); const wb = X.utils.book_new();
-      for (const k of ["collar", "survey", "geology", "density", "assay", "qaqc", "foto"]) {
+      for (const k of ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h"]) {
         const rows = (await fetchAll(DATASETS[k], { ...f, bad: false })).map((r) => { const o = { ...r }; delete o.data; delete o.related; return o; });
         X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), DATASETS[k].t.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
       }
-      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = "Excel diunduh (7 sheet).";
+      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = "Excel diunduh (10 sheet).";
     } catch (e) { $("#info").textContent = e.message; }
   };
   show(st.page || 0);
@@ -484,5 +646,18 @@ async function loadMe() {
   me = data ?? JSON.parse(localStorage.getItem("me") || "null");
   if (data) localStorage.setItem("me", JSON.stringify(data));
 }
-sb.auth.onAuthStateChange(async (_e, s) => { session = s; await loadMe(); render(); if (s) sync(); });
-const { data: s0 } = await sb.auth.getSession(); session = s0.session; await loadMe(); render(); sync();
+// Mode offline: bila token tidak bisa diperbarui karena tidak ada sinyal, pakai identitas terakhir
+// supaya tetap bisa memotret. Antrean baru dikirim setelah login sah saat online.
+function offlineSession() {
+  const u = JSON.parse(localStorage.getItem("lastUser") || "null");
+  return !navigator.onLine && u ? { user: u, offline: true } : null;
+}
+sb.auth.onAuthStateChange(async (e, s) => {
+  if (s) localStorage.setItem("lastUser", JSON.stringify({ id: s.user.id, email: s.user.email }));
+  session = s ?? (e === "SIGNED_OUT" && !localStorage.getItem("manualLogout") ? offlineSession() : null);
+  localStorage.removeItem("manualLogout");
+  await loadMe(); render(); if (s) sync();
+});
+addEventListener("online", async () => { const { data } = await sb.auth.getSession(); if (data.session) { session = data.session; render(); sync(); } else if (session?.offline) { session = null; render(); } });
+const { data: s0 } = await sb.auth.getSession().catch(() => ({ data: { session: null } }));
+session = s0?.session ?? offlineSession(); await loadMe(); render(); sync();
