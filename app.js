@@ -64,6 +64,7 @@ async function sync() {
     for (const it of await qAll()) {
       if (it.kind === "core") { await syncCore(it); continue; }
       if (it.kind === "event" || it.kind === "p2h") { await syncProg(it); continue; }
+      if (it.kind === "ddr") { await syncDDR(it); continue; }
       const path = `${session.user.id}/${it.client_uuid}.jpg`;
       const up = await sb.storage.from("scan-photos").upload(path, it.blob, { contentType: "image/jpeg", upsert: false });
       if (up.error && !/exists|Duplicate/i.test(up.error.message)) { it.error = up.error.message; await qPut(it); continue; }
@@ -74,7 +75,7 @@ async function sync() {
       if (job) await sb.functions.invoke("process-scan", { body: { job_id: job.id } });
       await qDel(it.client_uuid);
     }
-  } finally { syncing = false; if (["foto", "core", "prog"].includes(tab)) render(); }
+  } finally { syncing = false; if (["foto", "core", "prog", "ddr"].includes(tab)) render(); }
 }
 async function syncCore(it) {
   const base = `${session.user.id}/${it.bhid}/${it.client_uuid}`;
@@ -102,14 +103,17 @@ async function render() {
     });
     return;
   }
-  const navs = [["prog", "Progres bor"], ["foto", "Foto formulir"], ["core", "Foto core"], ...(["verifier", "admin"].includes(me?.role) ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ...(me?.role === "admin" ? [["users", "Pengguna"]] : [])] : [])];
+  const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
+  const navs = [["prog", "Progres bor"], ["ddr", "DDR"], ...(staff ? [["foto", "Foto formulir"], ["core", "Foto core"]] : []),
+    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["ttd", "TTD saya"]];
+  if (!navs.some(([k]) => k === tab)) tab = "prog";
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
   app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div>`;
   app.querySelectorAll("nav [data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; localStorage.setItem("tab", tab); render(); }));
   $("#out").onclick = async () => { if (!confirm("Keluar dari akun? Foto di antrean tetap tersimpan di HP.")) return; localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); session = null; await sb.auth.signOut().catch(() => {}); render(); };
   if (me?.role === "admin" && navigator.onLine && !session.offline) sb.from("registration_request").select("user_id", { count: "exact", head: true }).eq("status", "PENDING")
     .then(({ count }) => { const b = app.querySelector('nav [data-t="users"]'); if (b && count) b.textContent = `Pengguna (${count} baru)`; });
-  document.querySelector("main").style.maxWidth = tab === "db" ? "none" : "";
+  document.querySelector("main").style.maxWidth = tab === "db" || tab === "dash" ? "none" : "";
   if (tab === "foto") return fotoView($("#v"));
   if (tab === "review") return reviewList($("#v"));
   if (tab === "data") return dataView($("#v"));
@@ -117,6 +121,9 @@ async function render() {
   if (tab === "db") return dbView($("#v"));
   if (tab === "prog") return progView($("#v"));
   if (tab === "users") return usersView($("#v"));
+  if (tab === "ddr") return ddrView($("#v"));
+  if (tab === "ttd") return ttdView($("#v"));
+  if (tab === "dash") return dashView($("#v"));
 }
 
 function loginView() {
@@ -535,7 +542,7 @@ async function usersView(v) {
   const roleOf = Object.fromEntries((au ?? []).map((x) => [x.user_id, x.role]));
   const pend = rq.filter((r) => r.status === "PENDING"), rest = rq.filter((r) => r.status !== "PENDING");
   const link = new URL("daftar.html", location.href).href;
-  const opt = (sel) => ["geologist", "verifier", "admin"].map((r) => `<option ${r === sel ? "selected" : ""}>${r}</option>`).join("");
+  const opt = (sel) => ["driller", "geologist", "verifier", "admin"].map((r) => `<option ${r === sel ? "selected" : ""}>${r}</option>`).join("");
   const row = (r, pending) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>${esc(r.full_name)}</b> · ${esc(r.email)}<br><span class="muted">${esc(r.position ?? "")} · ${esc(r.company ?? "")} · ${esc(r.phone ?? "")}${r.reason ? " · " + esc(r.reason) : ""}<br>
       ${pending ? `minta: ${esc(r.requested_role)} · daftar ${new Date(r.created_at).toLocaleString("id-ID")}` : `status: ${roleOf[r.user_id] ? "AKTIF (" + roleOf[r.user_id] + ")" : r.status === "REJECTED" ? "DITOLAK/NONAKTIF" : r.status}${r.decision_note ? " · " + esc(r.decision_note) : ""}`}</span></span>
       <select data-role="${r.user_id}" style="flex:0;width:auto">${opt(roleOf[r.user_id] ?? r.requested_role)}</select>
@@ -555,6 +562,299 @@ async function usersView(v) {
   };
   v.querySelectorAll("[data-ok]").forEach((b) => (b.onclick = () => act(b.dataset.ok, v.querySelector(`[data-role="${b.dataset.ok}"]`).value)));
   v.querySelectorAll("[data-no]").forEach((b) => (b.onclick = () => act(b.dataset.no, null)));
+}
+
+// ---------- utilitas bersama ----------
+const sha256 = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+const pinToken = (uid, pin) => sha256(`TGEP|${uid}|${pin}`);
+const isStaff = () => ["geologist", "verifier", "admin"].includes(me?.role);
+const isVer = () => ["verifier", "admin"].includes(me?.role);
+const todayWIB = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+const online = () => navigator.onLine && session && !session.offline;
+async function cached(key, fetcher) {
+  if (online()) { try { const d = await fetcher(); if (d?.length) { localStorage.setItem(key, JSON.stringify(d)); return d; } } catch { /* pakai cache */ } }
+  return JSON.parse(localStorage.getItem(key) || "[]");
+}
+function shiftWindow(date, shift) {
+  const s = new Date(`${date}T${shift === "PAGI" ? "06:00" : "18:00"}:00+07:00`);
+  return [s.toISOString(), new Date(s.getTime() + 12 * 3600e3).toISOString()];
+}
+async function signedUrls(bucket, paths) {
+  const ps = [...new Set(paths.filter(Boolean))]; if (!ps.length) return {};
+  const { data } = await sb.storage.from(bucket).createSignedUrls(ps, 3600);
+  return Object.fromEntries((data ?? []).map((x) => [x.path, x.signedUrl]));
+}
+
+// ---------- TTD saya: daftar tanda tangan sekali, PIN + kartu QR ----------
+async function ttdView(v) {
+  let prof = null;
+  if (online()) prof = (await sb.from("signature_profile").select("*").eq("user_id", session.user.id).maybeSingle()).data;
+  const img = prof ? (await signedUrls("signatures", [prof.signature_path]))[prof.signature_path] : null;
+  v.innerHTML = `<div class="card"><h2>Tanda tangan elektronik</h2>
+    ${prof ? `<p>TTD terdaftar atas nama <b>${esc(prof.full_name)}</b>${prof.title ? " · " + esc(prof.title) : ""}.</p><img src="${img ?? ""}" alt="Tanda tangan terdaftar" style="max-width:320px;background:#fff;border:1px solid #ccc;border-radius:8px">` : `<p>Belum ada TTD. Daftarkan sekali, lalu setiap DDR cukup ditandatangani dengan <b>PIN</b> atau <b>kartu QR</b>.</p>`}
+    <p class="muted">PIN dan kartu QR sama dengan tanda tangan Anda — jangan diberikan ke orang lain. Salah PIN 5 kali mengunci TTD 15 menit.</p></div>
+    <div class="card"><h3>${prof ? "Ganti" : "Daftarkan"} tanda tangan</h3>
+    <label>Gambar tanda tangan di kotak ini</label>
+    <canvas id="pad" width="600" height="220" style="width:100%;max-width:600px;height:auto;background:#fff;border:2px dashed #9aa59f;border-radius:8px;touch-action:none"></canvas>
+    <div class="row" style="margin-top:6px"><button class="sec" id="clr" style="flex:0">Hapus gambar</button></div>
+    <label>Jabatan</label><input id="ttl" value="${esc(prof?.title ?? (me?.role === "driller" ? "Driller" : "Wellsite Geologist"))}">
+    <div class="row"><div><label>PIN 6 angka</label><input id="p1" type="password" inputmode="numeric" maxlength="6"></div><div><label>Ulangi PIN</label><input id="p2" type="password" inputmode="numeric" maxlength="6"></div></div>
+    <div style="margin-top:10px"><button id="sv">Simpan TTD & buat kartu QR</button></div><div id="e" class="err"></div><div id="card"></div></div>`;
+  const pad = $("#pad"), x = pad.getContext("2d"); let drawing = false, inked = false;
+  x.lineWidth = 3; x.lineCap = "round"; x.strokeStyle = "#0b2a6b";
+  const pt = (e) => { const r = pad.getBoundingClientRect(); return [(e.clientX - r.left) * pad.width / r.width, (e.clientY - r.top) * pad.height / r.height]; };
+  pad.onpointerdown = (e) => { drawing = true; x.beginPath(); x.moveTo(...pt(e)); pad.setPointerCapture(e.pointerId); };
+  pad.onpointermove = (e) => { if (!drawing) return; x.lineTo(...pt(e)); x.stroke(); inked = true; };
+  pad.onpointerup = () => (drawing = false);
+  $("#clr").onclick = () => { x.clearRect(0, 0, pad.width, pad.height); inked = false; };
+  $("#sv").onclick = async () => {
+    const p1 = $("#p1").value, p2 = $("#p2").value;
+    if (!online()) return ($("#e").textContent = "Pendaftaran TTD perlu sinyal internet.");
+    if (!inked) return ($("#e").textContent = "Gambar tanda tangan dulu.");
+    if (!/^\d{6}$/.test(p1)) return ($("#e").textContent = "PIN harus 6 angka.");
+    if (/^(\d)\1{5}$|^(012345|123456|234567|345678|456789|987654|876543|765432|654321|543210)$/.test(p1)) return ($("#e").textContent = "PIN terlalu mudah ditebak.");
+    if (p1 !== p2) return ($("#e").textContent = "Ulangan PIN tidak sama.");
+    $("#sv").disabled = true;
+    const blob = await new Promise((r) => pad.toBlob(r, "image/png"));
+    const path = `${session.user.id}/ttd-${Date.now()}.png`;
+    const up = await sb.storage.from("signatures").upload(path, blob, { contentType: "image/png" });
+    if (up.error) { $("#sv").disabled = false; return ($("#e").textContent = up.error.message); }
+    const qrSecret = [...crypto.getRandomValues(new Uint8Array(24))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const { error } = await sb.rpc("set_signature", { p_path: path, p_title: $("#ttl").value.trim() || null, p_pin_token: await pinToken(session.user.id, p1), p_qr_secret: qrSecret });
+    $("#sv").disabled = false;
+    if (error) return ($("#e").textContent = error.message);
+    localStorage.removeItem("signers");
+    const { default: qrcode } = await import("./vendor/qrgen.js");
+    const q = qrcode(0, "M"); q.addData(`TGEPSIG|${session.user.id}|${qrSecret}`); q.make();
+    const c = document.createElement("canvas"), n = q.getModuleCount(), cell = 8, pad2 = 32; c.width = n * cell + pad2 * 2; c.height = c.width + 90;
+    const cx = c.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, c.width, c.height); cx.fillStyle = "#000";
+    for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) cx.fillRect(pad2 + k * cell, pad2 + r * cell, cell, cell);
+    cx.font = "bold 18px sans-serif"; cx.fillText(`TTD ${me?.full_name ?? ""}`, pad2, c.width + 20); cx.font = "14px sans-serif";
+    cx.fillText("Kartu tanda tangan DDR · PT Terra Grapindo Eco Prima", pad2, c.width + 44); cx.fillText("RAHASIA — jangan dipinjamkan", pad2, c.width + 66);
+    const url = c.toDataURL("image/png");
+    $("#card").innerHTML = `<div class="card" style="background:#DCEFE4"><b>TTD tersimpan.</b> Ini kartu QR Anda — <b>hanya ditampilkan sekali</b>. Simpan di HP Anda atau cetak, lalu tunjukkan ke kamera saat menandatangani DDR.<br><img src="${url}" alt="Kartu QR tanda tangan" style="max-width:260px;margin-top:8px"><br><a href="${url}" download="Kartu_TTD_${esc((me?.full_name ?? "").replace(/\s+/g, "_"))}.png"><button>Unduh kartu QR</button></a></div>`;
+  };
+}
+
+// ---------- dialog tanda tangan (PIN atau scan QR) ----------
+async function signDialog(slot) {
+  const signers = await cached("signers", async () => (await sb.from("signature_profile").select("user_id,full_name,title")).data);
+  return new Promise((resolve) => {
+    const m = modal(`<h3>Tanda tangan ${slot === "DRILLER" ? "Driller" : "Wellsite geologist"}</h3>
+      <label>Nama</label><select id="sg"><option value="">— pilih —</option>${signers.map((s) => `<option value="${s.user_id}">${esc(s.full_name)}${s.title ? " · " + esc(s.title) : ""}</option>`).join("")}</select>
+      <label>PIN 6 angka</label><input id="pin" type="password" inputmode="numeric" maxlength="6">
+      <div class="row" style="margin-top:10px"><button id="okp">Tanda tangan dengan PIN</button></div>
+      <p class="muted" style="margin:10px 0 4px">atau</p><div class="row"><button class="sec" id="qr">Scan kartu QR</button></div>
+      <div id="cam"></div><div class="row" style="margin-top:10px"><button class="sec" id="skip">Nanti saja</button></div><div id="me" class="err"></div>
+      ${signers.length ? "" : `<p class="err">Belum ada TTD terdaftar${online() ? "" : " di HP ini (buka menu DDR sekali saat online)"}.</p>`}`);
+    let stream = null; const done = (r) => { stream?.getTracks().forEach((t) => t.stop()); m.remove(); resolve(r); };
+    m.querySelector("#skip").onclick = () => done(null);
+    m.querySelector("#okp").onclick = async () => {
+      const id = m.querySelector("#sg").value, pin = m.querySelector("#pin").value;
+      if (!id) return (m.querySelector("#me").textContent = "Pilih nama penanda tangan.");
+      if (!/^\d{6}$/.test(pin)) return (m.querySelector("#me").textContent = "PIN 6 angka.");
+      done({ slot, signer_id: id, method: "PIN", proof: await pinToken(id, pin), signed_at: new Date().toISOString(), name: signers.find((s) => s.user_id === id)?.full_name });
+    };
+    m.querySelector("#qr").onclick = async () => {
+      try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); }
+      catch { return (m.querySelector("#me").textContent = "Kamera tidak bisa dibuka."); }
+      m.querySelector("#cam").innerHTML = `<video id="vd" playsinline muted style="width:100%;border-radius:8px;margin-top:8px"></video>`;
+      const vd = m.querySelector("#vd"); vd.srcObject = stream; await vd.play();
+      const det = "BarcodeDetector" in window ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
+      const jsQR = det ? null : (await import("./vendor/jsqr.js")).default;
+      const cv = document.createElement("canvas"), cx = cv.getContext("2d", { willReadFrequently: true });
+      const tick = async () => {
+        if (!stream?.active) return;
+        let txt = null;
+        if (det) { const r = await det.detect(vd).catch(() => []); txt = r[0]?.rawValue ?? null; }
+        else if (vd.videoWidth) { cv.width = vd.videoWidth; cv.height = vd.videoHeight; cx.drawImage(vd, 0, 0); txt = jsQR(cx.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height)?.data ?? null; }
+        const mm = txt?.match(/^TGEPSIG\|([0-9a-f-]{36})\|([0-9a-f]{32,})$/);
+        if (mm) return done({ slot, signer_id: mm[1], method: "QR", proof: mm[2], signed_at: new Date().toISOString(), name: signers.find((s) => s.user_id === mm[1])?.full_name ?? "(kartu QR)" });
+        requestAnimationFrame(tick);
+      };
+      tick();
+    };
+  });
+}
+
+// ---------- DDR (Daily Drilling Report) ----------
+async function ddrView(v) {
+  const items = await cached("ddrItems", async () => (await sb.from("consumable_item").select("item,unit,kategori").eq("active", true).order("sort")).data);
+  cached("signers", async () => (await sb.from("signature_profile").select("user_id,full_name,title")).data);
+  const q = (await qAll()).filter((x) => x.kind === "ddr");
+  const rig = localStorage.getItem("rig") || "", shift = localStorage.getItem("shift") || "PAGI", last = JSON.parse(localStorage.getItem("ddrLast") || "{}");
+  v.innerHTML = `<div class="card"><h2>DDR — Daily Drilling Report</h2>
+    <p class="muted">Wajib diisi setiap shift. Aktivitas, meter bor dan foto diambil otomatis dari menu Progres bor. Semua baris pemakaian wajib diisi (tulis 0 bila tidak dipakai).</p>
+    <div class="row"><div><label>Rig *</label><input id="rg" value="${esc(rig)}" autocapitalize="characters"></div><div><label>Tanggal *</label><input id="dt" type="date" value="${todayWIB()}"></div>
+    <div style="flex:.7"><label>Shift *</label><select id="sh"><option ${shift === "PAGI" ? "selected" : ""}>PAGI</option><option ${shift === "MALAM" ? "selected" : ""}>MALAM</option></select></div></div>
+    <div class="row"><div><label>BHID</label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters"></div><div><label>Kontraktor *</label><input id="ct" value="${esc(last.contractor ?? "")}"></div></div>
+    <div class="row"><div><label>Driller *</label><input id="dn" value="${esc(last.driller_name ?? "")}"></div><div style="flex:.6"><label>Jumlah kru *</label><input id="cc" inputmode="numeric" value="${esc(last.crew_count ?? "")}"></div></div>
+    <label>Nama helper</label><input id="hp" value="${esc(last.helpers ?? "")}">
+    <div class="row"><div><label>HM awal *</label><input id="h1" inputmode="decimal"></div><div><label>HM akhir *</label><input id="h2" inputmode="decimal"></div><div><label>Cuaca</label><select id="wx"><option>Cerah</option><option>Berawan</option><option>Hujan</option><option>Hujan lebat</option></select></div></div>
+    <h3>Pemakaian BBM, oli & barang</h3>
+    <div class="tw"><table><tr><th>Barang</th><th>Jumlah</th><th>Satuan</th><th>Catatan</th></tr>${items.map((it, i) => `<tr><td style="padding:4px 6px">${esc(it.item)}</td><td><input data-q="${i}" inputmode="decimal" style="width:90px"></td><td style="padding:4px 6px">${esc(it.unit)}</td><td><input data-n="${i}"></td></tr>`).join("")}</table></div>
+    <label>Catatan / kendala shift</label><textarea id="nt" rows="2"></textarea>
+    <div style="margin-top:10px"><button id="sv">Simpan DDR & tanda tangan</button></div><div id="e" class="err"></div></div>
+    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean DDR di HP (${q.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
+    <ul class="list">${q.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.row.rig)} · ${esc(x.row.report_date)} · ${esc(x.row.shift)} · TTD ${x.signs.length}/2${x.error ? `<br><span class="err">${esc(x.error)}</span>` : ""}</span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
+    <div class="card"><h3>DDR terkirim</h3><div id="lst" class="muted">${online() ? "Memuat…" : "Offline."}</div></div>`;
+  $("#sv").onclick = async () => {
+    const val = (id) => $(id).value.trim(), num = (s) => (String(s).trim() === "" ? null : Number(String(s).replace(",", ".")));
+    const row = { rig: val("#rg").toUpperCase(), report_date: val("#dt"), shift: $("#sh").value, bhid: val("#bh").toUpperCase() || null, contractor: val("#ct"), driller_name: val("#dn"),
+      helpers: val("#hp") || null, crew_count: num(val("#cc")), hm_start: num(val("#h1")), hm_end: num(val("#h2")), weather: $("#wx").value, notes: val("#nt") || null, captured_at: new Date().toISOString() };
+    const miss = ["rig", "report_date", "contractor", "driller_name", "crew_count", "hm_start", "hm_end"].filter((k) => row[k] === null || row[k] === "");
+    if (miss.length) return ($("#e").textContent = "Lengkapi kolom bertanda * (" + miss.join(", ") + ").");
+    if (row.hm_end < row.hm_start) return ($("#e").textContent = "HM akhir lebih kecil dari HM awal.");
+    const cons = items.map((it, i) => ({ ...it, qty: num(v.querySelector(`[data-q="${i}"]`).value), note: v.querySelector(`[data-n="${i}"]`).value.trim() || null }));
+    const kosong = cons.filter((c) => c.qty === null || !isFinite(c.qty));
+    if (kosong.length) return ($("#e").textContent = `Isi jumlah (0 bila tidak dipakai): ${kosong.map((c) => c.item).join(", ")}`);
+    row.consumables = cons;
+    localStorage.setItem("ddrLast", JSON.stringify({ contractor: row.contractor, driller_name: row.driller_name, crew_count: row.crew_count, helpers: row.helpers }));
+    localStorage.setItem("rig", row.rig); localStorage.setItem("shift", row.shift);
+    const signs = [];
+    for (const slot of ["DRILLER", "WELLSITE"]) { const s = await signDialog(slot); if (s) signs.push(s); }
+    await qPut({ kind: "ddr", client_uuid: crypto.randomUUID(), row, signs });
+    alert(`DDR disimpan dengan ${signs.length}/2 tanda tangan.${signs.length < 2 ? " Tanda tangan yang kurang bisa dilengkapi dari daftar DDR setelah terkirim." : ""}`);
+    render(); sync();
+  };
+  $("#sy").onclick = sync;
+  if (online()) {
+    const { data } = await sb.from("v_ddr_list").select("id,report_date,shift,rig,bhid,status,meter_bor,bbm_liter,bbm_per_meter,ttd").order("report_date", { ascending: false }).limit(30);
+    $("#lst").innerHTML = `<ul class="list">${(data ?? []).map((d) => `<li style="flex-wrap:wrap"><span class="pill ${d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW"}">${d.status === "SIGNED" ? "LENGKAP" : "DRAF"}</span>
+      <span style="flex:1">${esc(d.report_date)} · ${esc(d.shift)} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">${d.meter_bor ?? 0} m · BBM ${d.bbm_liter} L${d.bbm_per_meter ? ` (${d.bbm_per_meter} L/m)` : ""} · ${esc(d.ttd ?? "belum ada TTD")}</span></span>
+      ${d.status !== "SIGNED" ? `<button class="sec" data-sg="${d.id}" style="flex:0">Tanda tangani</button>` : ""}<button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`).join("") || `<li class="muted">Belum ada.</li>`}</ul>`;
+    $("#lst").querySelectorAll("[data-pr]").forEach((b) => (b.onclick = () => printDDR(b.dataset.pr)));
+    $("#lst").querySelectorAll("[data-sg]").forEach((b) => (b.onclick = async () => {
+      const { data: sg } = await sb.from("ddr_signature").select("slot").eq("ddr_id", b.dataset.sg);
+      const have = new Set((sg ?? []).map((x) => x.slot));
+      for (const slot of ["DRILLER", "WELLSITE"].filter((s) => !have.has(s))) {
+        const s = await signDialog(slot); if (!s) continue;
+        const { error } = await sb.rpc("sign_ddr", { p_ddr: b.dataset.sg, p_slot: slot, p_signer: s.signer_id, p_method: s.method, p_proof: s.proof, p_signed_at: s.signed_at });
+        if (error) alert(`${slot}: ${error.message}`);
+      }
+      render();
+    }));
+  }
+}
+async function ddrSummary(rig, date, shift) {
+  const [a, b] = shiftWindow(date, shift);
+  const { data: ev } = await sb.from("v_drill_event_qc").select("event_type,bhid,depth_from,depth_to,run_m,core_length,durasi_ke_berikutnya_min,captured_at,flags").eq("rig", rig).gte("captured_at", a).lt("captured_at", b).order("captured_at");
+  const E = ev ?? [], runs = E.filter((e) => e.event_type === "RUN"), sum = (xs, k) => xs.reduce((s, x) => s + (Number(x[k]) || 0), 0);
+  const m = sum(runs, "run_m"), c = sum(runs, "core_length");
+  return { meter_bor: +m.toFixed(2), jumlah_run: runs.length, core_m: +c.toFixed(2), recovery_pct: m ? +(100 * Math.min(c, m) / m).toFixed(1) : null,
+    kedalaman_akhir: runs.length ? Math.max(...runs.map((r) => Number(r.depth_to))) : null, bhid: [...new Set(E.map((e) => e.bhid).filter(Boolean))].join(", "),
+    standby_menit: sum(E.filter((e) => ["STANDBY", "PERBAIKAN"].includes(e.event_type)), "durasi_ke_berikutnya_min"),
+    ganti_mata_bor: E.filter((e) => e.event_type === "GANTI_MATA_BOR").length, jumlah_foto: E.length, kejadian_bermasalah: E.filter((e) => e.flags).length,
+    mulai: E.find((e) => e.event_type === "MULAI_BOR")?.captured_at ?? null, selesai: [...E].reverse().find((e) => e.event_type === "SELESAI_BOR")?.captured_at ?? null };
+}
+async function syncDDR(it) {
+  const ins = await sb.from("ddr").upsert({ ...it.row, client_uuid: it.client_uuid }, { onConflict: "client_uuid", ignoreDuplicates: true });
+  if (ins.error) { it.error = /ddr_rig_report_date_shift_key/.test(ins.error.message) ? "DDR rig/tanggal/shift ini sudah ada di server" : ins.error.message; await qPut(it); return; }
+  const { data: d } = await sb.from("ddr").select("id,status").eq("client_uuid", it.client_uuid).single();
+  if (d?.status === "DRAFT") await sb.from("ddr").update({ summary: await ddrSummary(it.row.rig, it.row.report_date, it.row.shift) }).eq("id", d.id);
+  const errs = [];
+  for (const s of it.signs ?? []) {
+    const { error } = await sb.rpc("sign_ddr", { p_ddr: d.id, p_slot: s.slot, p_signer: s.signer_id, p_method: s.method, p_proof: s.proof, p_signed_at: s.signed_at });
+    if (error && !/sudah ditandatangani|sudah lengkap/.test(error.message)) errs.push(`${s.slot} (${s.name}): ${error.message}`);
+  }
+  await qDel(it.client_uuid);
+  if (errs.length) alert(`DDR ${it.row.rig} ${it.row.report_date} ${it.row.shift} terkirim, tetapi tanda tangan gagal:\n${errs.join("\n")}\nUlangi dari daftar DDR → Tanda tangani.`);
+}
+async function printDDR(id) {
+  const w = window.open("", "_blank"); if (!w) return alert("Izinkan pop-up untuk mencetak.");
+  w.document.write("<p>Memuat DDR…</p>");
+  const { data: d } = await sb.from("ddr").select("*").eq("id", id).single();
+  const { data: sg } = await sb.from("ddr_signature").select("*").eq("ddr_id", id);
+  const [a, b] = shiftWindow(d.report_date, d.shift);
+  const { data: ev } = await sb.from("v_drill_event_qc").select("*").eq("rig", d.rig).gte("captured_at", a).lt("captured_at", b).order("captured_at");
+  const ph = await signedUrls("progress-photos", (ev ?? []).map((e) => e.photo_path)), tt = await signedUrls("signatures", (sg ?? []).map((s) => s.signature_path));
+  const S = d.summary ?? {}, T = (x) => (x ? fmtT(x) : "-"), slot = (k) => (sg ?? []).find((s) => s.slot === k);
+  const sigBox = (k, lab) => { const s = slot(k); return `<td style="width:50%;vertical-align:top"><b>${lab}</b><br>${s ? `<img src="${tt[s.signature_path] ?? ""}" style="height:70px"><br>${esc(s.signer_name)}${s.signer_title ? " · " + esc(s.signer_title) : ""}<br><small>Ditandatangani ${T(s.signed_at)} WIB dengan ${s.method}; diverifikasi server ${T(s.verified_at)}</small>` : "<br><br><i>belum ditandatangani</i>"}</td>`; };
+  w.document.open(); w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>DDR ${esc(d.rig)} ${esc(d.report_date)} ${esc(d.shift)}</title>
+  <style>body{font-family:Arial,sans-serif;font-size:12px;margin:18px;color:#111} h1{font-size:18px;margin:0} table{border-collapse:collapse;width:100%;margin:8px 0} td,th{border:1px solid #999;padding:4px 6px;text-align:left} th{background:#e6efe9}
+  .g{display:grid;grid-template-columns:repeat(3,1fr);gap:6px} .g img{width:100%;border:1px solid #ccc} .st{font-weight:bold;color:${d.status === "SIGNED" ? "#0a6b3d" : "#a05a00"}} @media print{button{display:none}}</style></head><body>
+  <button onclick="print()">Cetak / simpan PDF</button>
+  <h1>DAILY DRILLING REPORT (DDR)</h1><div>PT Terra Grapindo Eco Prima · <span class="st">${d.status === "SIGNED" ? "LENGKAP DITANDATANGANI" : "DRAF"}</span></div>
+  <table><tr><th>Rig</th><td>${esc(d.rig)}</td><th>Tanggal</th><td>${esc(d.report_date)}</td><th>Shift</th><td>${esc(d.shift)}</td></tr>
+  <tr><th>BHID</th><td>${esc(d.bhid ?? S.bhid ?? "-")}</td><th>Kontraktor</th><td>${esc(d.contractor ?? "")}</td><th>Driller</th><td>${esc(d.driller_name ?? "")}</td></tr>
+  <tr><th>Kru</th><td>${d.crew_count ?? ""} org</td><th>Helper</th><td>${esc(d.helpers ?? "")}</td><th>Cuaca</th><td>${esc(d.weather ?? "")}</td></tr>
+  <tr><th>HM awal–akhir</th><td>${d.hm_start ?? ""} – ${d.hm_end ?? ""} (${d.hm_end != null && d.hm_start != null ? (d.hm_end - d.hm_start).toFixed(1) : "-"} jam)</td><th>Mulai bor</th><td>${T(S.mulai)}</td><th>Selesai</th><td>${T(S.selesai)}</td></tr></table>
+  <table><tr><th>Meter bor</th><th>Jumlah run</th><th>Core (m)</th><th>Recovery</th><th>Kedalaman akhir</th><th>Standby</th><th>Ganti mata bor</th><th>Kejadian bermasalah</th></tr>
+  <tr><td>${S.meter_bor ?? "-"}</td><td>${S.jumlah_run ?? "-"}</td><td>${S.core_m ?? "-"}</td><td>${S.recovery_pct ?? "-"}%</td><td>${S.kedalaman_akhir ?? "-"} m</td><td>${S.standby_menit ?? 0} mnt</td><td>${S.ganti_mata_bor ?? 0}</td><td>${S.kejadian_bermasalah ?? 0}</td></tr></table>
+  <h3>Aktivitas</h3><table><tr><th>Jam</th><th>Kegiatan</th><th>BHID</th><th>Kedalaman</th><th>Core</th><th>Keterangan</th><th>Koordinat</th><th>Catatan cek</th></tr>
+  ${(ev ?? []).map((e) => `<tr><td>${T(e.captured_at).slice(-8)}</td><td>${esc(EV[e.event_type])}</td><td>${esc(e.bhid ?? "")}</td><td>${e.event_type === "RUN" ? `${e.depth_from}–${e.depth_to}` : ""}</td><td>${e.core_length ?? ""}</td><td>${esc(e.reason ?? "")}</td><td>${e.lat ? `${e.lat.toFixed(5)}, ${e.lon.toFixed(5)} ±${e.gps_accuracy_m}m` : "-"}</td><td>${esc(e.flags ?? "")}</td></tr>`).join("")}</table>
+  <h3>Pemakaian BBM, oli & barang</h3><table><tr><th>Barang</th><th>Jumlah</th><th>Satuan</th><th>Catatan</th></tr>${(d.consumables ?? []).map((c) => `<tr><td>${esc(c.item)}</td><td>${c.qty}</td><td>${esc(c.unit)}</td><td>${esc(c.note ?? "")}</td></tr>`).join("")}</table>
+  <p><b>Catatan:</b> ${esc(d.notes ?? "-")}</p>
+  <h3>Foto aktivitas</h3><div class="g">${(ev ?? []).filter((e) => e.photo_path).map((e) => `<div><img src="${ph[e.photo_path] ?? ""}"><br><small>${T(e.captured_at).slice(-8)} · ${esc(EV[e.event_type])}</small></div>`).join("")}</div>
+  <table style="margin-top:14px"><tr>${sigBox("DRILLER", "Driller (kontraktor)")}${sigBox("WELLSITE", "Wellsite geologist (TGEP)")}</tr></table>
+  <small>Dokumen elektronik dari database TGEP · ID ${d.id} · dibuat ${T(d.created_at)} WIB.</small></body></html>`);
+  w.document.close();
+}
+
+// ---------- Dashboard ----------
+async function dashView(v) {
+  const to = todayWIB(), from = new Date(Date.now() - 30 * 864e5).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+  const st = JSON.parse(sessionStorage.getItem("dash") || "null") ?? { from, to, rig: "" };
+  v.innerHTML = `<div class="card"><h2>Dashboard progres & evaluasi</h2>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
+    <div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0">Cetak / PDF</button></div></div>
+    <div id="kpi" class="card"></div><div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px"></div>`;
+  $("#pr").onclick = () => print();
+  $("#go").onclick = () => { sessionStorage.setItem("dash", JSON.stringify({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() })); dashView(v); };
+  if (!online()) return ($("#kpi").textContent = "Dashboard perlu sinyal internet.");
+  const R = (q) => (st.rig ? q.eq("rig", st.rig) : q);
+  const [{ data: rd }, { data: tm }, { data: cu }, { data: hl }] = await Promise.all([
+    R(sb.from("v_dash_rig_day").select("*").gte("tanggal", st.from).lte("tanggal", st.to)).order("tanggal"),
+    R(sb.from("v_dash_time").select("*").gte("tanggal", st.from).lte("tanggal", st.to)),
+    R(sb.from("v_consumable_use").select("*").gte("report_date", st.from).lte("report_date", st.to)),
+    sb.from("v_dash_hole").select("*"),
+  ]);
+  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0), K = computeKPI(days, tm ?? [], cu ?? [], holes);
+  $("#kpi").innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">${K.map(([l, val, note]) => `<div style="background:#fff;border-radius:10px;padding:10px;border-left:5px solid ${note === "!" ? "#C8281F" : "#1E9E69"}"><div class="muted" style="font-size:12px">${esc(l)}</div><div style="font-size:22px;font-weight:700">${esc(val)}</div></div>`).join("")}</div>
+    <p class="muted" style="margin-top:8px">Periode ${st.from} s/d ${st.to}${st.rig ? " · rig " + esc(st.rig) : " · semua rig"}. Data geologi (tebal zona, conto) mencakup semua lubang yang sudah disetujui.</p>`;
+  const { Chart } = await import("./vendor/chart.js");
+  const box = (id, title) => { const d = document.createElement("div"); d.className = "card"; d.innerHTML = `<h3 style="margin:0 0 6px">${title}</h3><canvas id="${id}" height="230"></canvas>`; $("#ch").appendChild(d); return d.querySelector("canvas"); };
+  const pal = ["#1E9E69", "#E8892B", "#2F6FB0", "#C8281F", "#8E5BB5", "#7A8B83", "#D4B12A", "#12251E", "#57B8C9", "#B5651D"];
+  const by = (xs, kf, vf) => xs.reduce((m, x) => ((m[kf(x)] = (m[kf(x)] ?? 0) + (Number(vf(x)) || 0)), m), {});
+  const hist = (vals, edges) => edges.slice(0, -1).map((e, i) => vals.filter((x) => x >= e && (i === edges.length - 2 ? x <= edges[i + 1] : x < edges[i + 1])).length);
+  const rigs = [...new Set(days.map((d) => d.rig))], dates = [...new Set(days.map((d) => d.tanggal))];
+  let cum = 0; const cumv = dates.map((t) => (cum += days.filter((d) => d.tanggal === t).reduce((s, d) => s + Number(d.meter_bor), 0)));
+  new Chart(box("c1", "Meter bor per hari (per rig) & kumulatif"), { data: { labels: dates, datasets: [...rigs.map((r, i) => ({ type: "bar", label: r, stack: "m", data: dates.map((t) => days.filter((d) => d.tanggal === t && d.rig === r).reduce((s, d) => s + Number(d.meter_bor), 0)), backgroundColor: pal[i % 10] })),
+    { type: "line", label: "Kumulatif", data: cumv, yAxisID: "y2", borderColor: "#12251E", pointRadius: 0 }] }, options: { scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: "m/hari" } }, y2: { position: "right", grid: { display: false }, title: { display: true, text: "kumulatif m" } } } } });
+  const mr = by(days, (d) => d.rig, (d) => d.meter_bor), jr = by(days, (d) => d.rig, (d) => d.jam_kerja_bor);
+  new Chart(box("c2", "Meter per rig & produktivitas (m/jam)"), { data: { labels: Object.keys(mr), datasets: [{ type: "bar", label: "Meter", data: Object.values(mr), backgroundColor: "#1E9E69" }, { type: "line", label: "m/jam", data: Object.keys(mr).map((r) => (jr[r] ? +(mr[r] / jr[r]).toFixed(2) : null)), yAxisID: "y2", borderColor: "#E8892B" }] }, options: { scales: { y2: { position: "right", grid: { display: false } } } } });
+  const tk = by(tm ?? [], (x) => x.kegiatan, (x) => x.menit);
+  new Chart(box("c3", "Pembagian waktu kerja (menit)"), { type: "pie", data: { labels: Object.keys(tk), datasets: [{ data: Object.values(tk), backgroundColor: pal }] } });
+  const sb2 = by((tm ?? []).filter((x) => ["Standby", "Perbaikan"].includes(x.kegiatan)), (x) => `${x.kegiatan}: ${x.alasan}`, (x) => x.menit);
+  new Chart(box("c4", "Penyebab standby & perbaikan (menit)"), { type: "pie", data: { labels: Object.keys(sb2).length ? Object.keys(sb2) : ["(tidak ada)"], datasets: [{ data: Object.keys(sb2).length ? Object.values(sb2) : [1], backgroundColor: pal }] } });
+  const br = by(days, (d) => d.rig, (d) => d.bbm_liter);
+  new Chart(box("c5", "BBM per rig: total (L) & per meter (L/m)"), { data: { labels: Object.keys(br), datasets: [{ type: "bar", label: "BBM (L)", data: Object.values(br), backgroundColor: "#2F6FB0" }, { type: "line", label: "L/m", data: Object.keys(br).map((r) => (mr[r] ? +(br[r] / mr[r]).toFixed(2) : null)), yAxisID: "y2", borderColor: "#C8281F" }] }, options: { scales: { y2: { position: "right", grid: { display: false } } } } });
+  const lq = by((cu ?? []).filter((c) => c.unit === "liter"), (c) => c.item, (c) => c.qty);
+  new Chart(box("c6", "Pemakaian cairan (liter) per jenis"), { type: "pie", data: { labels: Object.keys(lq).length ? Object.keys(lq) : ["(belum ada DDR)"], datasets: [{ data: Object.keys(lq).length ? Object.values(lq) : [1], backgroundColor: pal }] } });
+  const ed = [0, 2, 4, 6, 8, 10, 12, 15, 20, 30], lab = ed.slice(0, -1).map((e, i) => `${e}–${ed[i + 1]} m`);
+  new Chart(box("c7", "Histogram tebal zona per lubang"), { type: "bar", data: { labels: lab, datasets: [{ label: "Limonit", data: hist(holes.map((h) => Number(h.tebal_limonit)), ed), backgroundColor: "#E8892B" }, { label: "Saprolit", data: hist(holes.map((h) => Number(h.tebal_saprolit)), ed), backgroundColor: "#1E9E69" }] }, options: { scales: { y: { title: { display: true, text: "jumlah lubang" } } } } });
+  const nl = holes.reduce((s, h) => s + h.conto_limonit, 0), ns = holes.reduce((s, h) => s + h.conto_saprolit, 0), nt = holes.reduce((s, h) => s + h.jumlah_conto, 0);
+  new Chart(box("c8", "Jumlah conto per zona"), { type: "pie", data: { labels: ["Limonit", "Saprolit", "TP / batuan dasar"], datasets: [{ data: [nl, ns, nt - nl - ns], backgroundColor: ["#E8892B", "#1E9E69", "#7A8B83"] }] } });
+  const re = [0, 50, 70, 80, 90, 95, 100.01];
+  new Chart(box("c9", "Histogram recovery per lubang (%)"), { type: "bar", data: { labels: ["<50", "50–70", "70–80", "80–90", "90–95", "95–100"], datasets: [{ label: "lubang", data: hist(holes.map((h) => Number(h.recovery_pct)).filter(isFinite), re), backgroundColor: ["#C8281F", "#C8281F", "#E8892B", "#D4B12A", "#1E9E69", "#1E9E69"] }] } });
+  const avg = (k) => { const xs = holes.map((h) => Number(h[k])).filter((x) => isFinite(x) && x > 0); return xs.length ? +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(3) : null; };
+  new Chart(box("c10", "Rata-rata density kering per zona (t/m³)"), { type: "bar", data: { labels: ["Limonit", "Saprolit"], datasets: [{ label: "dry density", data: [avg("dry_density_limonit"), avg("dry_density_saprolit")], backgroundColor: ["#E8892B", "#1E9E69"] }] } });
+}
+function computeKPI(days, tm, cu, holes) {
+  const s = (xs, k) => xs.reduce((a, x) => a + (Number(x[k]) || 0), 0), pct = (a, b) => (b ? Math.round((100 * a) / b) + "%" : "-");
+  const m = s(days, "meter_bor"), jam = s(days, "jam_kerja_bor"), bbm = s(days, "bbm_liter"), activeDays = days.filter((d) => Number(d.meter_bor) > 0);
+  const tAll = s(tm, "menit"), tStb = s(tm.filter((x) => ["Standby", "Perbaikan"].includes(x.kegiatan)), "menit");
+  const p2hOk = activeDays.filter((d) => d.ada_p2h && !d.p2h_bermasalah).length, ddrOk = activeDays.filter((d) => d.n_ddr_ttd > 0).length;
+  const nC = s(holes, "jumlah_conto"), nBad = s(holes, "conto_bermasalah"), nFoto = s(holes, "conto_foto_lengkap");
+  const avgT = (k) => (holes.length ? (s(holes, k) / holes.length).toFixed(1) + " m" : "-");
+  return [
+    ["Total meter bor", m.toFixed(1) + " m"], ["Hari-rig aktif", String(activeDays.length)], ["Meter per hari-rig", activeDays.length ? (m / activeDays.length).toFixed(1) + " m" : "-"],
+    ["Produktivitas", jam ? (m / jam).toFixed(2) + " m/jam" : "-"], ["Standby + perbaikan", pct(tStb, tAll), tAll && tStb / tAll > 0.25 ? "!" : ""],
+    ["BBM total", bbm.toFixed(0) + " L"], ["BBM per meter", m ? (bbm / m).toFixed(2) + " L/m" : "-"], ["Oli total", s(days, "oli_liter").toFixed(1) + " L"],
+    ["Lubang berdata", String(holes.length)], ["Jumlah conto", String(nC)], ["Rata tebal limonit", avgT("tebal_limonit")], ["Rata tebal saprolit", avgT("tebal_saprolit")],
+    ["Kepatuhan P2H", pct(p2hOk, activeDays.length), activeDays.length && p2hOk < activeDays.length ? "!" : ""], ["DDR bertanda tangan", pct(ddrOk, activeDays.length), activeDays.length && ddrOk < activeDays.length ? "!" : ""],
+    ["Conto bermasalah (QC)", pct(nBad, nC), nBad ? "!" : ""], ["Foto core lengkap", pct(nFoto, nC), nC && nFoto < nC ? "!" : ""],
+  ];
 }
 
 // ---------- hapus (admin) dengan arsip ----------
@@ -578,6 +878,10 @@ const DATASETS = {
   progres: { t: "Progres harian bor", v: "v_drill_progress_daily", order: ["tanggal", "rig"], bh: "bhid", bad: ["chk_harian"] },
   aktivitas: { t: "Log aktivitas bor (foto bergeotag)", v: "v_drill_event_qc", order: ["captured_at"], bh: "bhid", bad: ["flags"] },
   p2h: { t: "P2H rig", v: "p2h_check", order: ["captured_at"], bh: null },
+  ddr: { t: "DDR", v: "v_ddr_list", order: ["report_date", "rig"], bh: "bhid" },
+  bbm: { t: "Pemakaian BBM, oli & barang", v: "v_consumable_use", order: ["report_date", "rig"], bh: "bhid" },
+  lubang: { t: "Ringkasan per lubang", v: "v_dash_hole", order: ["bhid"], bh: "bhid" },
+  kinerja: { t: "Kinerja rig harian", v: "v_dash_rig_day", order: ["tanggal", "rig"], bh: null },
   koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
   arsip: { t: "Arsip terhapus (admin)", v: "deleted_record", order: ["deleted_at"], bh: "bhid", admin: true },
 };
@@ -587,7 +891,7 @@ function dbQuery(d, f) {
   if (f.bh && d.bh) q = q.ilike(d.bh, `%${f.bh}%`);
   if (f.bad && d.bad && ["chk_harian", "flags"].includes(d.bad[0])) q = q.neq(d.bad[0], "");
   else if (f.bad && d.bad) q = q.or(d.bad.map((c) => `and(${c}.not.is.null,${c}.not.in.(${[...OKV].map((x) => `"${x}"`).join(",")}))`).join(","));
-  const desc = ["deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check"].includes(d.v);
+  const desc = ["deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "v_ddr_list", "v_consumable_use", "v_dash_rig_day"].includes(d.v);
   for (const o of d.order) q = q.order(o, { ascending: !desc });
   return q;
 }
@@ -642,11 +946,20 @@ async function dbView(v) {
     const f = read(); $("#info").textContent = "Menyiapkan Excel…";
     try {
       const X = await import("./vendor/xlsx.js"); const wb = X.utils.book_new();
-      for (const k of ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h"]) {
-        const rows = (await fetchAll(DATASETS[k], { ...f, bad: false })).map((r) => { const o = { ...r }; delete o.data; delete o.related; return o; });
+      const got = {};
+      for (const k of ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "bbm", "lubang", "kinerja"]) {
+        const rows = (await fetchAll(DATASETS[k], { ...f, bad: false })).map((r) => { const o = { ...r }; delete o.data; delete o.related; return o; }); got[k] = rows;
         X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), DATASETS[k].t.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
       }
-      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = "Excel diunduh (10 sheet).";
+      const { data: tmx } = await sb.from("v_dash_time").select("*");
+      const K = computeKPI(got.kinerja, tmx ?? [], got.bbm, got.lubang.filter((h) => h.jumlah_conto > 0));
+      const aoa = [["DASHBOARD RINGKASAN — TGEP", "", `dibuat ${new Date().toLocaleString("id-ID")}`], [], ["Indikator", "Nilai"], ...K.map(([a, b]) => [a, b]), [], ["Meter & BBM per rig", "Meter", "BBM (L)", "L/m", "Jam bor", "m/jam"]];
+      const rg = {}; for (const d of got.kinerja) { const r = (rg[d.rig] ??= { m: 0, b: 0, j: 0 }); r.m += +d.meter_bor || 0; r.b += +d.bbm_liter || 0; r.j += +d.jam_kerja_bor || 0; }
+      for (const [r, x] of Object.entries(rg)) aoa.push([r, +x.m.toFixed(2), +x.b.toFixed(1), x.m ? +(x.b / x.m).toFixed(2) : "", +x.j.toFixed(2), x.j ? +(x.m / x.j).toFixed(2) : ""]);
+      aoa.push([], ["Tebal zona per lubang", "Limonit (m)", "Saprolit (m)", "Conto", "Recovery %"]);
+      for (const h of got.lubang.filter((h) => h.jumlah_conto > 0)) aoa.push([h.bhid, h.tebal_limonit, h.tebal_saprolit, h.jumlah_conto, h.recovery_pct]);
+      X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Dashboard");
+      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = "Excel diunduh (15 sheet, sheet terakhir = Dashboard). Grafik lengkap ada di menu Dashboard dan di ekspor harian Google Drive.";
     } catch (e) { $("#info").textContent = e.message; }
   };
   show(st.page || 0);
