@@ -594,7 +594,11 @@ async function ttdView(v) {
     ${prof ? `<p>TTD terdaftar atas nama <b>${esc(prof.full_name)}</b>${prof.title ? " · " + esc(prof.title) : ""}.</p><img src="${img ?? ""}" alt="Tanda tangan terdaftar" style="max-width:320px;background:#fff;border:1px solid #ccc;border-radius:8px">` : `<p>Belum ada TTD. Daftarkan sekali, lalu setiap DDR cukup ditandatangani dengan <b>PIN</b> atau <b>kartu QR</b>.</p>`}
     <p class="muted">PIN dan kartu QR sama dengan tanda tangan Anda — jangan diberikan ke orang lain. Salah PIN 5 kali mengunci TTD 15 menit.</p></div>
     <div class="card"><h3>${prof ? "Ganti" : "Daftarkan"} tanda tangan</h3>
-    <label>Gambar tanda tangan di kotak ini</label>
+    <label>Cara membuat tanda tangan</label>
+    <div class="row"><button class="sec" id="mDraw" style="flex:1">Gambar sendiri</button><button class="sec" id="mFont" style="flex:1">Pilih gaya dari nama</button></div>
+    <div id="fontBox" style="display:none"><label>Nama pada tanda tangan</label><input id="sigName" value="${esc(prof?.full_name ?? me?.full_name ?? "")}">
+      <div id="styles" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"></div><p class="muted">Ketuk salah satu gaya. Hasilnya muncul di kotak bawah dan masih bisa ditambah coretan/paraf.</p></div>
+    <label>Tanda tangan (kotak putih)</label>
     <canvas id="pad" width="600" height="220" style="width:100%;max-width:600px;height:auto;background:#fff;border:2px dashed #9aa59f;border-radius:8px;touch-action:none"></canvas>
     <div class="row" style="margin-top:6px"><button class="sec" id="clr" style="flex:0">Hapus gambar</button></div>
     <label>Jabatan</label><input id="ttl" value="${esc(prof?.title ?? (me?.role === "driller" ? "Driller" : "Wellsite Geologist"))}">
@@ -607,6 +611,20 @@ async function ttdView(v) {
   pad.onpointermove = (e) => { if (!drawing) return; x.lineTo(...pt(e)); x.stroke(); inked = true; };
   pad.onpointerup = () => (drawing = false);
   $("#clr").onclick = () => { x.clearRect(0, 0, pad.width, pad.height); inked = false; };
+  const FONTS = [["Great Vibes", "great-vibes"], ["Dancing Script", "dancing-script"], ["Sacramento", "sacramento"], ["Allura", "allura"]];
+  const drawName = (cv, fam, name) => { const c = cv.getContext("2d"); c.clearRect(0, 0, cv.width, cv.height); c.fillStyle = "#0b2a6b"; c.textBaseline = "middle";
+    let size = cv.height * 0.55; c.font = `${size}px "${fam}"`; while (c.measureText(name).width > cv.width * 0.9 && size > 10) { size -= 2; c.font = `${size}px "${fam}"`; }
+    const w = c.measureText(name).width, x0 = (cv.width - w) / 2; c.fillText(name, x0, cv.height * 0.48);
+    c.strokeStyle = "#0b2a6b"; c.lineWidth = Math.max(1.5, cv.height / 110); c.beginPath(); c.moveTo(x0 + w * 0.1, cv.height * 0.78); c.quadraticCurveTo(x0 + w * 0.55, cv.height * 0.70, x0 + w * 1.02, cv.height * 0.80); c.stroke(); };
+  const showStyles = async () => {
+    const name = $("#sigName").value.trim(); if (!name) return ($("#styles").innerHTML = `<p class="err">Isi nama dulu.</p>`);
+    await Promise.all(FONTS.map(async ([fam, f]) => { if (![...document.fonts].some((ff) => ff.family === fam && ff.status === "loaded")) { const ff = new FontFace(fam, `url(./vendor/fonts/${f}-latin-400-normal.woff2)`); await ff.load(); document.fonts.add(ff); } }));
+    $("#styles").innerHTML = ""; FONTS.forEach(([fam]) => { const cv = document.createElement("canvas"); cv.width = 600; cv.height = 220; cv.style.cssText = "width:100%;background:#fff;border:2px solid #ccd;border-radius:8px;cursor:pointer";
+      drawName(cv, fam, name); cv.onclick = () => { drawName(pad, fam, name); x.lineWidth = 3; x.strokeStyle = "#0b2a6b"; inked = true; $("#styles").querySelectorAll("canvas").forEach((k) => (k.style.borderColor = "#ccd")); cv.style.borderColor = "#1E9E69"; }; $("#styles").appendChild(cv); });
+  };
+  $("#mDraw").onclick = () => { $("#fontBox").style.display = "none"; };
+  $("#mFont").onclick = () => { $("#fontBox").style.display = ""; showStyles().catch(() => ($("#styles").innerHTML = `<p class="err">Gaya huruf belum tersimpan di HP; buka sekali saat online.</p>`)); };
+  $("#sigName").oninput = () => showStyles().catch(() => {});
   $("#sv").onclick = async () => {
     const p1 = $("#p1").value, p2 = $("#p2").value;
     if (!online()) return ($("#e").textContent = "Pendaftaran TTD perlu sinyal internet.");

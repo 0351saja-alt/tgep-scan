@@ -1,5 +1,5 @@
-const CACHE = "tgep-scan-v8";
-const SHELL = ["./", "index.html", "daftar.html", "daftar.js", "app.js", "config.js", "vendor/supabase.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
+const CACHE = "tgep-scan-v9";
+const SHELL = ["./", "index.html", "daftar.html", "daftar.js", "vendor/fonts/great-vibes-latin-400-normal.woff2", "vendor/fonts/dancing-script-latin-400-normal.woff2", "vendor/fonts/sacramento-latin-400-normal.woff2", "vendor/fonts/allura-latin-400-normal.woff2", "app.js", "config.js", "vendor/supabase.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener("activate", (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener("fetch", (e) => {
