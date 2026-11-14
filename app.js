@@ -94,14 +94,16 @@ async function syncCore(it) {
 async function render() {
   if (!session) return loginView();
   if (!me) { app.innerHTML = `<div class="card"><h2>Akun belum terdaftar</h2><p>Email ${esc(session.user.email)} sudah bisa login, tetapi belum didaftarkan admin TGEP sebagai geologist/verifier/admin. Hubungi admin.</p><button class="sec" id="out">Keluar</button></div>`; $("#out").onclick = () => sb.auth.signOut(); return; }
-  const navs = [["foto", "Foto formulir"], ["core", "Foto core"], ...(["verifier", "admin"].includes(me?.role) ? [["review", "Periksa scan"], ["data", "Data & cek"]] : [])];
+  const navs = [["foto", "Foto formulir"], ["core", "Foto core"], ...(["verifier", "admin"].includes(me?.role) ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"]] : [])];
   app.innerHTML = `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div>`;
   app.querySelectorAll("nav [data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; render(); }));
   $("#out").onclick = async () => { await sb.auth.signOut(); };
+  document.querySelector("main").style.maxWidth = tab === "db" ? "none" : "";
   if (tab === "foto") return fotoView($("#v"));
   if (tab === "review") return reviewList($("#v"));
   if (tab === "data") return dataView($("#v"));
   if (tab === "core") return coreView($("#v"));
+  if (tab === "db") return dbView($("#v"));
 }
 
 function loginView() {
@@ -150,9 +152,10 @@ async function reviewList(v) {
   ${error ? `<p class="err">${esc(error.message)}</p>` : ""}
   <ul class="list">${(data ?? []).map((j) => `<li><span class="pill ${j.status}">${j.status}</span><span style="flex:1">${esc(FORMS[j.form_type])} · <b>${esc(j.bhid_hint)}</b>${j.page_no ? " hal. " + j.page_no : ""}<br>
    <span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca · ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span>
-   <button data-id="${j.id}" style="flex:0">Buka</button></li>`).join("") || `<li class="muted">Tidak ada yang perlu diperiksa.</li>`}</ul></div>`;
+   <button data-id="${j.id}" style="flex:0">Buka</button>${me?.role === "admin" ? `<button class="danger" data-del="${j.id}" style="flex:0">Hapus</button>` : ""}</li>`).join("") || `<li class="muted">Tidak ada yang perlu diperiksa.</li>`}</ul></div>`;
   $("#rf").onclick = () => reviewList(v);
   v.querySelectorAll("[data-id]").forEach((b) => (b.onclick = () => reviewDetail(v, b.dataset.id)));
+  v.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { if (await adminDelete("scan_job", b.dataset.del, "scan formulir")) reviewList(v); }));
 }
 
 async function reviewDetail(v, id) {
@@ -339,7 +342,7 @@ async function coverage(bh) {
    <h3>Foto (${ph?.length ?? 0})</h3><ul class="list">${(ph ?? []).map((p) => { const ok = p.reviewer_override ?? p.sop_ok;
      return `<li><span class="pill ${p.status === "CHECKED" ? (ok ? "APPROVED" : "REJECTED") : p.status}">${p.status === "CHECKED" ? (ok ? "SESUAI SOP" : "TIDAK SESUAI") : p.status}</span><span style="flex:1">${esc(p.file_name)}
        ${(p.sop_issues ?? []).length && !ok ? `<br><span class="err">${p.sop_issues.map(esc).join("<br>")}</span>` : ""}${p.error ? `<br><span class="err">${esc(p.error)}</span>` : ""}${p.review_note ? `<br><span class="muted">Catatan: ${esc(p.review_note)}</span>` : ""}</span>
-       <button class="sec" data-pv="${esc(p.preview_path)}" style="flex:0">Lihat</button>${isV && p.status === "CHECKED" ? `<button class="sec" data-ov="${p.id}" data-ok="${ok ? 0 : 1}" style="flex:0">${ok ? "Tandai tidak sesuai" : "Nyatakan sesuai"}</button>` : ""}${isV && p.status === "ERROR" ? `<button class="sec" data-re="${p.id}" style="flex:0">Cek ulang</button>` : ""}</li>`; }).join("") || `<li class="muted">Belum ada foto core.</li>`}</ul><div id="pvw"></div>`;
+       <button class="sec" data-pv="${esc(p.preview_path)}" style="flex:0">Lihat</button>${isV && p.status === "CHECKED" ? `<button class="sec" data-ov="${p.id}" data-ok="${ok ? 0 : 1}" style="flex:0">${ok ? "Tandai tidak sesuai" : "Nyatakan sesuai"}</button>` : ""}${isV && p.status === "ERROR" ? `<button class="sec" data-re="${p.id}" style="flex:0">Cek ulang</button>` : ""}${me?.role === "admin" ? `<button class="danger" data-delp="${p.id}" style="flex:0">Hapus</button>` : ""}</li>`; }).join("") || `<li class="muted">Belum ada foto core.</li>`}</ul><div id="pvw"></div>`;
   ko.querySelectorAll("[data-pv]").forEach((b) => (b.onclick = async () => {
     const { data } = await sb.storage.from("core-photos").createSignedUrl(b.dataset.pv, 600);
     $("#pvw").innerHTML = `<img src="${data?.signedUrl ?? ""}" alt="Foto core" style="width:100%;border-radius:8px">`; $("#pvw").scrollIntoView({ behavior: "smooth" });
@@ -349,7 +352,98 @@ async function coverage(bh) {
     const { error } = await sb.from("core_photo").update({ reviewer_override: b.dataset.ok === "1", review_note: note, reviewed_by: session.user.id }).eq("id", b.dataset.ov);
     if (error) alert(error.message); else coverage(bh);
   }));
+  ko.querySelectorAll("[data-delp]").forEach((b) => (b.onclick = async () => { if (await adminDelete("core_photo", b.dataset.delp, "foto core")) coverage(bh); }));
   ko.querySelectorAll("[data-re]").forEach((b) => (b.onclick = async () => { await sb.functions.invoke("check-core-photo", { body: { photo_id: b.dataset.re } }); coverage(bh); }));
+}
+
+// ---------- hapus (admin) dengan arsip ----------
+async function adminDelete(table, key, label) {
+  const reason = prompt(`Hapus ${label} ${key}?\nData dipindah ke arsip dan bisa dipulihkan admin.\n\nAlasan (wajib):`);
+  if (!reason) return false;
+  const { error } = await sb.rpc("admin_delete", { p_table: table, p_key: key, p_reason: reason });
+  if (error) { alert(error.message); return false; }
+  return true;
+}
+
+// ---------- halaman Database (laptop kantor) ----------
+const DATASETS = {
+  collar: { t: "Collar (lubang bor)", v: "v_dh_collar", order: ["holeid"], bh: "holeid", bad: ["chk_borehole"] },
+  survey: { t: "Survey", v: "v_dh_survey", order: ["holeid", "depth"], bh: "holeid" },
+  geology: { t: "Geologi + recovery", v: "v_dh_geology", order: ["holeid", "from"], bh: "holeid", bad: ["chk_interval", "chk_recovery", "chk_lith", "chk_code", "chk_zone"], del: ["sample", "sample_no"] },
+  density: { t: "Density", v: "v_dh_density", order: ["holeid", "from"], bh: "holeid", bad: ["chk_density", "chk_arch"] },
+  assay: { t: "Assay (hasil lab)", v: "v_dh_assay", order: ["holeid", "from"], bh: "holeid" },
+  qaqc: { t: "QAQC (blank, CRM, duplikat)", v: "v_dh_qaqc", order: ["dispatch_id", "seq_in_batch"], bh: null },
+  foto: { t: "Kelengkapan foto core", v: "v_sample_photo", order: ["bhid", "depth_from"], bh: "bhid", bad: ["chk_foto_utuh", "chk_foto_belah"] },
+  koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
+  arsip: { t: "Arsip terhapus (admin)", v: "deleted_record", order: ["deleted_at"], bh: "bhid", admin: true },
+};
+const OKV = new Set(["OK", "OK-SW", "BELUM OVEN", "MENUNGGU CEK"]);
+function dbQuery(d, f) {
+  let q = sb.from(d.v).select("*", { count: "exact" });
+  if (f.bh && d.bh) q = q.ilike(d.bh, `%${f.bh}%`);
+  if (f.bad && d.bad) q = q.or(d.bad.map((c) => `and(${c}.not.is.null,${c}.not.in.(${[...OKV].map((x) => `"${x}"`).join(",")}))`).join(","));
+  for (const o of d.order) q = q.order(o, { ascending: d.v === "deleted_record" || d.v === "sample_edit_log" ? false : true });
+  return q;
+}
+async function fetchAll(d, f) {
+  const out = []; for (let i = 0; ; i += 1000) { const { data, error } = await dbQuery(d, f).range(i, i + 999); if (error) throw error; out.push(...data); if (data.length < 1000) return out; }
+}
+async function dbView(v) {
+  const keys = Object.keys(DATASETS).filter((k) => !DATASETS[k].admin || me?.role === "admin");
+  const st = JSON.parse(sessionStorage.getItem("dbst") || '{"ds":"collar","bh":"","bad":false,"page":0}');
+  v.innerHTML = `<div class="card"><h2>Database TGEP</h2>
+   <p class="muted">Data yang sama dengan aplikasi lapangan, dalam format data bor standar (Collar · Survey · Geology · Density · Assay). Unduhan bisa dibuka di Excel, Leapfrog, Micromine, Surpac, Datamine, QGIS.</p>
+   <div class="row" style="flex-wrap:wrap;align-items:flex-end">
+    <div><label>Tabel</label><select id="ds">${keys.map((k) => `<option value="${k}" ${st.ds === k ? "selected" : ""}>${DATASETS[k].t}</option>`).join("")}</select></div>
+    <div><label>BHID (sebagian)</label><input id="fb" value="${esc(st.bh)}" placeholder="mis. TGE00"></div>
+    <div style="flex:0;white-space:nowrap"><label><input type="checkbox" id="fbad" ${st.bad ? "checked" : ""} style="width:auto"> hanya yang bermasalah</label></div>
+    <button id="go" style="flex:0">Tampilkan</button>
+    <button class="sec" id="xl" style="flex:0">Unduh Excel (semua tabel)</button>
+    <button class="sec" id="csv" style="flex:0">Unduh CSV tabel ini</button>
+   </div><div id="info" class="muted" style="margin-top:8px"></div></div>
+   <div class="card"><div id="tb"></div><div class="row" style="margin-top:8px"><button class="sec" id="pv" style="flex:0">← Sebelumnya</button><button class="sec" id="nx" style="flex:0">Berikutnya →</button></div></div>`;
+  const read = () => ({ ds: $("#ds").value, bh: $("#fb").value.trim().toUpperCase(), bad: $("#fbad").checked, page: st.page });
+  const show = async (page = 0) => {
+    const f = read(); f.page = page; sessionStorage.setItem("dbst", JSON.stringify(f)); st.page = page;
+    const d = DATASETS[f.ds]; $("#tb").innerHTML = `<p class="muted">Memuat…</p>`;
+    const { data, count, error } = await dbQuery(d, f).range(page * 200, page * 200 + 199);
+    if (error) return ($("#tb").innerHTML = `<p class="err">${esc(error.message)}</p>`);
+    $("#info").textContent = `${count ?? 0} baris · halaman ${page + 1} dari ${Math.max(1, Math.ceil((count ?? 0) / 200))}`;
+    $("#pv").disabled = page === 0; $("#nx").disabled = (page + 1) * 200 >= (count ?? 0);
+    if (!data?.length) return ($("#tb").innerHTML = `<p class="muted">Tidak ada data.</p>`);
+    const cols = Object.keys(data[0]).filter((c) => !["data", "related"].includes(c));
+    const canDel = me?.role === "admin" && d.del, canRes = me?.role === "admin" && f.ds === "arsip";
+    const cell = (c, x) => { const s = x !== null && typeof x === "object" ? JSON.stringify(x) : x; const bad = c.startsWith("chk_") && x && !OKV.has(x); return `<td style="padding:4px 7px;white-space:nowrap;${bad ? "background:#F6C9C3" : ""}">${esc(s)}</td>`; };
+    $("#tb").innerHTML = `<div class="tw"><table><tr>${canDel || canRes ? "<th></th>" : ""}${cols.map((c) => `<th style="padding:4px 7px">${esc(c)}</th>`).join("")}</tr>
+      ${data.map((r) => `<tr>${canDel ? `<td><button class="danger" data-k="${esc(r[d.del[1]])}" style="padding:2px 8px">Hapus</button></td>` : ""}${canRes ? `<td>${r.restored_at ? "dipulihkan" : `<button class="sec" data-r="${r.id}" style="padding:2px 8px">Pulihkan</button>`}</td>` : ""}${cols.map((c) => cell(c, r[c])).join("")}</tr>`).join("")}</table></div>`;
+    $("#tb").querySelectorAll("[data-k]").forEach((b) => (b.onclick = async () => { if (await adminDelete(d.del[0], b.dataset.k, "conto")) show(page); }));
+    $("#tb").querySelectorAll("[data-r]").forEach((b) => (b.onclick = async () => { const { error } = await sb.rpc("admin_restore", { p_id: Number(b.dataset.r) }); if (error) alert(error.message); else show(page); }));
+  };
+  $("#go").onclick = () => show(0); $("#pv").onclick = () => show(st.page - 1); $("#nx").onclick = () => show(st.page + 1);
+  $("#ds").onchange = () => show(0);
+  const tag = () => { const f = read(); return `${f.bh ? f.bh + "_" : ""}${new Date().toISOString().slice(0, 10)}`; };
+  $("#csv").onclick = async () => {
+    const f = read(), d = DATASETS[f.ds]; $("#info").textContent = "Menyiapkan CSV…";
+    try { const rows = await fetchAll(d, f); if (!rows.length) return ($("#info").textContent = "Tidak ada data.");
+      const cols = Object.keys(rows[0]).filter((c) => !["data", "related"].includes(c));
+      const q = (x) => { if (x === null || x === undefined) return ""; const s = typeof x === "object" ? JSON.stringify(x) : String(x); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      const csv = "\ufeff" + [cols.join(","), ...rows.map((r) => cols.map((c) => q(r[c])).join(","))].join("\r\n");
+      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: `TGEP_${f.ds}_${tag()}.csv` }); a.click();
+      $("#info").textContent = `CSV ${rows.length} baris diunduh (pemisah koma, desimal titik — format standar untuk software).`;
+    } catch (e) { $("#info").textContent = e.message; }
+  };
+  $("#xl").onclick = async () => {
+    const f = read(); $("#info").textContent = "Menyiapkan Excel…";
+    try {
+      const X = await import("./vendor/xlsx.js"); const wb = X.utils.book_new();
+      for (const k of ["collar", "survey", "geology", "density", "assay", "qaqc", "foto"]) {
+        const rows = (await fetchAll(DATASETS[k], { ...f, bad: false })).map((r) => { const o = { ...r }; delete o.data; delete o.related; return o; });
+        X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), DATASETS[k].t.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
+      }
+      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = "Excel diunduh (7 sheet).";
+    } catch (e) { $("#info").textContent = e.message; }
+  };
+  show(st.page || 0);
 }
 
 // ---------- koreksi data tersimpan ----------
