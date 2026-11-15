@@ -44,7 +44,23 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+const APP_VERSION = "2026-11-15.1";
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").then((reg) => {
+    const cek = () => reg.update().catch(() => {});
+    document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && navigator.onLine && cek());
+    setInterval(() => navigator.onLine && cek(), 30 * 60e3);
+  });
+  let hadCtrl = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadCtrl) { hadCtrl = true; return; }
+    if (document.getElementById("updBar")) return;
+    const b = document.createElement("div"); b.id = "updBar";
+    b.style.cssText = "position:fixed;left:8px;right:8px;bottom:8px;z-index:50;background:#12251E;color:#fff;padding:12px 14px;border-radius:12px;display:flex;gap:10px;align-items:center;box-shadow:0 4px 14px rgba(0,0,0,.3)";
+    b.innerHTML = `<span style="flex:1">Versi baru aplikasi sudah tersedia. Data yang belum terkirim tetap aman di HP.</span><button style="flex:0;white-space:nowrap">Muat ulang</button>`;
+    b.querySelector("button").onclick = () => location.reload(); document.body.appendChild(b);
+  });
+}
 
 // ---------- foto: perkecil sebelum disimpan ----------
 async function shrink(file, max = 2400) {
@@ -65,10 +81,11 @@ async function sync() {
       if (it.kind === "core") { await syncCore(it); continue; }
       if (it.kind === "event" || it.kind === "p2h") { await syncProg(it); continue; }
       if (it.kind === "ddr") { await syncDDR(it); continue; }
+      if (it.kind === "arsip") { await syncArsip(it); continue; }
       const path = `${session.user.id}/${it.client_uuid}.jpg`;
       const up = await sb.storage.from("scan-photos").upload(path, it.blob, { contentType: "image/jpeg", upsert: false });
       if (up.error && !/exists|Duplicate/i.test(up.error.message)) { it.error = up.error.message; await qPut(it); continue; }
-      const ins = await sb.from("scan_job").upsert({ client_uuid: it.client_uuid, form_type: it.form_type, bhid_hint: it.bhid, photo_path: path, captured_at: it.captured_at },
+      const ins = await sb.from("scan_job").upsert({ client_uuid: it.client_uuid, form_type: it.form_type, bhid_hint: it.bhid, photo_path: path, captured_at: it.captured_at, sumber: it.sumber ?? null, file_name: it.file_name ?? null },
         { onConflict: "client_uuid", ignoreDuplicates: true });
       if (ins.error) { it.error = ins.error.message; await qPut(it); continue; }
       const { data: job } = await sb.from("scan_job").select("id").eq("client_uuid", it.client_uuid).single();
@@ -104,11 +121,11 @@ async function render() {
     return;
   }
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = [["prog", "Progres bor"], ["ddr", "DDR"], ...(staff ? [["foto", "Foto formulir"], ["core", "Foto core"]] : []),
+  const navs = [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
     ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = "prog";
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
-  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div>`;
+  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div><p class="muted" style="text-align:center;font-size:12px;margin:18px 0">TGEP Scan Drill Log · versi ${APP_VERSION}</p>`;
   app.querySelectorAll("nav [data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; localStorage.setItem("tab", tab); render(); }));
   $("#out").onclick = async () => { if (!confirm("Keluar dari akun? Foto di antrean tetap tersimpan di HP.")) return; localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); session = null; await sb.auth.signOut().catch(() => {}); render(); };
   if (me?.role === "admin" && navigator.onLine && !session.offline) sb.from("registration_request").select("user_id", { count: "exact", head: true }).eq("status", "PENDING")
@@ -141,33 +158,91 @@ function loginView() {
   };
 }
 
+const ARSIP = { DDR: "DDR kertas", P2H: "P2H kertas", DRILL_LOG_LAMA: "Drill log lama", SURVEY: "Survey / koordinat", LAINNYA: "Formulir lain" };
+async function pdfToJpegs(file, onProg) {
+  const pdfjs = await import("./vendor/pdf.min.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", location.href).href;
+  const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise, out = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    onProg?.(i, doc.numPages);
+    const pg = await doc.getPage(i), v1 = pg.getViewport({ scale: 1 }), sc = Math.min(4, 2400 / Math.max(v1.width, v1.height));
+    const vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+    const cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, cv.width, cv.height);
+    await pg.render({ canvasContext: cx, viewport: vp }).promise;
+    out.push(await new Promise((r) => cv.toBlob(r, "image/jpeg", 0.88)));
+  }
+  return out;
+}
 async function fotoView(v) {
-  const lastB = localStorage.getItem("bhid") || "";
-  const queue = (await qAll()).filter((x) => !x.kind);
-  v.innerHTML = `<div class="card"><h2>Foto formulir lapangan</h2>
-   <label>BHID lubang bor</label><input id="bh" value="${esc(lastB)}" placeholder="mis. TGE0012" autocapitalize="characters">
-   <p class="muted">Letakkan formulir di permukaan datar, cahaya merata, keempat kotak hitam di sudut harus masuk foto.</p>
-   <div class="big">${Object.entries({ SHEET: FORMS.SHEET }).map(([k, t]) => `<button data-f="${k}">${t}<small>Ambil foto atau pilih dari galeri</small></button>`).join("")}</div>
-   <input id="file" type="file" accept="image/*" capture="environment" class="hide"><div id="e" class="err"></div></div>
+  const staff = isStaff(), last = JSON.parse(localStorage.getItem("fotoLast") || "{}");
+  const queue = (await qAll()).filter((x) => !x.kind || x.kind === "arsip");
+  const jenisOpt = (staff ? `<option value="SHEET">F-BOR — formulir lapangan 1 lembar (dibaca otomatis)</option>` : "") + Object.entries(ARSIP).map(([k, t]) => `<option value="${k}">${t} (arsip foto, tidak dibaca otomatis)</option>`).join("");
+  v.innerHTML = `<div class="card"><h2>Foto / unggah formulir</h2>
+   <label>Ini formulir apa? *</label><select id="jn">${jenisOpt}</select>
+   <div class="row"><div><label>BHID <span id="bhReq">*</span></label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" placeholder="mis. RJDH010" autocapitalize="characters"></div><div><label>Rig</label><input id="rg" value="${esc(localStorage.getItem("rig") || "")}" autocapitalize="characters"></div></div>
+   <div class="row" id="tglRow"><div><label>Tanggal formulir</label><input id="tg" type="date" value="${todayWIB()}"></div><div><label>Shift</label><select id="sh"><option value="">—</option><option value="PAGI">Day</option><option value="MALAM">Night</option></select></div></div>
+   <label>Keterangan</label><input id="kt" placeholder="mis. DDR Rig 04 shift malam, hal. 1–2" value="">
+   <p class="muted" id="tip"></p>
+   <div class="big"><button id="bCam">📷 Ambil foto<small>kamera HP</small></button><button id="bUp" class="sec">🖼️ Unggah foto / PDF<small>galeri, CamScanner, file scan (bisa banyak)</small></button></div>
+   <input id="fCam" type="file" accept="image/*" capture="environment" class="hide"><input id="fUp" type="file" accept="image/*,application/pdf,.pdf" multiple class="hide">
+   <div id="pr" class="muted"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean di HP (${queue.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
-   <ul class="list">${queue.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(FORMS[x.form_type])} · ${esc(x.bhid)}<br><span class="muted">${new Date(x.captured_at).toLocaleString("id-ID")}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong — semua foto sudah terkirim.</li>`}</ul></div>
-   <div class="card"><h3>Scan saya</h3><ul class="list" id="mine"><li class="muted">Memuat…</li></ul></div>`;
-  let form = null;
-  v.querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => {
-    if (!$("#bh").value.trim()) return ($("#e").textContent = "Isi BHID dulu.");
-    form = b.dataset.f; $("#file").click();
-  }));
-  $("#file").onchange = async (ev) => {
-    const f = ev.target.files[0]; if (!f) return;
-    const bhid = $("#bh").value.trim().toUpperCase(); localStorage.setItem("bhid", bhid);
-    await qPut({ client_uuid: crypto.randomUUID(), form_type: form, bhid, blob: await shrink(f), captured_at: new Date().toISOString() });
-    ev.target.value = ""; render(); sync();
+   <ul class="list">${queue.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "arsip" ? ARSIP[x.row.jenis] : FORMS[x.form_type])} · ${esc(x.bhid || x.row?.bhid || x.row?.rig || "")}${(x.page_no || x.row?.halaman) ? ` · hal. ${x.page_no || x.row.halaman}` : ""} · ${esc(x.sumber || x.row?.sumber || "")}<br><span class="muted">${new Date(x.captured_at || x.row.captured_at).toLocaleString("id-ID")}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong — semua foto sudah terkirim.</li>`}</ul></div>
+   <div class="card"><h3>Kiriman saya</h3><ul class="list" id="mine"><li class="muted">Memuat…</li></ul></div>`;
+  if (last.jenis && $("#jn").querySelector(`option[value="${last.jenis}"]`)) $("#jn").value = last.jenis;
+  const upd = () => { const j = $("#jn").value, fb = j === "SHEET"; $("#bhReq").style.display = fb ? "" : "none"; $("#tglRow").style.display = fb ? "none" : "";
+    $("#tip").textContent = fb ? "F-BOR: letakkan di permukaan datar, cahaya merata, keempat kotak hitam di sudut harus masuk. Hasil CamScanner boleh, asal tidak terpotong dan tidak tertutup tanda air." : "Arsip: foto/scan disimpan apa adanya sebagai bukti; isinya tidak dibaca otomatis. DDR tetap wajib diisi di menu DDR."; };
+  $("#jn").onchange = upd; upd();
+  const meta = () => {
+    const jenis = $("#jn").value, bhid = $("#bh").value.trim().toUpperCase(), rig = $("#rg").value.trim().toUpperCase();
+    if (jenis === "SHEET" && !bhid) { $("#e").textContent = "Isi BHID dulu."; return null; }
+    if (jenis !== "SHEET" && !bhid && !rig) { $("#e").textContent = "Isi BHID atau Rig supaya arsip bisa dicari."; return null; }
+    $("#e").textContent = ""; if (bhid) localStorage.setItem("bhid", bhid); if (rig) localStorage.setItem("rig", rig); localStorage.setItem("fotoLast", JSON.stringify({ jenis }));
+    return { jenis, bhid, rig, tanggal: $("#tg").value || null, shift: $("#sh").value || null, keterangan: $("#kt").value.trim() || null };
+  };
+  const put = async (m, blob, sumber, file_name, halaman, jumlah, captured_at) => {
+    const client_uuid = crypto.randomUUID();
+    if (m.jenis === "SHEET") return qPut({ client_uuid, form_type: "SHEET", bhid: m.bhid, blob, captured_at, sumber, file_name });
+    return qPut({ kind: "arsip", client_uuid, blob, row: { client_uuid, jenis: m.jenis, rig: m.rig || null, bhid: m.bhid || null, tanggal: m.tanggal, shift: m.shift, keterangan: m.keterangan, halaman, jumlah_halaman: jumlah, sumber, file_name, captured_at } });
+  };
+  $("#bCam").onclick = () => meta() && $("#fCam").click();
+  $("#bUp").onclick = () => meta() && $("#fUp").click();
+  $("#fCam").onchange = async (ev) => { const f = ev.target.files[0], m = meta(); if (!f || !m) return; await put(m, await shrink(f), "KAMERA", null, null, null, new Date().toISOString()); ev.target.value = ""; render(); sync(); };
+  $("#fUp").onchange = async (ev) => {
+    const fs = [...ev.target.files], m = meta(); if (!fs.length || !m) return;
+    let n = 0;
+    try {
+      for (const f of fs) {
+        if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
+          const pages = await pdfToJpegs(f, (i, t) => ($("#pr").textContent = `Membaca ${f.name}: halaman ${i}/${t}…`));
+          for (let i = 0; i < pages.length; i++) { await put(m, pages[i], "PDF", f.name, i + 1, pages.length, new Date(f.lastModified || Date.now()).toISOString()); n++; }
+        } else { $("#pr").textContent = `Menyiapkan ${f.name}…`; await put(m, await shrink(f), "GALERI", f.name, fs.length > 1 ? fs.indexOf(f) + 1 : null, fs.length > 1 ? fs.length : null, new Date(f.lastModified || Date.now()).toISOString()); n++; }
+      }
+    } catch (e) { $("#e").textContent = "Gagal membaca file: " + e.message; }
+    ev.target.value = ""; $("#pr").textContent = `${n} halaman masuk antrean.`; setTimeout(() => { render(); sync(); }, 600);
   };
   $("#sy").onclick = sync;
-  if (navigator.onLine) {
-    const { data } = await sb.from("scan_job").select("id,form_type,bhid_hint,status,created_at,n_disagree,n_rule_flags,error").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30);
-    $("#mine").innerHTML = (data ?? []).map((j) => `<li><span class="pill ${j.status}">${j.status}</span><span>${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}<br><span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca, ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span></li>`).join("") || `<li class="muted">Belum ada.</li>`;
+  if (online()) {
+    const [{ data: a }, { data: b }] = await Promise.all([
+      staff ? sb.from("scan_job").select("id,form_type,bhid_hint,status,created_at,n_disagree,n_rule_flags,error,sumber").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30) : Promise.resolve({ data: [] }),
+      sb.from("form_photo").select("jenis,rig,bhid,tanggal,halaman,jumlah_halaman,sumber,created_at").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30)]);
+    const items = [...(a ?? []).map((j) => ({ t: j.created_at, h: `<li><span class="pill ${j.status}">${j.status}</span><span>${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}${j.sumber ? " · " + j.sumber : ""}<br><span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca, ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span></li>` })),
+      ...(b ?? []).map((p) => ({ t: p.created_at, h: `<li><span class="pill APPROVED">ARSIP</span><span>${esc(ARSIP[p.jenis])} · ${esc(p.bhid || p.rig || "")}${p.halaman ? ` · hal. ${p.halaman}/${p.jumlah_halaman ?? "?"}` : ""} · ${p.sumber}<br><span class="muted">${p.tanggal ?? ""} · dikirim ${new Date(p.created_at).toLocaleString("id-ID")}</span></span></li>` }))].sort((x, y) => (x.t < y.t ? 1 : -1));
+    $("#mine").innerHTML = items.map((x) => x.h).join("") || `<li class="muted">Belum ada.</li>`;
   } else $("#mine").innerHTML = `<li class="muted">Offline — daftar akan tampil saat ada sinyal.</li>`;
+}
+async function syncArsip(it) {
+  const path = `${session.user.id}/arsip/${it.client_uuid}.jpg`;
+  const up = await sb.storage.from("scan-photos").upload(path, it.blob, { contentType: "image/jpeg", upsert: false });
+  if (up.error && !/exists|Duplicate/i.test(up.error.message)) { it.error = up.error.message; return qPut(it); }
+  const ins = await sb.from("form_photo").upsert({ ...it.row, photo_path: path }, { onConflict: "client_uuid", ignoreDuplicates: true });
+  if (ins.error) { it.error = ins.error.message; return qPut(it); }
+  await qDel(it.client_uuid);
+}
+async function arsipList(box) {
+  const { data } = await sb.from("form_photo").select("id,jenis,rig,bhid,tanggal,shift,keterangan,halaman,jumlah_halaman,sumber,file_name,photo_path,created_at").order("created_at", { ascending: false }).limit(50);
+  box.innerHTML = `<h3>Foto formulir arsip (50 terakhir)</h3><ul class="list">${(data ?? []).map((p) => `<li style="flex-wrap:wrap"><span style="flex:1"><b>${esc(ARSIP[p.jenis])}</b> · ${esc(p.bhid || "")} ${esc(p.rig || "")} ${p.tanggal ?? ""} ${p.shift ? (p.shift === "PAGI" ? "Day" : "Night") : ""}${p.halaman ? ` · hal. ${p.halaman}/${p.jumlah_halaman ?? "?"}` : ""}<br><span class="muted">${p.sumber}${p.file_name ? " · " + esc(p.file_name) : ""}${p.keterangan ? " · " + esc(p.keterangan) : ""}</span></span><button class="sec" data-ar="${esc(p.photo_path)}" style="flex:0">Lihat</button></li>`).join("") || `<li class="muted">Belum ada.</li>`}</ul>`;
+  box.querySelectorAll("[data-ar]").forEach((b) => (b.onclick = async () => { const { data: u } = await sb.storage.from("scan-photos").createSignedUrl(b.dataset.ar, 3600); if (u?.signedUrl) window.open(u.signedUrl, "_blank"); }));
 }
 
 async function reviewList(v) {
@@ -178,6 +253,7 @@ async function reviewList(v) {
   <ul class="list">${(data ?? []).map((j) => `<li><span class="pill ${j.status}">${j.status}</span><span style="flex:1">${esc(FORMS[j.form_type])} · <b>${esc(j.bhid_hint)}</b>${j.page_no ? " hal. " + j.page_no : ""}<br>
    <span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca · ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span>
    <button data-id="${j.id}" style="flex:0">Buka</button>${me?.role === "admin" ? `<button class="danger" data-del="${j.id}" style="flex:0">Hapus</button>` : ""}</li>`).join("") || `<li class="muted">Tidak ada yang perlu diperiksa.</li>`}</ul></div>`;
+  const ab = document.createElement("div"); ab.className = "card"; ab.innerHTML = "<p class='muted'>Memuat arsip…</p>"; v.appendChild(ab); arsipList(ab);
   $("#rf").onclick = () => reviewList(v);
   v.querySelectorAll("[data-id]").forEach((b) => (b.onclick = () => reviewDetail(v, b.dataset.id)));
   v.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { if (await adminDelete("scan_job", b.dataset.del, "scan formulir")) reviewList(v); }));
@@ -1018,6 +1094,7 @@ const DATASETS = {
   bbm: { t: "Pemakaian BBM, oli & barang", v: "v_consumable_use", order: ["report_date", "rig"], bh: "bhid" },
   lubang: { t: "Ringkasan per lubang", v: "v_dash_hole", order: ["bhid"], bh: "bhid" },
   kinerja: { t: "Kinerja rig harian", v: "v_dash_rig_day", order: ["tanggal", "rig"], bh: null },
+  arsip: { t: "Foto formulir arsip", v: "form_photo", order: ["created_at"], bh: "bhid" },
   koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
   arsip: { t: "Arsip terhapus (admin)", v: "deleted_record", order: ["deleted_at"], bh: "bhid", admin: true },
 };
@@ -1027,7 +1104,7 @@ function dbQuery(d, f) {
   if (f.bh && d.bh) q = q.ilike(d.bh, `%${f.bh}%`);
   if (f.bad && d.bad && ["chk_harian", "flags"].includes(d.bad[0])) q = q.neq(d.bad[0], "");
   else if (f.bad && d.bad) q = q.or(d.bad.map((c) => `and(${c}.not.is.null,${c}.not.in.(${[...OKV].map((x) => `"${x}"`).join(",")}))`).join(","));
-  const desc = ["deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "v_ddr_list", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day"].includes(d.v);
+  const desc = ["deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "form_photo", "v_ddr_list", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day"].includes(d.v);
   for (const o of d.order) q = q.order(o, { ascending: !desc });
   return q;
 }
