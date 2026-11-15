@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-15.3";
+const APP_VERSION = "2026-11-15.4";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1030,8 +1030,8 @@ async function rekapView(v) {
   const tgl = sessionStorage.getItem("rekapTgl") || todayWIB();
   v.innerHTML = `<div class="card"><h2>Rekap & pelacakan operator</h2>
     <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div><button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button></div>
-    <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core dan F-BOR, pada hari rig yang ditugaskan beroperasi. Penugasan rig diatur admin di bagian bawah.</p></div>
-    <div id="rs" class="card">Memuat…</div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rp" class="card"></div>` : ""}`;
+    <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. F-BOR/logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.</p></div>
+    <div id="rs" class="card">Memuat…</div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rp" class="card"></div>` : ""}`;
   $("#rgo").onclick = () => { sessionStorage.setItem("rekapTgl", $("#rt").value); rekapView(v); };
   if (!online()) return ($("#rs").textContent = "Rekap perlu sinyal internet.");
   const from14 = new Date(Date.parse(tgl) - 13 * 864e5).toISOString().slice(0, 10);
@@ -1040,19 +1040,20 @@ async function rekapView(v) {
   const day = (all ?? []).filter((r) => r.tanggal === tgl).sort((a, b) => ST_ORD.indexOf(a.status) - ST_ORD.indexOf(b.status) || (a.nama ?? "").localeCompare(b.nama ?? ""));
   const cnt = (s) => day.filter((r) => r.status === s).length, hp = day.filter((r) => r.antrean > 0);
   $("#rs").innerHTML = `<h3>${tgl}</h3><div class="row" style="flex-wrap:wrap;gap:6px">${["LENGKAP", "SEBAGIAN", "BELUM", "TANPA PENUGASAN"].map((s) => `<span class="pill" style="background:${ST_COL[s]};color:#12251E">${s}: ${cnt(s)}</span>`).join("")}<span class="pill" style="background:${hp.length ? "#F6C9C3" : "#C8EBD4"};color:#12251E">Data tertahan di HP: ${hp.length} orang</span></div>
-    <div class="tw" style="margin-top:8px"><table><tr><th>Operator</th><th>Peran / rig</th><th>Status</th><th>Belum dikirim</th><th>P2H</th><th>Progres</th><th>DDR/TTD</th><th>F-BOR</th><th>Core</th><th>Arsip</th><th>Kirim terakhir</th><th>HP</th><th></th></tr>
+    <div class="tw" style="margin-top:8px"><table><tr><th>Operator</th><th>Peran / rig</th><th>Status</th><th>Belum dikirim</th><th>P2H</th><th>Progres</th><th>DDR/TTD</th><th>F-BOR</th><th>Core</th><th>Arsip</th><th>Logging terlambat (rig)</th><th>Kirim terakhir</th><th>HP</th><th></th></tr>
     ${day.map((r) => `<tr><td><b>${esc(r.nama ?? "-")}</b><br><span class="muted">${esc(r.perusahaan ?? "")}</span></td><td>${esc(r.peran)}<br>${esc(r.rig ?? "—")}</td>
       <td style="background:${ST_COL[r.status] ?? "#fff"}">${esc(r.status)}</td><td>${esc((r.kurang ?? []).join(", "))}</td>
-      <td>${r.p2h}</td><td>${r.progres}</td><td>${r.ddr_ttd}</td><td>${r.fbor}</td><td>${r.foto_core}</td><td>${r.arsip}</td><td>${r.terakhir ? fmtT(r.terakhir).slice(-8) : "-"}</td>
+      <td>${r.p2h}</td><td>${r.progres}</td><td>${r.ddr_ttd}</td><td>${r.fbor}</td><td>${r.foto_core}</td><td>${r.arsip}</td><td style="${r.peran === "geologist" && r.lubang_logging_terlambat ? "background:#F6C9C3" : ""}">${r.peran === "geologist" ? (r.lubang_logging_terlambat ? r.lubang_logging_terlambat + " lubang" : "0") : "-"}</td><td>${r.terakhir ? fmtT(r.terakhir).slice(-8) : "-"}</td>
       <td style="${r.antrean > 0 ? "background:#F6C9C3" : ""}">${r.antrean ? `<b>${r.antrean} antre</b> sejak ${ago(r.antrean_tertua)}<br>` : ""}online ${ago(r.last_seen)}${r.app_version && r.app_version !== APP_VERSION ? `<br><span class="err">versi lama ${esc(r.app_version)}</span>` : ""}</td>
-      <td><button class="sec" data-fd="${r.user_id}" data-nm="${esc(r.nama ?? "")}" style="flex:0">Folder</button></td></tr>`).join("") || `<tr><td colspan="13" class="muted">Belum ada operator (driller/geologist) yang disetujui.</td></tr>`}</table></div>`;
+      <td><button class="sec" data-fd="${r.user_id}" data-nm="${esc(r.nama ?? "")}" style="flex:0">Folder</button></td></tr>`).join("") || `<tr><td colspan="14" class="muted">Belum ada operator (driller/geologist) yang disetujui.</td></tr>`}</table></div>`;
+  logLubang($("#rl"));
   const dates = [...Array(14)].map((_, i) => new Date(Date.parse(tgl) - (13 - i) * 864e5).toISOString().slice(0, 10)), ops = [...new Map((all ?? []).map((r) => [r.user_id, r])).values()];
   const sym = { LENGKAP: "✓", SEBAGIAN: "½", BELUM: "✗", "RIG TIDAK BEROPERASI": "–", "TANPA PENUGASAN": "?", "ADA KIRIMAN (TANPA PENUGASAN)": "+", "TIDAK WAJIB": "–" };
   $("#rm").innerHTML = `<h3>14 hari terakhir</h3><p class="muted">✓ lengkap · ½ sebagian · ✗ belum · – rig tidak beroperasi / tidak wajib · ? tanpa penugasan</p><div class="tw"><table><tr><th>Operator</th>${dates.map((d) => `<th>${d.slice(8)}/${d.slice(5, 7)}</th>`).join("")}<th>% lengkap</th></tr>
     ${ops.map((o) => { const rs = dates.map((d) => (all ?? []).find((r) => r.user_id === o.user_id && r.tanggal === d)); const wajib = rs.filter((r) => r && ["LENGKAP", "SEBAGIAN", "BELUM"].includes(r.status)); const ok = wajib.filter((r) => r.status === "LENGKAP").length;
       return `<tr><td>${esc(o.nama ?? "-")} <span class="muted">${esc(o.rig ?? "")}</span></td>${rs.map((r) => `<td style="text-align:center;background:${ST_COL[r?.status] ?? "#fff"}" title="${esc(r?.status ?? "")}${r?.kurang?.length ? " — " + esc(r.kurang.join(", ")) : ""}">${sym[r?.status] ?? ""}</td>`).join("")}<td><b>${wajib.length ? Math.round((100 * ok) / wajib.length) + "%" : "-"}</b></td></tr>`; }).join("")}</table></div>`;
   v.querySelectorAll("[data-fd]").forEach((b) => (b.onclick = () => folderView(v, b.dataset.fd, b.dataset.nm)));
-  $("#rcsv").onclick = () => { const cols = ["tanggal", "nama", "perusahaan", "peran", "rig", "status", "kurang", "p2h", "progres", "ddr_ttd", "fbor", "foto_core", "arsip", "total_kiriman", "terakhir", "antrean", "last_seen", "app_version"];
+  $("#rcsv").onclick = () => { const cols = ["tanggal", "nama", "perusahaan", "peran", "rig", "status", "kurang", "p2h", "progres", "ddr_ttd", "fbor", "foto_core", "arsip", "lubang_logging_terlambat", "total_kiriman", "terakhir", "antrean", "last_seen", "app_version"];
     const csv = [cols.join(","), ...(all ?? []).map((r) => cols.map((c) => `"${String(Array.isArray(r[c]) ? r[c].join("; ") : r[c] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })); a.download = `TGEP_Rekap_Operator_${from14}_${tgl}.csv`; a.click(); };
   if (me?.role === "admin") {
@@ -1069,6 +1070,15 @@ async function rekapView(v) {
       if (error) return alert(error.message); b.textContent = "Tersimpan ✓"; setTimeout(() => rekapView(v), 500);
     }));
   }
+}
+async function logLubang(box) {
+  const [{ data, error }, { data: gp }] = await Promise.all([sb.from("v_logging_lubang").select("*").neq("status", "BELUM ADA RUN").order("terakhir_bor", { ascending: false }).limit(200), sb.from("qc_param").select("value").eq("name", "LOGGING_GRACE_DAYS").maybeSingle()]);
+  if (error) return (box.innerHTML = `<p class="err">${esc(error.message)}</p>`);
+  const g = gp?.value ?? 2, col = { LENGKAP: "#C8EBD4", "MENUNGGU PERIKSA": "#FFE58A", "DALAM TENGGAT": "#E3E8E1", TERLAMBAT: "#F6C9C3" }, rows = (data ?? []).sort((a, b) => ["TERLAMBAT", "MENUNGGU PERIKSA", "DALAM TENGGAT", "LENGKAP"].indexOf(a.status) - ["TERLAMBAT", "MENUNGGU PERIKSA", "DALAM TENGGAT", "LENGKAP"].indexOf(b.status));
+  box.innerHTML = `<h3>Logging F-BOR per lubang</h3><p class="muted">Kedalaman bor (dari foto RUN) dibandingkan kedalaman yang sudah masuk database. F-BOR boleh dikirim per hari atau per lubang; baru <b>TERLAMBAT</b> bila interval yang sudah dibor belum di-logging lebih dari <b>${g} hari</b>.${me?.role === "admin" ? ` Ubah tenggat: <input id="gd" type="number" min="0" max="30" value="${g}" style="width:70px"> hari <button class="sec" id="gs" style="width:auto">Simpan</button>` : ""}</p>
+    <div class="tw"><table><tr><th>BHID</th><th>Rig</th><th>Bor (m)</th><th>Logging (m)</th><th>Belum (m)</th><th>Conto</th><th>Scan menunggu</th><th>Belum sejak</th><th>Status</th></tr>
+    ${rows.map((l) => `<tr><td><b>${esc(l.bhid)}</b></td><td>${esc(l.rig ?? "")}</td><td>${l.kedalaman_bor ?? ""}</td><td>${l.kedalaman_logging}</td><td>${l.belum_logging_m}</td><td>${l.jumlah_conto}</td><td>${l.scan_menunggu}</td><td>${l.belum_sejak ? `${fmtT(l.belum_sejak).slice(0, 10)} (${l.umur_hari} hr)` : "-"}</td><td style="background:${col[l.status] ?? "#fff"}">${esc(l.status)}</td></tr>`).join("") || `<tr><td colspan="9" class="muted">Belum ada lubang dengan foto RUN.</td></tr>`}</table></div>`;
+  box.querySelector("#gs")?.addEventListener("click", async () => { const { error: e } = await sb.from("qc_param").update({ value: Number(box.querySelector("#gd").value) }).eq("name", "LOGGING_GRACE_DAYS"); if (e) return alert(e.message); logLubang(box); });
 }
 async function folderView(v, uid, nama) {
   const to = sessionStorage.getItem("rekapTgl") || todayWIB(), from = new Date(Date.parse(to) - 29 * 864e5).toISOString().slice(0, 10);
