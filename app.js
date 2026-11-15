@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-15.11";
+const APP_VERSION = "2026-11-15.12";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -123,7 +123,7 @@ async function render() {
   if (online() && !sessionStorage.getItem("tugasLoaded")) { sessionStorage.setItem("tugasLoaded", "1"); await loadTugas(); loadLanjutan(); }
   if (me?.role !== "client" && !myTugas && !sessionStorage.getItem("proyekOk") && JSON.parse(localStorage.getItem("projects") || "[]").length) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
+  const navs = R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["fk", "Foto & scan"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
     ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
@@ -149,6 +149,7 @@ async function render() {
   if (tab === "rekap") return rekapView($("#v"));
   if (tab === "dash") return dashView($("#v"));
   if (tab === "klien") return klienView($("#v"));
+  if (tab === "fk") return fotoKlienView($("#v"));
 }
 
 function loginView() {
@@ -664,8 +665,8 @@ async function usersView(v) {
     <p class="muted">Pendaftar tidak bisa melihat atau mengirim data sampai disetujui. Periksa nama, perusahaan dan nomor HP sebelum menyetujui — email belum diverifikasi otomatis.</p></div>
     <div class="card"><h3>Menunggu persetujuan (${pend.length})</h3><ul class="list">${pend.map((r) => row(r, true)).join("") || `<li class="muted">Tidak ada.</li>`}</ul></div>
     <div class="card"><h3>Semua pengguna</h3><ul class="list">${rest.map((r) => row(r, false)).join("") || `<li class="muted">-</li>`}</ul></div>
-    <div class="card" id="akc"></div>`;
-  aksesKlien($("#akc"));
+    <div class="card" id="akc"></div><div class="card" id="rlc"></div>`;
+  aksesKlien($("#akc")); rilisAdmin($("#rlc"));
   $("#cp").onclick = async () => { await navigator.clipboard?.writeText(link); $("#cp").textContent = "Tersalin"; };
   const act = async (uid, role) => {
     const note = role ? prompt("Catatan (opsional), mis. 'kru RIG-03':") ?? "" : prompt("Alasan menolak / menonaktifkan (wajib):");
@@ -1179,7 +1180,7 @@ async function laporanProgres(st) {
 async function aksesKlien(box) {
   const [{ data: us }, { data: pn }, { data: pj }] = await Promise.all([sb.from("app_user").select("user_id,full_name,company,email").eq("role", "client").order("full_name"), sb.from("penugasan").select("*"), sb.from("project").select("code,nama,rigs").order("nama")]);
   const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p]));
-  box.innerHTML = `<h3>Akses akun client</h3><p class="muted">Client bisa melihat dan mengunduh Dashboard, Laporan rig dan Database data rig (DDR, progres, BBM, P2H, aktivitas) serta Dokumen yang dibuka untuk peran client. Centang “boleh lihat & unduh data geologi” agar client juga mendapat collar, survey, geologi, density, assay dan QAQC <b>yang sudah disetujui</b> untuk lubang proyeknya. Foto core, scan formulir dan data operator tidak pernah dibuka untuk client. Pilih proyek: client melihat semua rig proyek itu; isi rig bila hanya satu rig.</p>
+  box.innerHTML = `<h3>Akses akun client</h3><p class="muted">Client bisa melihat dan mengunduh Dashboard, Laporan rig dan Database data rig (DDR, progres, BBM, P2H, aktivitas) serta Dokumen yang dibuka untuk peran client. Centang “boleh lihat & unduh data geologi” agar client juga mendapat collar, survey, geologi, density, assay dan QAQC <b>yang sudah disetujui</b> untuk lubang proyeknya. Foto core dan scan formulir hanya terbuka setelah Anda merilisnya (kotak di bawah); data operator tidak pernah dibuka untuk client. Pilih proyek: client melihat semua rig proyek itu; isi rig bila hanya satu rig.</p>
     <ul class="list">${(us ?? []).map((u) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:200px"><b>${esc(u.full_name ?? "")}</b><br><span class="muted">${esc(u.company ?? "")} · ${esc(u.email ?? "")}</span></span>
       <select data-kp="${u.user_id}" style="max-width:220px"><option value="">— belum ada akses —</option>${(pj ?? []).map((p) => `<option value="${esc(p.code)}" ${P[u.user_id]?.project === p.code ? "selected" : ""}>${esc(p.nama)} (${esc((p.rigs ?? []).join(", ") || "tanpa rig")})</option>`).join("")}</select>
       <input data-kr="${u.user_id}" value="${esc(P[u.user_id]?.rig ?? "")}" placeholder="rig (opsional)" style="max-width:130px" autocapitalize="characters">
@@ -1233,6 +1234,60 @@ async function klienView(v) {
       X.writeFile(wb, `TGEP_Rekap_Rig_${st.rig || "semua"}_${st.from}_${st.to}.xlsx`); $("#info").textContent = "Excel diunduh (7 sheet).";
     } catch (e) { $("#info").textContent = e.message; }
   };
+}
+
+// ---------- Rilis foto core / scan ke client (admin) ----------
+const RILIS = { FOTO_CORE: "Foto core", SCAN_LOGGING: "Scan Form Logging (disetujui)", FORM_ARSIP: "Foto formulir arsip" };
+async function rilisAdmin(box) {
+  box.innerHTML = `<h3>Rilis foto & scan ke client</h3><p class="muted">Memuat…</p>`;
+  const [{ data: cp }, { data: sj }, { data: fp }, { data: rl }] = await Promise.all([
+    sb.from("core_photo").select("bhid,ditolak").limit(20000), sb.from("scan_job").select("bhid_hint,status").eq("status", "APPROVED").limit(20000),
+    sb.from("form_photo").select("bhid").not("bhid", "is", null).limit(20000), sb.from("client_release").select("*")]);
+  const cnt = {}; const add = (b, j) => { if (!b) return; (cnt[b] ??= { FOTO_CORE: 0, SCAN_LOGGING: 0, FORM_ARSIP: 0 })[j]++; };
+  (cp ?? []).filter((c) => !c.ditolak).forEach((c) => add(c.bhid, "FOTO_CORE")); (sj ?? []).forEach((s) => add(s.bhid_hint, "SCAN_LOGGING")); (fp ?? []).forEach((f) => add(f.bhid, "FORM_ARSIP"));
+  const R = new Set((rl ?? []).map((r) => `${r.bhid}|${r.jenis}`)), bh = Object.keys(cnt).sort();
+  box.innerHTML = `<h3>Rilis foto & scan ke client</h3><p class="muted">Foto core, scan Form Logging dan foto formulir <b>tidak terlihat</b> oleh client sampai Anda merilisnya per lubang. Setelah dicentang, client yang proyeknya mencakup lubang itu langsung bisa melihat & mengunduh di menu “Foto & scan”. Hilangkan centang untuk menarik kembali. Foto core yang ditolak dan scan yang belum disetujui tidak pernah ikut terkirim.</p>
+    <div class="row" style="flex-wrap:wrap"><input id="rf" placeholder="cari BHID" style="max-width:180px"></div>
+    <div class="tw"><table id="rt"><tr><th>BHID</th>${Object.values(RILIS).map((t) => `<th>${t}</th>`).join("")}</tr>
+    ${bh.map((b) => `<tr data-b="${esc(b)}"><td><b>${esc(b)}</b></td>${Object.keys(RILIS).map((j) => `<td>${cnt[b][j] ? `<label style="white-space:nowrap"><input type="checkbox" data-rb="${esc(b)}" data-rj="${j}" ${R.has(`${b}|${j}`) ? "checked" : ""} style="width:auto"> rilis (${cnt[b][j]})</label>` : '<span class="muted">-</span>'}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="4" class="muted">Belum ada foto core / scan.</td></tr>`}</table></div>`;
+  box.querySelector("#rf").oninput = (e) => box.querySelectorAll("#rt tr[data-b]").forEach((tr) => (tr.style.display = tr.dataset.b.toUpperCase().includes(e.target.value.toUpperCase()) ? "" : "none"));
+  box.querySelectorAll("[data-rb]").forEach((c) => (c.onchange = async () => {
+    const q = c.checked ? sb.from("client_release").upsert({ bhid: c.dataset.rb, jenis: c.dataset.rj, released_at: new Date().toISOString() }, { onConflict: "bhid,jenis" })
+      : sb.from("client_release").delete().eq("bhid", c.dataset.rb).eq("jenis", c.dataset.rj);
+    const { error } = await q; if (error) { alert(error.message); c.checked = !c.checked; }
+  }));
+}
+// ---------- Foto & scan (client) ----------
+async function fotoKlienView(v) {
+  v.innerHTML = `<div class="card"><h2>Foto & scan</h2><p class="muted">Foto core dan scan formulir yang sudah dirilis admin TGEP untuk lubang proyek Anda.</p><div id="fk">Memuat…</div></div><div id="fd"></div>`;
+  if (!online()) return ($("#fk").textContent = "Perlu sinyal internet.");
+  const { data, error } = await sb.from("client_release").select("*").order("bhid");
+  if (error) return ($("#fk").innerHTML = `<p class="err">${esc(error.message)}</p>`);
+  const by = {}; for (const r of data ?? []) (by[r.bhid] ??= []).push(r);
+  $("#fk").innerHTML = Object.keys(by).length ? `<ul class="list">${Object.entries(by).map(([b, rs]) => `<li style="flex-wrap:wrap"><span style="flex:1"><b>${esc(b)}</b><br><span class="muted">${rs.map((r) => RILIS[r.jenis]).join(" · ")} · dirilis ${fmtT(rs.map((r) => r.released_at).sort().at(-1)).slice(0, 10)}</span></span><button class="sec" data-fb="${esc(b)}" style="flex:0">Buka</button></li>`).join("")}</ul>` : `<p>Belum ada foto/scan yang dirilis untuk Anda.</p>`;
+  $("#fk").querySelectorAll("[data-fb]").forEach((b) => (b.onclick = () => fotoKlienBH(b.dataset.fb, by[b.dataset.fb].map((r) => r.jenis))));
+}
+async function fotoKlienBH(bhid, jenis) {
+  const box = $("#fd"); box.innerHTML = `<div class="card">Memuat ${esc(bhid)}…</div>`;
+  const sign = async (bucket, paths) => { const ps = paths.filter(Boolean); if (!ps.length) return {}; const { data } = await sb.storage.from(bucket).createSignedUrls(ps, 3600); return Object.fromEntries((data ?? []).map((d) => [d.path, d.signedUrl])); };
+  let html = "";
+  if (jenis.includes("FOTO_CORE")) {
+    const { data: cp } = await sb.from("core_photo").select("box_no,depth_from,depth_to,photo_type,photo_path,preview_path,captured_at").eq("bhid", bhid).order("photo_type").order("box_no");
+    const U = await sign("core-photos", (cp ?? []).flatMap((c) => [c.preview_path, c.photo_path]));
+    html += `<div class="card"><h3>Foto core ${esc(bhid)} (${(cp ?? []).length})</h3><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">${(cp ?? []).map((c) => `<div><a href="${U[c.photo_path] ?? U[c.preview_path] ?? "#"}" target="_blank" download><img src="${U[c.preview_path] ?? U[c.photo_path] ?? ""}" style="width:100%;border-radius:6px;border:1px solid #ccc"></a><small>${c.photo_type === "UTUH" ? "Core utuh" : c.photo_type === "BELAH" ? "Core belah" : esc(c.photo_type ?? "")} · kotak ${c.box_no ?? "-"} · ${c.depth_from ?? ""}–${c.depth_to ?? ""} m</small></div>`).join("")}</div><p class="muted">Ketuk foto untuk membuka ukuran asli lalu simpan.</p></div>`;
+  }
+  if (jenis.includes("SCAN_LOGGING")) {
+    const { data: sj } = await sb.from("scan_job").select("page_no,photo_path,captured_at,reviewed_at").eq("bhid_hint", bhid).eq("status", "APPROVED").order("page_no");
+    const U = await sign("scan-photos", (sj ?? []).map((s) => s.photo_path));
+    html += `<div class="card"><h3>Scan Form Logging ${esc(bhid)} (${(sj ?? []).length})</h3><ul class="list">${(sj ?? []).map((s) => `<li><span style="flex:1">Halaman ${s.page_no ?? "-"} · difoto ${fmtT(s.captured_at).slice(0, 16)} · disetujui ${s.reviewed_at ? fmtT(s.reviewed_at).slice(0, 10) : "-"}</span><a class="sec" href="${U[s.photo_path] ?? "#"}" target="_blank" download style="flex:0">Buka / unduh</a></li>`).join("")}</ul></div>`;
+  }
+  if (jenis.includes("FORM_ARSIP")) {
+    const { data: fp } = await sb.from("form_photo").select("jenis,tanggal,shift,halaman,jumlah_halaman,photo_path,keterangan").eq("bhid", bhid).order("tanggal");
+    const U = await sign("scan-photos", (fp ?? []).map((f) => f.photo_path));
+    html += `<div class="card"><h3>Foto formulir arsip ${esc(bhid)} (${(fp ?? []).length})</h3><ul class="list">${(fp ?? []).map((f) => `<li><span style="flex:1">${esc(ARSIP[f.jenis] ?? f.jenis)} · ${esc(f.tanggal ?? "")} ${esc(f.shift ?? "")} · hal ${f.halaman ?? 1}/${f.jumlah_halaman ?? 1}${f.keterangan ? " · " + esc(f.keterangan) : ""}</span><a class="sec" href="${U[f.photo_path] ?? "#"}" target="_blank" download style="flex:0">Buka / unduh</a></li>`).join("")}</ul></div>`;
+  }
+  box.innerHTML = html || `<div class="card">Tidak ada file.</div>`;
+  box.scrollIntoView({ behavior: "smooth" });
 }
 
 // ---------- Proyek & rig, lanjutan isian, pemberitahuan penolakan ----------
