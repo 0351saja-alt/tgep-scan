@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-15.8";
+const APP_VERSION = "2026-11-15.9";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -979,9 +979,10 @@ async function dashView(v) {
   const st = JSON.parse(sessionStorage.getItem("dash") || "null") ?? { from, to, rig: "" };
   v.innerHTML = `<div class="card"><h2>Dashboard progres & evaluasi</h2>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
-    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0">Cetak / PDF</button></div></div>
+    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0">Cetak / PDF</button><button id="lap" style="flex:0;white-space:nowrap">Laporan progres</button></div></div>
     <div id="kpi" class="card"></div><div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px"></div>`;
   $("#pr").onclick = () => print();
+  $("#lap").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value });
   $("#go").onclick = () => { sessionStorage.setItem("filterProyek", $("#fproj").value); sessionStorage.setItem("dash", JSON.stringify({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() })); dashView(v); };
   if (!online()) return ($("#kpi").textContent = "Dashboard perlu sinyal internet.");
   const pf = await proyekFilter();
@@ -1048,6 +1049,117 @@ function computeKPI(days, tm, cu, holes) {
   ];
 }
 
+// ---------- Laporan progres (ringkasan periode; cetak/PDF + Excel) ----------
+async function laporanProgres(st) {
+  if (!online()) return alert("Laporan perlu sinyal internet.");
+  const w = window.open("", "_blank"); if (!w) return alert("Izinkan pop-up untuk membuat laporan.");
+  w.document.write("<p style='font-family:Arial'>Menyusun laporan progres…</p>");
+  try {
+    sessionStorage.setItem("filterProyek", st.proj || "");
+    const pf = await proyekFilter();
+    const { data: pjAll } = await sb.from("project").select("*");
+    const PJ = (pjAll ?? []).find((p) => p.code === st.proj) ?? null;
+    const R = (q) => (st.rig ? q.eq("rig", st.rig) : pf ? q.in("rig", pf.rigs.length ? pf.rigs : ["-"]) : q);
+    const inB = (q, col) => (pf ? q.in(col, pf.bhids.length ? pf.bhids : ["-"]) : q);
+    const [{ data: rd }, { data: rdAll }, { data: tm }, { data: hl }, { data: lg }, { data: kp0 }, { data: pn }, { data: dd }, { data: qc }] = await Promise.all([
+      R(sb.from("v_dash_rig_day").select("*").gte("tanggal", st.from).lte("tanggal", st.to)).order("tanggal"),
+      R(sb.from("v_dash_rig_day").select("tanggal,meter_bor").lte("tanggal", st.to)),
+      R(sb.from("v_dash_time").select("*").gte("tanggal", st.from).lte("tanggal", st.to)),
+      inB(sb.from("v_dash_hole").select("*"), "bhid"),
+      R(sb.from("v_logging_lubang").select("*")),
+      R(sb.from("v_kepatuhan_harian").select("tanggal,user_id,nama,peran,rig,status,kurang").gte("tanggal", st.from).lte("tanggal", st.to)),
+      sb.from("penugasan").select("user_id,project"),
+      R(sb.from("ddr").select("bhid,rig,report_date,target_m,total_depth_m").lte("report_date", st.to)).order("report_date"),
+      inB(sb.from("v_sample_qc").select("bhid,chk_density,status"), "bhid"),
+    ]);
+    const days = rd ?? [], holesAll = hl ?? [], holes = holesAll.filter((h) => h.jumlah_conto > 0);
+    const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p.project]));
+    const kp = (kp0 ?? []).filter((r) => !st.proj || P[r.user_id] === st.proj);
+    const n = (x) => Number(x) || 0, f1 = (x) => (x == null || x === "" ? "" : Number(x).toFixed(1)), f2 = (x) => (x == null || x === "" ? "" : Number(x).toFixed(2));
+    const pct = (a, b) => (b ? Math.round((100 * a) / b) : null), P_ = (x) => (x == null ? "-" : x + "%");
+    const sum = (xs, k) => xs.reduce((s, x) => s + n(x[k]), 0);
+    // target per lubang dari DDR terakhir
+    const TG = {}; for (const d of dd ?? []) if (d.bhid) TG[d.bhid] = { target: d.target_m ?? TG[d.bhid]?.target, td: d.total_depth_m ?? TG[d.bhid]?.td };
+    const LG = Object.fromEntries((lg ?? []).map((l) => [l.bhid, l])), HL = Object.fromEntries(holesAll.map((h) => [h.bhid, h]));
+    const bhids = [...new Set([...(lg ?? []).map((l) => l.bhid), ...holes.map((h) => h.bhid)])].filter((b) => !pf || pf.bhids.includes(b)).sort();
+    const holeRow = (b) => { const l = LG[b] ?? {}, h = HL[b] ?? {}, t = TG[b] ?? {}, bor = n(l.kedalaman_bor) || n(h.eoh), tgt = n(t.target);
+      const selesai = !!h.stop_date || (tgt > 0 && bor >= tgt - 0.05) || (n(t.td) > 0 && bor >= n(t.td) - 0.05);
+      return { b, rig: l.rig ?? "", mulai: (h.start_date ?? l.mulai ?? "").toString().slice(0, 10), akhir: (l.terakhir_bor ?? h.stop_date ?? "").toString().slice(0, 10), bor, tgt, logm: n(l.kedalaman_logging), conto: n(l.jumlah_conto ?? h.jumlah_conto), lstat: l.status ?? "-", tl: h.tebal_limonit, ts: h.tebal_saprolit, rec: h.recovery_pct, selesai }; };
+    const HR = bhids.map(holeRow), nSelesai = HR.filter((h) => h.selesai).length;
+    const mPer = sum(days, "meter_bor"), mCum = sum(rdAll ?? [], "meter_bor");
+    const K = computeKPI(days, tm ?? [], [], holes);
+    // per rig
+    const rigs = [...new Set(days.map((d) => d.rig))].sort();
+    const rigRows = rigs.map((r) => { const xs = days.filter((d) => d.rig === r), act = xs.filter((d) => n(d.meter_bor) > 0), m = sum(xs, "meter_bor"), j = sum(xs, "jam_kerja_bor"), b = sum(xs, "bbm_liter");
+      return [r, act.length, +m.toFixed(1), sum(xs, "jumlah_run"), j ? +(m / j).toFixed(2) : "", act.length ? +(m / act.length).toFixed(1) : "", +(sum(xs, "standby_menit") / 60).toFixed(1), +b.toFixed(0), m ? +(b / m).toFixed(2) : "",
+        P_(pct(act.filter((d) => d.ada_p2h && !d.p2h_bermasalah).length, act.length)), P_(pct(act.filter((d) => d.n_ddr_ttd > 0).length, act.length))]; });
+    // harian
+    const dates = [...new Set(days.map((d) => d.tanggal))].sort(); let cum = mCum - mPer;
+    const dayRows = dates.map((t) => { const m = days.filter((d) => d.tanggal === t).reduce((s, d) => s + n(d.meter_bor), 0); cum += m; return [t, days.filter((d) => d.tanggal === t && n(d.meter_bor) > 0).length, +m.toFixed(1), +cum.toFixed(1)]; });
+    // standby
+    const sb2 = {}; for (const x of (tm ?? []).filter((x) => ["Standby", "Perbaikan"].includes(x.kegiatan))) sb2[`${x.kegiatan}: ${x.alasan || "-"}`] = (sb2[`${x.kegiatan}: ${x.alasan || "-"}`] ?? 0) + n(x.menit);
+    const sbRows = Object.entries(sb2).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, m]) => [k, +(m / 60).toFixed(1)]);
+    // kepatuhan operator
+    const ops = [...new Map(kp.map((r) => [r.user_id, r])).values()];
+    const opRows = ops.map((o) => { const xs = kp.filter((r) => r.user_id === o.user_id && ["LENGKAP", "SEBAGIAN", "BELUM"].includes(r.status)), ok = xs.filter((r) => r.status === "LENGKAP").length;
+      const kr = {}; for (const r of xs) for (const k of r.kurang ?? []) kr[k] = (kr[k] ?? 0) + 1;
+      return [o.nama ?? "-", o.peran ?? "", o.rig ?? "", xs.length, ok, xs.filter((r) => r.status === "SEBAGIAN").length, xs.filter((r) => r.status === "BELUM").length, P_(pct(ok, xs.length)), Object.entries(kr).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, c]) => `${k} (${c})`).join(", ")]; })
+      .sort((a, b) => (parseInt(a[7]) || 0) - (parseInt(b[7]) || 0));
+    // QC & data
+    const nC = (qc ?? []).length, nLab = (qc ?? []).filter((x) => x.chk_density === "MENUNGGU LAB").length;
+    const lgc = (s) => HR.filter((h) => h.lstat === s).length;
+    const qcRows = [["Conto di database", nC], ["Conto bermasalah (QC)", sum(holes, "conto_bermasalah")], ["Conto foto core lengkap", sum(holes, "conto_foto_lengkap")], ["Density menunggu hasil lab", nLab],
+      ["Lubang: Form Logging lengkap", lgc("LENGKAP")], ["Lubang: logging dalam tenggat", lgc("DALAM TENGGAT")], ["Lubang: menunggu periksa", lgc("MENUNGGU PERIKSA")], ["Lubang: logging TERLAMBAT", lgc("TERLAMBAT")]];
+    // catatan otomatis
+    const kpiV = Object.fromEntries(K.map(([a, b, c]) => [a, { v: b, f: c }]));
+    const notes = [];
+    if (PJ?.target_meter) notes.push(`Realisasi kumulatif ${mCum.toFixed(1)} m dari target ${PJ.target_meter} m (${pct(mCum, PJ.target_meter)}%).`);
+    if (PJ?.target_lubang) notes.push(`Lubang selesai ${nSelesai} dari target ${PJ.target_lubang} lubang (${pct(nSelesai, PJ.target_lubang)}%).`);
+    for (const [k, x] of Object.entries(kpiV)) if (x.f === "!") notes.push(`Perlu perhatian — ${k}: ${x.v}.`);
+    if (lgc("TERLAMBAT")) notes.push(`${lgc("TERLAMBAT")} lubang Form Logging terlambat: ${HR.filter((h) => h.lstat === "TERLAMBAT").map((h) => h.b).join(", ")}.`);
+    const lowOp = opRows.filter((r) => r[3] && (parseInt(r[7]) || 0) < 80); if (lowOp.length) notes.push(`Operator dengan kepatuhan kirim < 80%: ${lowOp.map((r) => `${r[0]} (${r[7]})`).join(", ")}.`);
+    if (sbRows[0]) notes.push(`Penyebab standby/perbaikan terbesar: ${sbRows[0][0]} (${sbRows[0][1]} jam).`);
+    if (nLab) notes.push(`${nLab} conto density menunggu hasil laboratorium (berat kering oven).`);
+    if (!notes.length) notes.push("Tidak ada catatan khusus pada periode ini.");
+    // tabel
+    const T = {
+      ringkasan: [["Indikator", "Nilai"], ["Periode", `${st.from} s/d ${st.to}`], ["Proyek", PJ?.nama ?? "Semua proyek"], ["Rig", st.rig || "Semua rig"], ["Meter bor periode", mPer.toFixed(1) + " m"], ["Meter bor kumulatif", mCum.toFixed(1) + " m"],
+        ["Target meter proyek", PJ?.target_meter ? `${PJ.target_meter} m (${pct(mCum, PJ.target_meter)}%)` : "belum diisi admin"], ["Lubang selesai / dikerjakan", `${nSelesai} / ${HR.length}`], ["Target lubang proyek", PJ?.target_lubang ? `${PJ.target_lubang} (${pct(nSelesai, PJ.target_lubang)}%)` : "belum diisi admin"],
+        ...K.filter(([a]) => a !== "Total meter bor").map(([a, b]) => [a, b])],
+      rig: [["Rig", "Hari aktif", "Meter", "Run", "m/jam", "m/hari aktif", "Standby+perbaikan (jam)", "BBM (L)", "BBM (L/m)", "P2H", "DDR ber-TTD"], ...rigRows],
+      harian: [["Tanggal", "Rig aktif", "Meter", "Kumulatif proyek"], ...dayRows],
+      lubang: [["BHID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Logging (m)", "Conto", "Status logging", "Limonit (m)", "Saprolit (m)", "Recovery %", "Status lubang"],
+        ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", +f2(h.logm) || 0, h.conto, h.lstat, h.tl == null ? "" : +f1(h.tl), h.ts == null ? "" : +f1(h.ts), h.rec == null ? "" : Math.round(h.rec), h.selesai ? "SELESAI" : "BERJALAN"])],
+      standby: [["Penyebab", "Jam"], ...sbRows],
+      operator: [["Operator", "Peran", "Rig", "Hari wajib", "Lengkap", "Sebagian", "Belum", "% lengkap", "Kekurangan terbanyak"], ...opRows],
+      qc: [["Butir", "Jumlah"], ...qcRows],
+      catatan: [["Catatan otomatis"], ...notes.map((x) => [x])],
+    };
+    const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
+    for (const [k, nm] of [["ringkasan", "Ringkasan"], ["catatan", "Catatan"], ["rig", "Per rig"], ["harian", "Harian"], ["lubang", "Status lubang"], ["standby", "Standby"], ["operator", "Kepatuhan operator"], ["qc", "Data & QC"]])
+      X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(T[k]), nm);
+    const fname = `TGEP_Laporan_Progres_${st.proj || "semua"}_${st.from}_${st.to}.xlsx`;
+    window._lapDL = () => X.writeFile(wb, fname);
+    const tbl = (a, opt = {}) => `<table>${a.map((r, i) => `<tr>${r.map((c) => (i === 0 ? `<th>${esc(String(c))}</th>` : `<td${opt.col && /TERLAMBAT|BELUM\b/.test(String(c)) ? ' style="background:#F6C9C3"' : ""}>${esc(String(c ?? ""))}</td>`)).join("")}</tr>`).join("")}</table>`;
+    const mx = Math.max(1, ...dayRows.map((r) => r[2])), bw = dayRows.length ? Math.min(40, Math.max(4, Math.floor(680 / dayRows.length) - 2)) : 10;
+    const svg = dayRows.length ? `<svg width="720" height="170" style="border:1px solid #ddd;background:#fff">${dayRows.map((r, i) => { const h = (130 * r[2]) / mx; return `<rect x="${30 + i * (bw + 2)}" y="${145 - h}" width="${bw}" height="${h}" fill="#1E9E69"><title>${r[0]}: ${r[2]} m</title></rect>`; }).join("")}<text x="4" y="14" font-size="10">${mx.toFixed(0)} m</text><text x="30" y="162" font-size="10">${dayRows[0][0]}</text><text x="600" y="162" font-size="10">${dayRows.at(-1)[0]}</text></svg>` : "<p>Tidak ada data bor pada periode ini.</p>";
+    w.document.open(); w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Laporan Progres ${esc(PJ?.nama ?? "TGEP")} ${st.from}–${st.to}</title>
+    <style>body{font-family:Arial,sans-serif;font-size:11px;margin:18px;color:#111;max-width:1000px} h1{font-size:18px;margin:0} h2{font-size:13px;margin:14px 0 4px;color:#12251E;border-bottom:2px solid #1E9E69} table{border-collapse:collapse;width:100%;margin:4px 0} td,th{border:1px solid #999;padding:3px 5px;text-align:left} th{background:#e6efe9} ul{margin:4px 0 4px 18px} .bar{display:flex;gap:8px;margin-bottom:10px} .bar a,.bar button{padding:6px 10px;border:1px solid #1E9E69;border-radius:6px;background:#fff;color:#12251E;text-decoration:none;font:inherit;cursor:pointer} @media print{.bar{display:none} h2{break-after:avoid} tr{break-inside:avoid}}</style></head><body>
+    <div class="bar"><button onclick="print()">Cetak / simpan PDF</button><button onclick="try{opener._lapDL()}catch(e){alert('Buka ulang laporan dari menu Dashboard untuk mengunduh Excel.')}">Unduh Excel laporan</button></div>
+    <h1>LAPORAN PROGRES PEMBORAN & DATA EKSPLORASI</h1><div>PT Terra Grapindo Eco Prima · ${esc(PJ?.nama ?? "Semua proyek")} · periode <b>${st.from} s/d ${st.to}</b>${st.rig ? " · rig " + esc(st.rig) : ""}</div>
+    <h2>1. Ringkasan</h2>${tbl(T.ringkasan)}
+    <h2>2. Catatan & hal yang perlu ditindaklanjuti</h2><ul>${notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+    <h2>3. Progres per rig</h2>${tbl(T.rig)}
+    <h2>4. Meter bor harian</h2>${svg}${tbl(T.harian)}
+    <h2>5. Status lubang</h2>${tbl(T.lubang, { col: 1 })}<p style="color:#555">SELESAI = tanggal selesai terisi atau kedalaman ≥ target/total depth di DDR. Kedalaman dari foto RUN aplikasi; tebal zona dan recovery dari Form Logging yang sudah disetujui.</p>
+    <h2>6. Penyebab standby & perbaikan</h2>${sbRows.length ? tbl(T.standby) : "<p>Tidak ada standby/perbaikan tercatat.</p>"}
+    <h2>7. Kepatuhan pengiriman operator</h2>${opRows.length ? tbl(T.operator, { col: 1 }) : "<p>Belum ada data operator.</p>"}
+    <h2>8. Kelengkapan data & QC</h2>${tbl(T.qc)}
+    <table style="margin-top:24px"><tr><td style="height:70px;width:50%;vertical-align:top"><b>Disusun oleh</b><br><br><br>Nama / tanggal:</td><td style="vertical-align:top"><b>Diperiksa oleh</b><br><br><br>Nama / tanggal:</td></tr></table>
+    <small>Dibuat otomatis dari database aplikasi TGEP Scan Drill Log · ${new Date().toLocaleString("id-ID")} · oleh ${esc(me?.full_name ?? "")}. Angka mengikuti data yang sudah masuk server saat laporan dibuat.</small></body></html>`);
+    w.document.close();
+  } catch (e) { w.document.body.innerHTML = `<p style="font-family:Arial;color:#b00">Gagal menyusun laporan: ${esc(e.message)}</p>`; }
+}
 // ---------- Proyek & rig, lanjutan isian, pemberitahuan penolakan ----------
 let myTugas = JSON.parse(localStorage.getItem("myTugas") || "null");
 async function loadTugas() {
@@ -1107,14 +1219,15 @@ let tolakTimer = null;
 const jadwalCekTolak = () => { clearTimeout(tolakTimer); tolakTimer = setTimeout(() => cekPenolakan(true), 120e3); };
 async function proyekAdmin(box) {
   const { data: pj } = await sb.from("project").select("*").order("nama");
-  box.innerHTML = `<h3>Proyek & rig (admin)</h3><p class="muted">Pengguna memilih proyek & rig dari daftar ini saat pertama masuk. Rig ditulis dipisah koma.</p>
+  box.innerHTML = `<h3>Proyek & rig (admin)</h3><p class="muted">Pengguna memilih proyek & rig dari daftar ini saat pertama masuk. Rig ditulis dipisah koma. Target lubang & meter dipakai di Laporan progres (realisasi vs rencana).</p>
     <ul class="list">${(pj ?? []).map((p) => `<li style="flex-wrap:wrap"><span style="flex:1"><b>${esc(p.nama)}</b> <span class="muted">(${esc(p.code)})</span>${p.aktif ? "" : ' <span class="err">nonaktif</span>'}</span>
-      <input data-rg="${esc(p.code)}" value="${esc((p.rigs ?? []).join(", "))}" style="max-width:220px"><button class="sec" data-sv="${esc(p.code)}" style="flex:0">Simpan</button><button class="sec" data-ak="${esc(p.code)}" data-v="${p.aktif ? 0 : 1}" style="flex:0">${p.aktif ? "Nonaktifkan" : "Aktifkan"}</button></li>`).join("") || `<li class="muted">Belum ada proyek.</li>`}</ul>
+      <input data-rg="${esc(p.code)}" value="${esc((p.rigs ?? []).join(", "))}" style="max-width:220px"><input data-tl="${esc(p.code)}" type="number" value="${p.target_lubang ?? ""}" placeholder="target lubang" style="max-width:120px"><input data-tm="${esc(p.code)}" type="number" step="0.1" value="${p.target_meter ?? ""}" placeholder="target meter" style="max-width:120px"><button class="sec" data-sv="${esc(p.code)}" style="flex:0">Simpan</button><button class="sec" data-ak="${esc(p.code)}" data-v="${p.aktif ? 0 : 1}" style="flex:0">${p.aktif ? "Nonaktifkan" : "Aktifkan"}</button></li>`).join("") || `<li class="muted">Belum ada proyek.</li>`}</ul>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Kode</label><input id="pc" placeholder="mis. TGEP-BLK-A" autocapitalize="characters"></div><div><label>Nama proyek</label><input id="pn" placeholder="mis. Eksplorasi Blok A"></div><div><label>Rig (pisah koma)</label><input id="pr2" placeholder="RIG03, RIG04"></div><button id="pa" style="flex:0">Tambah</button></div><div id="pe" class="err"></div>`;
   const rigs = (s) => s.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
   box.querySelector("#pa").onclick = async () => { const code = box.querySelector("#pc").value.trim().toUpperCase(), nama = box.querySelector("#pn").value.trim(); if (!code || !nama) return (box.querySelector("#pe").textContent = "Isi kode dan nama.");
     const { error } = await sb.from("project").insert({ code, nama, rigs: rigs(box.querySelector("#pr2").value) }); if (error) return (box.querySelector("#pe").textContent = error.message); proyekAdmin(box); };
-  box.querySelectorAll("[data-sv]").forEach((b) => (b.onclick = async () => { const { error } = await sb.from("project").update({ rigs: rigs(box.querySelector(`[data-rg="${b.dataset.sv}"]`).value) }).eq("code", b.dataset.sv); if (error) return alert(error.message); b.textContent = "✓"; }));
+  box.querySelectorAll("[data-sv]").forEach((b) => (b.onclick = async () => { const nv = (s) => { const x = box.querySelector(s).value; return x === "" ? null : Number(x); };
+    const { error } = await sb.from("project").update({ rigs: rigs(box.querySelector(`[data-rg="${b.dataset.sv}"]`).value), target_lubang: nv(`[data-tl="${b.dataset.sv}"]`), target_meter: nv(`[data-tm="${b.dataset.sv}"]`) }).eq("code", b.dataset.sv); if (error) return alert(error.message); b.textContent = "✓"; }));
   box.querySelectorAll("[data-ak]").forEach((b) => (b.onclick = async () => { const { error } = await sb.from("project").update({ aktif: b.dataset.v === "1" }).eq("code", b.dataset.ak); if (error) return alert(error.message); proyekAdmin(box); }));
 }
 async function proyekFilter() {
@@ -1318,6 +1431,8 @@ const DATASETS = {
   lubang: { t: "Ringkasan per lubang", v: "v_dash_hole", order: ["bhid"], bh: "bhid" },
   kinerja: { t: "Kinerja rig harian", v: "v_dash_rig_day", order: ["tanggal", "rig"], bh: null },
   arsipfoto: { t: "Foto formulir arsip", v: "form_photo", order: ["created_at"], bh: "bhid" },
+  kepatuhan: { t: "Rekap operator harian", v: "v_kepatuhan_harian", order: ["tanggal", "nama"], bh: null },
+  logging: { t: "Status Form Logging per lubang", v: "v_logging_lubang", order: ["bhid"], bh: "bhid" },
   koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
   arsip: { t: "Arsip terhapus (admin)", v: "deleted_record", order: ["deleted_at"], bh: "bhid", admin: true },
 };
@@ -1325,10 +1440,10 @@ const OKV = new Set(["OK", "OK-SW", "MENUNGGU LAB", "MENUNGGU CEK"]);
 function dbQuery(d, f) {
   let q = sb.from(d.v).select("*", { count: "exact" });
   if (f.bh && d.bh) q = q.ilike(d.bh, `%${f.bh}%`);
-  if (f.proj) { if (d.bh) q = q.in(d.bh, f.proj.bhids.length ? f.proj.bhids : ["-"]); else if (["v_dash_rig_day", "p2h_check"].includes(d.v)) q = q.in("rig", f.proj.rigs.length ? f.proj.rigs : ["-"]); }
+  if (f.proj) { if (d.bh) q = q.in(d.bh, f.proj.bhids.length ? f.proj.bhids : ["-"]); else if (["v_dash_rig_day", "p2h_check", "v_kepatuhan_harian"].includes(d.v)) q = q.in("rig", f.proj.rigs.length ? f.proj.rigs : ["-"]); }
   if (f.bad && d.bad && ["chk_harian", "flags"].includes(d.bad[0])) q = q.neq(d.bad[0], "");
   else if (f.bad && d.bad) q = q.or(d.bad.map((c) => `and(${c}.not.is.null,${c}.not.in.(${[...OKV].map((x) => `"${x}"`).join(",")}))`).join(","));
-  const desc = ["deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "form_photo", "v_ddr_list", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day"].includes(d.v);
+  const desc = ["v_kepatuhan_harian", "deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "form_photo", "v_ddr_list", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day"].includes(d.v);
   for (const o of d.order) q = q.order(o, { ascending: !desc });
   return q;
 }
@@ -1388,8 +1503,8 @@ async function dbView(v) {
     try {
       const X = await import("./vendor/xlsx.js"); const wb = X.utils.book_new();
       const got = {};
-      for (const k of ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "jam", "bbm", "lubang", "kinerja"]) {
-        const rows = (await fetchAll(DATASETS[k], { ...f, bad: false })).map((r) => { const o = { ...r }; delete o.data; delete o.related; return o; }); got[k] = rows;
+      for (const k of ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "jam", "bbm", "lubang", "kinerja", "logging", "kepatuhan"]) {
+        const rows = (await fetchAll(DATASETS[k], { ...f, bad: false })).map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (Array.isArray(o[c])) o[c] = o[c].join("; "); return o; }); got[k] = rows;
         X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), DATASETS[k].t.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
       }
       const { data: tmx } = await sb.from("v_dash_time").select("*");
@@ -1400,7 +1515,7 @@ async function dbView(v) {
       aoa.push([], ["Tebal zona per lubang", "Limonit (m)", "Saprolit (m)", "Conto", "Recovery %"]);
       for (const h of got.lubang.filter((h) => h.jumlah_conto > 0)) aoa.push([h.bhid, h.tebal_limonit, h.tebal_saprolit, h.jumlah_conto, h.recovery_pct]);
       X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Dashboard");
-      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = "Excel diunduh (16 sheet, sheet terakhir = Dashboard). Grafik lengkap ada di menu Dashboard dan di ekspor harian Google Drive.";
+      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = "Excel diunduh (18 sheet termasuk Rekap operator & Status Form Logging; sheet terakhir = Dashboard). Grafik lengkap ada di menu Dashboard dan di ekspor harian Google Drive.";
     } catch (e) { $("#info").textContent = e.message; }
   };
   show(st.page || 0);
