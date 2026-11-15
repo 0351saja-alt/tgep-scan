@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-15.6";
+const APP_VERSION = "2026-11-15.7";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -360,8 +360,8 @@ async function dataView(v) {
     const { data, error } = await sb.from("v_sample_qc").select("sample_no,sample_id,depth_from,depth_to,core_length,core_recovery,geozone_id,geolithcode_id_1,d_wet_density,d_wet_arch,d_dry_density,d_dry_arch,d_arch_diff_pct,d_moisture_pct,d_wet_weight,chk_interval,chk_recovery,chk_lith,chk_code,chk_zone,chk_density,chk_arch,chk_weight").eq("bhid", bh).order("depth_from");
     if (error) return ($("#dout").innerHTML = `<p class="err">${esc(error.message)}</p>`);
     const cols = data?.length ? Object.keys(data[0]) : [];
-    const bad = (k, x) => k.startsWith("chk_") && x && !["OK", "OK-SW", "BELUM OVEN"].includes(x);
-    $("#dout").innerHTML = data?.length ? `<p class="muted">Ketuk satu baris untuk mengoreksi atau menambah data (mis. berat kering oven). Setiap koreksi wajib alasan dan tercatat.</p><div class="tw" style="margin-top:10px"><table><tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>${data.map((r) => `<tr data-s="${esc(r.sample_no)}" style="cursor:pointer">${cols.map((c) => `<td style="padding:5px 7px;${bad(c, r[c]) ? "background:#F6C9C3" : ""}">${esc(r[c])}</td>`).join("")}</tr>`).join("")}</table></div><div id="ed"></div>` : `<p class="muted">Belum ada data untuk ${esc(bh)}.</p>`;
+    const bad = (k, x) => k.startsWith("chk_") && x && !["OK", "OK-SW", "MENUNGGU LAB"].includes(x);
+    $("#dout").innerHTML = data?.length ? `<p class="muted">Ketuk satu baris untuk mengoreksi data yang salah baca/salah tulis. Setiap koreksi wajib alasan dan tercatat. Berat kering, dry density dan kadar air berasal dari hasil laboratorium.</p><div class="tw" style="margin-top:10px"><table><tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>${data.map((r) => `<tr data-s="${esc(r.sample_no)}" style="cursor:pointer">${cols.map((c) => `<td style="padding:5px 7px;${bad(c, r[c]) ? "background:#F6C9C3" : ""}">${esc(r[c])}</td>`).join("")}</tr>`).join("")}</table></div><div id="ed"></div>` : `<p class="muted">Belum ada data untuk ${esc(bh)}.</p>`;
     $("#dout").querySelectorAll("tr[data-s]").forEach((tr) => (tr.onclick = () => editSample(tr.dataset.s, () => $("#go").onclick())));
   };
 }
@@ -1321,7 +1321,7 @@ const DATASETS = {
   koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
   arsip: { t: "Arsip terhapus (admin)", v: "deleted_record", order: ["deleted_at"], bh: "bhid", admin: true },
 };
-const OKV = new Set(["OK", "OK-SW", "BELUM OVEN", "MENUNGGU CEK"]);
+const OKV = new Set(["OK", "OK-SW", "MENUNGGU LAB", "MENUNGGU CEK"]);
 function dbQuery(d, f) {
   let q = sb.from(d.v).select("*", { count: "exact" });
   if (f.bh && d.bh) q = q.ilike(d.bh, `%${f.bh}%`);
@@ -1407,7 +1407,7 @@ async function dbView(v) {
 }
 
 // ---------- koreksi data tersimpan ----------
-const EDITABLE = [...SHEET.filter(([k]) => k !== "seq" && k !== "geolithcode_prc_2"), ["geolithcode_prc_2", "%2"], ["d_wtr_volume_ml", "Vol1 ml"], ["d_dry_weight_gr", "Berat kering oven g"], ["recheck_weight_kg", "Timbang ulang kg"]];
+const EDITABLE = [...SHEET.filter(([k]) => k !== "seq" && k !== "geolithcode_prc_2"), ["geolithcode_prc_2", "%2"], ["d_wtr_volume_ml", "Vol1 ml"]];
 async function editSample(no, done) {
   const ed = $("#ed"); ed.innerHTML = `<p class="muted">Memuat ${esc(no)}…</p>`;
   const [{ data: s }, { data: log }] = await Promise.all([
@@ -1416,7 +1416,7 @@ async function editSample(no, done) {
   ]);
   ed.innerHTML = `<div class="card"><h3>Koreksi ${esc(no)}</h3><div class="tw"><table><tr>${EDITABLE.map(([, t]) => `<th>${t}</th>`).join("")}</tr>
     <tr>${EDITABLE.map(([k]) => `<td><input data-k="${k}" value="${esc(s?.[k] ?? "")}" inputmode="${NUMERIC.has(k) || k === "d_wtr_volume_ml" || k === "geolithcode_prc_2" ? "decimal" : "text"}"></td>`).join("")}</tr></table></div>
-    <label>Alasan koreksi (wajib)</label><input id="rs" placeholder="mis. salah koma, dicek ulang di foto / hasil oven">
+    <label>Alasan koreksi (wajib)</label><input id="rs" placeholder="mis. salah koma, dicek ulang di foto">
     <div class="row" style="margin-top:8px"><button id="sv">Simpan koreksi</button><button class="sec" id="cx">Batal</button></div><div id="ee" class="err"></div>
     <h3>Riwayat koreksi</h3><ul class="list">${(log ?? []).map((l) => `<li><span>${esc(l.field)}: ${esc(l.old_value)} → <b>${esc(l.new_value)}</b> · ${esc(l.reason)} <span class="muted">${new Date(l.edited_at).toLocaleString("id-ID")}</span></span></li>`).join("") || `<li class="muted">Belum pernah dikoreksi.</li>`}</ul></div>`;
   ed.scrollIntoView({ behavior: "smooth" });
