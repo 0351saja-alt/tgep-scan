@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-15.5";
+const APP_VERSION = "2026-11-15.6";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -92,7 +92,7 @@ async function sync() {
       if (job) await sb.functions.invoke("process-scan", { body: { job_id: job.id } });
       await qDel(it.client_uuid);
     }
-  } finally { syncing = false; beat(true); if (["foto", "core", "prog", "ddr"].includes(tab)) render(); }
+  } finally { syncing = false; beat(true); loadLanjutan(); jadwalCekTolak(); if (["foto", "core", "prog", "ddr"].includes(tab)) render(); }
 }
 async function syncCore(it) {
   const base = `${session.user.id}/${it.bhid}/${it.client_uuid}`;
@@ -120,13 +120,17 @@ async function render() {
     });
     return;
   }
+  if (online() && !sessionStorage.getItem("tugasLoaded")) { sessionStorage.setItem("tugasLoaded", "1"); await loadTugas(); loadLanjutan(); }
+  if (!myTugas && !sessionStorage.getItem("proyekOk") && JSON.parse(localStorage.getItem("projects") || "[]").length) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
   const navs = [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
     ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = "prog";
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
   beat();
-  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div><p class="muted" style="text-align:center;font-size:12px;margin:18px 0">TGEP Scan Drill Log · versi ${APP_VERSION}</p>`;
+  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div><p class="muted" style="text-align:center;font-size:12px;margin:18px 0">${myTugas ? `Proyek <b>${esc(myTugas.nama)}</b> · ${esc(myTugas.rig ?? "-")} · <a href="#" id="gantiP">ganti</a> · ` : `<a href="#" id="gantiP">pilih proyek & rig</a> · `}TGEP Scan Drill Log · versi ${APP_VERSION}</p>`;
+  $("#gantiP")?.addEventListener("click", (e) => { e.preventDefault(); pilihProyekView(false); });
+  if (!sessionStorage.getItem("tolakCek")) { sessionStorage.setItem("tolakCek", "1"); cekPenolakan(true); }
   app.querySelectorAll("nav [data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; localStorage.setItem("tab", tab); render(); }));
   $("#out").onclick = async () => { if (!confirm("Keluar dari akun? Foto di antrean tetap tersimpan di HP.")) return; localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); session = null; await sb.auth.signOut().catch(() => {}); render(); };
   if (me?.role === "admin" && navigator.onLine && !session.offline) sb.from("registration_request").select("user_id", { count: "exact", head: true }).eq("status", "PENDING")
@@ -389,36 +393,54 @@ async function toJpeg(bmp, max, q) {
 }
 const fmtD = (n) => Number(n).toFixed(2).replace(".", ",");
 async function coreView(v) {
-  const bh = localStorage.getItem("bhid") || "", last = JSON.parse(localStorage.getItem("coreLast") || "{}");
+  const bh = localStorage.getItem("bhid") || "", lastType = localStorage.getItem("coreType") || "UTUH";
   const qd = (await qAll()).filter((x) => x.kind === "core");
   v.innerHTML = `<div class="card"><h2>Foto core</h2>
-   <div class="row"><div><label>BHID</label><input id="cb" value="${esc(bh)}" autocapitalize="characters"></div><div><label>Kotak ke-</label><input id="cx" inputmode="numeric" value="${esc((last.box ?? 0) + 1)}"></div></div>
-   <div class="row"><div><label>FROM (m)</label><input id="cf" inputmode="decimal" value="${esc(last.to ?? "0,00")}"></div><div><label>TO (m)</label><input id="ct" inputmode="decimal"></div></div>
-   <label>Jenis foto</label><div class="row"><button data-t="UTUH">Core UTUH</button><button data-t="BELAH" class="sec">Core BELAH</button></div>
-   <p class="muted">Standar SOP: teduh, meteran 0–100 cm di tengah, keterangan BHID & kedalaman terbaca, kamera tegak lurus, 1 corebox per foto.</p>
+   <div class="row"><div><label>BHID</label><input id="cb" value="${esc(bh)}" autocapitalize="characters"></div><div><label>Jenis foto</label><select id="cty"><option value="UTUH" ${lastType === "UTUH" ? "selected" : ""}>Core UTUH</option><option value="BELAH" ${lastType === "BELAH" ? "selected" : ""}>Core BELAH</option></select></div></div>
+   <p id="cl" class="muted"></p>
+   <div class="row"><div><label>Kotak ke-</label><input id="cx" inputmode="numeric"></div><div><label>FROM (m)</label><input id="cf" inputmode="decimal"></div><div><label>TO (m)</label><input id="ct" inputmode="decimal"></div></div>
+   <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="crt" style="width:auto"> Foto ulang kotak yang sudah pernah dikirim (mis. karena ditolak)</label>
+   <p class="muted">Template SOP: 1 corebox per foto, teduh, meteran 0–100 cm, papan BHID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
+   <div class="big"><button id="cgo">📷 Ambil foto corebox</button></div>
    <input id="cfile" type="file" accept="image/*" capture="environment" class="hide"><div id="lc"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean foto core (${qd.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
-   <ul class="list">${qd.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.file_name)}${x.local_check.warnings.length ? `<br><span class="err">${x.local_check.warnings.map(esc).join(" · ")}</span>` : ""}${x.error ? `<br>gagal: ${esc(x.error)}` : ""}</span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
+   <ul class="list">${qd.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.file_name)}${x.local_check.warnings.length ? `<br><span class="err">${x.local_check.warnings.map(esc).join(" · ")}</span>` : ""}${x.error ? `<br><span class="err">${esc(x.error)}</span>` : ""}</span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
    <div class="card"><h3>Kelengkapan & kesesuaian SOP</h3><div class="row"><input id="kb" value="${esc(bh)}"><button id="kg" style="flex:0">Cek</button></div><div id="ko"></div></div>`;
-  let type = "UTUH";
   const num = (s) => Number(String(s).replace(",", "."));
-  v.querySelectorAll("[data-t]").forEach((b) => (b.onclick = () => {
-    type = b.dataset.t; const f = num($("#cf").value), to = num($("#ct").value);
+  let nx = { lastBox: 0, lastTo: 0, box: 1, from: 0 };
+  const isi = async () => {
+    const bhid = $("#cb").value.trim().toUpperCase(), type = $("#cty").value; if (!bhid) { $("#cl").textContent = ""; return; }
+    nx = await nextCore(bhid, type);
+    $("#cl").innerHTML = nx.lastBox ? `Terakhir dikirim: <b>kotak ${nx.lastBox}</b> sampai <b>${fmtD(nx.lastTo)} m</b> (${type}). Lanjut kotak ${nx.box} dari ${fmtD(nx.from)} m.` : `Belum ada foto ${type} untuk ${esc(bhid)} — mulai kotak 1 dari 0,00 m.`;
+    if (!$("#crt").checked) { $("#cx").value = nx.box; $("#cf").value = fmtD(nx.from); $("#ct").value = ""; }
+  };
+  $("#cb").onchange = isi; $("#cty").onchange = () => { localStorage.setItem("coreType", $("#cty").value); isi(); };
+  $("#crt").onchange = () => { if (!$("#crt").checked) isi(); else { $("#cx").value = ""; $("#cf").value = ""; $("#ct").value = ""; $("#cx").focus(); } };
+  await isi();
+  $("#cgo").onclick = () => {
+    const f = num($("#cf").value), to = num($("#ct").value), box = parseInt($("#cx").value), retake = $("#crt").checked;
     if (!$("#cb").value.trim()) return ($("#e").textContent = "Isi BHID.");
+    if (!(box > 0)) return ($("#e").textContent = "Isi nomor kotak.");
     if (!(isFinite(f) && isFinite(to) && to > f)) return ($("#e").textContent = "Isi FROM dan TO kotak ini (TO > FROM).");
-    if (to - f > 1.6) return ($("#e").textContent = "Satu foto = satu corebox; rentang lebih dari 1,6 m tidak wajar.");
+    if (to - f > 1.6) return ($("#e").textContent = "Ditolak: satu foto = satu corebox; rentang lebih dari 1,6 m tidak sesuai template.");
+    if (!retake) {
+      if (box !== nx.box) return ($("#e").textContent = `Ditolak: kotak ${box} tidak melanjutkan kotak terakhir (${nx.lastBox}). Seharusnya kotak ${nx.box}. Bila ini foto ulang, centang “Foto ulang”.`);
+      if (Math.abs(f - nx.from) > 0.02) return ($("#e").textContent = `Ditolak: FROM ${fmtD(f)} m tidak menyambung dengan TO kotak sebelumnya (${fmtD(nx.from)} m).`);
+    } else if (box > nx.lastBox) return ($("#e").textContent = `Ditolak: kotak ${box} belum pernah dikirim, jadi bukan foto ulang. Hilangkan centang “Foto ulang”.`);
     $("#e").textContent = ""; $("#cfile").click();
-  }));
+  };
   $("#cfile").onchange = async (ev) => {
     const file = ev.target.files[0]; if (!file) return; ev.target.value = "";
     const bmp = await createImageBitmap(file); const lc = await localCheck(bmp);
-    const bhid = $("#cb").value.trim().toUpperCase(), f = num($("#cf").value), to = num($("#ct").value), box = parseInt($("#cx").value) || null;
+    const bhid = $("#cb").value.trim().toUpperCase(), type = $("#cty").value, f = num($("#cf").value), to = num($("#ct").value), box = parseInt($("#cx").value) || null;
+    if (lc.sharpness < 25 || lc.brightness < 45) return ($("#e").textContent = `Ditolak sebelum dikirim: ${lc.sharpness < 25 ? "foto terlalu buram" : "foto terlalu gelap"}. Ambil ulang di tempat teduh yang terang dan HP tidak bergoyang.`);
     const save = async () => {
-      const fn = `${bhid}_${fmtD(f)}-${fmtD(to)}_${type}.jpg`;
+      const fn = `${bhid}_K${box}_${fmtD(f)}-${fmtD(to)}_${type}.jpg`;
       await qPut({ kind: "core", client_uuid: crypto.randomUUID(), bhid, box_no: box, depth_from: f, depth_to: to, photo_type: type, file_name: fn,
         blob: await toJpeg(bmp, 4000, 0.9), preview: await toJpeg(bmp, 1600, 0.85), local_check: lc, captured_at: new Date().toISOString() });
-      localStorage.setItem("bhid", bhid); localStorage.setItem("coreLast", JSON.stringify({ to: fmtD(to), box }));
-      render(); sync();
+      const H = JSON.parse(localStorage.getItem("coreHist") || "{}"), k = `${type}|${bhid}`;
+      H[k] = { box: Math.max(H[k]?.box ?? 0, box ?? 0), to: Math.max(Number(H[k]?.to ?? 0), to) }; localStorage.setItem("coreHist", JSON.stringify(H));
+      localStorage.setItem("bhid", bhid); render(); sync();
     };
     if (!lc.warnings.length) return save();
     $("#lc").innerHTML = `<div class="card" style="background:#FBE6D0"><b>Foto mungkin tidak sesuai SOP:</b><ul>${lc.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>
@@ -434,7 +456,7 @@ async function coverage(bh) {
   const ko = $("#ko"); ko.innerHTML = `<p class="muted">Memuat…</p>`;
   const [{ data: s, error }, { data: ph }] = await Promise.all([
     sb.from("v_sample_photo").select("sample_no,seq,depth_from,depth_to,geozone_id,belah_wajib,chk_foto_utuh,chk_foto_belah").eq("bhid", bh).order("depth_from"),
-    sb.from("core_photo").select("id,file_name,photo_type,depth_from,depth_to,status,sop_ok,sop_issues,reviewer_override,review_note,preview_path,error").eq("bhid", bh).order("photo_type").order("depth_from"),
+    sb.from("core_photo").select("id,file_name,photo_type,box_no,depth_from,depth_to,status,sop_ok,sop_issues,reviewer_override,review_note,preview_path,error,ditolak,alasan_tolak").eq("bhid", bh).order("photo_type").order("depth_from"),
   ]);
   if (error) return (ko.innerHTML = `<p class="err">${esc(error.message)}</p>`);
   const bad = (x) => x && x !== "OK";
@@ -452,7 +474,7 @@ async function coverage(bh) {
      <td style="${bad(r.chk_foto_utuh) ? "background:#F6C9C3" : ""}">${esc(r.chk_foto_utuh)}</td><td style="${bad(r.chk_foto_belah) ? "background:#F6C9C3" : ""}">${esc(r.chk_foto_belah ?? "tidak wajib")}</td></tr>`).join("")}</table></div>` : ""}
    <h3>Foto (${ph?.length ?? 0})</h3><ul class="list">${(ph ?? []).map((p) => { const ok = p.reviewer_override ?? p.sop_ok;
      return `<li><span class="pill ${p.status === "CHECKED" ? (ok ? "APPROVED" : "REJECTED") : p.status}">${p.status === "CHECKED" ? (ok ? "SESUAI SOP" : "TIDAK SESUAI") : p.status}</span><span style="flex:1">${esc(p.file_name)}
-       ${(p.sop_issues ?? []).length && !ok ? `<br><span class="err">${p.sop_issues.map(esc).join("<br>")}</span>` : ""}${p.error ? `<br><span class="err">${esc(p.error)}</span>` : ""}${p.review_note ? `<br><span class="muted">Catatan: ${esc(p.review_note)}</span>` : ""}</span>
+       ${p.ditolak && !p.reviewer_override ? `<br><b class="err">DITOLAK: ${esc(p.alasan_tolak ?? "")}</b>` : ""}${(p.sop_issues ?? []).length && !ok ? `<br><span class="err">${p.sop_issues.map(esc).join("<br>")}</span>` : ""}${p.error ? `<br><span class="err">${esc(p.error)}</span>` : ""}${p.review_note ? `<br><span class="muted">Catatan: ${esc(p.review_note)}</span>` : ""}</span>
        <button class="sec" data-pv="${esc(p.preview_path)}" style="flex:0">Lihat</button>${isV && p.status === "CHECKED" ? `<button class="sec" data-ov="${p.id}" data-ok="${ok ? 0 : 1}" style="flex:0">${ok ? "Tandai tidak sesuai" : "Nyatakan sesuai"}</button>` : ""}${isV && p.status === "ERROR" ? `<button class="sec" data-re="${p.id}" style="flex:0">Cek ulang</button>` : ""}${me?.role === "admin" ? `<button class="danger" data-delp="${p.id}" style="flex:0">Hapus</button>` : ""}</li>`; }).join("") || `<li class="muted">Belum ada foto core.</li>`}</ul><div id="pvw"></div>`;
   ko.querySelectorAll("[data-pv]").forEach((b) => (b.onclick = async () => {
     const { data } = await sb.storage.from("core-photos").createSignedUrl(b.dataset.pv, 600);
@@ -541,7 +563,7 @@ async function progView(v) {
     const capturedAt = new Date(), age = Math.round((Date.now() - file.lastModified) / 1000);
     const posP = getPos();
     const r = { rig: localStorage.getItem("rig"), bhid: localStorage.getItem("bhid") || null };
-    let lastTo = Number(localStorage.getItem(`lastTo_${r.bhid}`) || 0);
+    let lastTo = lastRunTo(r.bhid);
     const m = modal(`<h3>Konfirmasi foto</h3><p class="muted">${fmtT(capturedAt)} · ${esc(r.rig)} · ${esc(r.bhid ?? "")}</p>
       ${age > 300 ? `<p class="err">Foto ini dibuat ${Math.round(age / 60)} menit lalu — kemungkinan dari galeri, akan ditandai.</p>` : ""}
       <label>Foto ini untuk:</label>
@@ -562,6 +584,7 @@ async function progView(v) {
       if (t === "RUN") {
         Object.assign(row, { depth_from: num(m.querySelector("#rf").value), depth_to: num(m.querySelector("#rt").value), core_length: num(m.querySelector("#rc").value) });
         if (!(row.depth_to > row.depth_from)) return (m.querySelector("#me").textContent = "Isi FROM dan TO run (TO > FROM).");
+        if (Math.abs(row.depth_from - lastTo) > 0.02 && !confirm(`FROM ${fmtD(row.depth_from)} m tidak menyambung dengan TO run terakhir ${fmtD(lastTo)} m. Tetap simpan?`)) return;
         if (row.core_length === null) return (m.querySelector("#me").textContent = "Isi panjang core yang terambil.");
       }
       m.querySelector("#ok").disabled = true;
@@ -956,19 +979,20 @@ async function dashView(v) {
   const st = JSON.parse(sessionStorage.getItem("dash") || "null") ?? { from, to, rig: "" };
   v.innerHTML = `<div class="card"><h2>Dashboard progres & evaluasi</h2>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
-    <div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0">Cetak / PDF</button></div></div>
+    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0">Cetak / PDF</button></div></div>
     <div id="kpi" class="card"></div><div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px"></div>`;
   $("#pr").onclick = () => print();
-  $("#go").onclick = () => { sessionStorage.setItem("dash", JSON.stringify({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() })); dashView(v); };
+  $("#go").onclick = () => { sessionStorage.setItem("filterProyek", $("#fproj").value); sessionStorage.setItem("dash", JSON.stringify({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() })); dashView(v); };
   if (!online()) return ($("#kpi").textContent = "Dashboard perlu sinyal internet.");
-  const R = (q) => (st.rig ? q.eq("rig", st.rig) : q);
+  const pf = await proyekFilter();
+  const R = (q) => (st.rig ? q.eq("rig", st.rig) : pf ? q.in("rig", pf.rigs.length ? pf.rigs : ["-"]) : q);
   const [{ data: rd }, { data: tm }, { data: cu }, { data: hl }] = await Promise.all([
     R(sb.from("v_dash_rig_day").select("*").gte("tanggal", st.from).lte("tanggal", st.to)).order("tanggal"),
     R(sb.from("v_dash_time").select("*").gte("tanggal", st.from).lte("tanggal", st.to)),
     R(sb.from("v_consumable_use").select("*").gte("report_date", st.from).lte("report_date", st.to)),
     sb.from("v_dash_hole").select("*"),
   ]);
-  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0), K = computeKPI(days, tm ?? [], cu ?? [], holes);
+  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0 && (!pf || pf.bhids.includes(h.bhid))), K = computeKPI(days, tm ?? [], cu ?? [], holes);
   $("#kpi").innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">${K.map(([l, val, note]) => `<div style="background:#fff;border-radius:10px;padding:10px;border-left:5px solid ${note === "!" ? "#C8281F" : "#1E9E69"}"><div class="muted" style="font-size:12px">${esc(l)}</div><div style="font-size:22px;font-weight:700">${esc(val)}</div></div>`).join("")}</div>
     <p class="muted" style="margin-top:8px">Periode ${st.from} s/d ${st.to}${st.rig ? " · rig " + esc(st.rig) : " · semua rig"}. Data geologi (tebal zona, conto) mencakup semua lubang yang sudah disetujui.</p>`;
   const { data: kp } = await sb.from("v_kepatuhan_harian").select("nama,rig,status,kurang,antrean").eq("tanggal", st.to);
@@ -1024,6 +1048,84 @@ function computeKPI(days, tm, cu, holes) {
   ];
 }
 
+// ---------- Proyek & rig, lanjutan isian, pemberitahuan penolakan ----------
+let myTugas = JSON.parse(localStorage.getItem("myTugas") || "null");
+async function loadTugas() {
+  if (!online()) return myTugas;
+  const [{ data: t }, { data: pj }] = await Promise.all([sb.from("penugasan").select("project,rig").eq("user_id", session.user.id).maybeSingle(), sb.from("project").select("*").eq("aktif", true).order("nama")]);
+  localStorage.setItem("projects", JSON.stringify(pj ?? []));
+  myTugas = t?.project ? { ...t, nama: (pj ?? []).find((p) => p.code === t.project)?.nama ?? t.project } : null;
+  localStorage.setItem("myTugas", JSON.stringify(myTugas));
+  if (myTugas?.rig) localStorage.setItem("rig", myTugas.rig);
+  return myTugas;
+}
+function pilihProyekView(paksa) {
+  const pj = JSON.parse(localStorage.getItem("projects") || "[]");
+  app.innerHTML = `<div class="card"><h2>Proyek & rig</h2><p class="muted">Pilih proyek dan rig tempat Anda bekerja. Semua kiriman otomatis tercatat ke proyek ini; bisa diganti kapan saja dari bagian bawah aplikasi.</p>
+    ${pj.length ? `<label>Proyek *</label><select id="pp">${pj.map((p) => `<option value="${esc(p.code)}" ${myTugas?.project === p.code ? "selected" : ""}>${esc(p.nama)}</option>`).join("")}</select>
+    <label>Rig</label><select id="pr"></select><div style="margin-top:10px"><button id="ps">Simpan & lanjut</button></div>`
+    : `<p class="err">Belum ada proyek yang dibuat admin.${me?.role === "admin" ? " Buat proyek di menu Rekap operator → Proyek & rig." : " Hubungi admin."}</p>`}
+    ${paksa ? "" : `<div style="margin-top:8px"><button class="sec" id="pl">Lewati dulu</button></div>`}<div id="e" class="err"></div></div>`;
+  const isiRig = () => { const p = pj.find((x) => x.code === $("#pp").value); $("#pr").innerHTML = (p?.rigs?.length ? p.rigs : [""]).map((r) => `<option ${myTugas?.rig === r ? "selected" : ""}>${esc(r)}</option>`).join(""); };
+  if (pj.length) { $("#pp").onchange = isiRig; isiRig();
+    $("#ps").onclick = async () => { const { error } = await sb.rpc("set_my_project", { p_project: $("#pp").value, p_rig: $("#pr").value || null }); if (error) return ($("#e").textContent = error.message); await loadTugas(); sessionStorage.setItem("proyekOk", "1"); render(); }; }
+  $("#pl")?.addEventListener("click", () => { sessionStorage.setItem("proyekOk", "1"); render(); });
+}
+async function loadLanjutan() {
+  if (!online()) return; const { data } = await sb.from("v_lanjutan").select("jenis,bhid,kotak_terakhir,to_terakhir");
+  if (data) localStorage.setItem("lanjut", JSON.stringify(Object.fromEntries(data.map((r) => [`${r.jenis}|${r.bhid}`, r]))));
+}
+async function nextCore(bhid, type) {
+  const L = JSON.parse(localStorage.getItem("lanjut") || "{}")[`CORE_${type}|${bhid}`] ?? {}, H = JSON.parse(localStorage.getItem("coreHist") || "{}")[`${type}|${bhid}`] ?? {};
+  const Q = (await qAll()).filter((x) => x.kind === "core" && x.bhid === bhid && x.photo_type === type);
+  const box = Math.max(L.kotak_terakhir ?? 0, H.box ?? 0, ...Q.map((x) => x.box_no ?? 0)), to = Math.max(Number(L.to_terakhir ?? 0), Number(H.to ?? 0), ...Q.map((x) => Number(x.depth_to)));
+  return { lastBox: box, lastTo: to, box: box + 1, from: to };
+}
+function lastRunTo(bhid) {
+  const L = JSON.parse(localStorage.getItem("lanjut") || "{}")[`RUN|${bhid}`];
+  return Math.max(Number(localStorage.getItem(`lastTo_${bhid}`) || 0), Number(L?.to_terakhir ?? 0));
+}
+async function cekPenolakan(tampil) {
+  if (!online()) return;
+  const seen = localStorage.getItem("tolakSeen") || new Date(Date.now() - 7 * 864e5).toISOString();
+  const { data } = await sb.from("v_penolakan").select("*").eq("user_id", session.user.id).gt("waktu", seen).order("waktu", { ascending: false }).limit(30);
+  const xs = data ?? []; if (!xs.length) return;
+  if (document.visibilityState !== "visible" && "Notification" in window && Notification.permission === "granted")
+    navigator.serviceWorker?.ready.then((r) => r.showNotification("TGEP: kiriman ditolak", { body: `${xs.length} kiriman ditolak — buka aplikasi untuk alasannya`, icon: "icon-192.png", tag: "tolak" }));
+  if (!tampil && document.getElementById("tolakBox")) return;
+  document.getElementById("tolakBox")?.remove();
+  const box = document.createElement("div"); box.id = "tolakBox"; box.className = "card"; box.style.cssText = "background:#F6C9C3;border-left:6px solid #C8281F";
+  box.innerHTML = `<h3 style="margin:0 0 6px">${xs.length} kiriman Anda DITOLAK — mohon diperbaiki</h3><ul class="list">${xs.map((x) => `<li style="flex-wrap:wrap"><span style="flex:1"><b>${esc(x.jenis)}</b> · ${esc(x.bhid ?? "")} ${esc(x.ket ?? "")}<br><span>${esc(x.alasan ?? "Alasan tidak tercatat")}</span><br><span class="muted">${fmtT(x.waktu)}</span></span>
+    <button class="sec" data-go="${x.jenis === "FOTO CORE" ? "core" : "foto"}" data-bh="${esc(x.bhid ?? "")}" style="flex:0;white-space:nowrap">Foto ulang</button></li>`).join("")}</ul>
+    <div class="row"><button id="tOk" style="flex:0;white-space:nowrap">Sudah saya baca</button>${"Notification" in window && Notification.permission === "default" ? `<button class="sec" id="tNot" style="flex:0;white-space:nowrap">Aktifkan notifikasi HP</button>` : ""}</div>`;
+  app.prepend(box);
+  box.querySelector("#tOk").onclick = () => { localStorage.setItem("tolakSeen", xs[0].waktu); box.remove(); };
+  box.querySelector("#tNot")?.addEventListener("click", () => Notification.requestPermission().then(() => box.querySelector("#tNot")?.remove()));
+  box.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { if (b.dataset.bh) localStorage.setItem("bhid", b.dataset.bh); tab = b.dataset.go; localStorage.setItem("tab", tab); render(); }));
+}
+let tolakTimer = null;
+const jadwalCekTolak = () => { clearTimeout(tolakTimer); tolakTimer = setTimeout(() => cekPenolakan(true), 120e3); };
+async function proyekAdmin(box) {
+  const { data: pj } = await sb.from("project").select("*").order("nama");
+  box.innerHTML = `<h3>Proyek & rig (admin)</h3><p class="muted">Pengguna memilih proyek & rig dari daftar ini saat pertama masuk. Rig ditulis dipisah koma.</p>
+    <ul class="list">${(pj ?? []).map((p) => `<li style="flex-wrap:wrap"><span style="flex:1"><b>${esc(p.nama)}</b> <span class="muted">(${esc(p.code)})</span>${p.aktif ? "" : ' <span class="err">nonaktif</span>'}</span>
+      <input data-rg="${esc(p.code)}" value="${esc((p.rigs ?? []).join(", "))}" style="max-width:220px"><button class="sec" data-sv="${esc(p.code)}" style="flex:0">Simpan</button><button class="sec" data-ak="${esc(p.code)}" data-v="${p.aktif ? 0 : 1}" style="flex:0">${p.aktif ? "Nonaktifkan" : "Aktifkan"}</button></li>`).join("") || `<li class="muted">Belum ada proyek.</li>`}</ul>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Kode</label><input id="pc" placeholder="mis. TGEP-BLK-A" autocapitalize="characters"></div><div><label>Nama proyek</label><input id="pn" placeholder="mis. Eksplorasi Blok A"></div><div><label>Rig (pisah koma)</label><input id="pr2" placeholder="RIG03, RIG04"></div><button id="pa" style="flex:0">Tambah</button></div><div id="pe" class="err"></div>`;
+  const rigs = (s) => s.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
+  box.querySelector("#pa").onclick = async () => { const code = box.querySelector("#pc").value.trim().toUpperCase(), nama = box.querySelector("#pn").value.trim(); if (!code || !nama) return (box.querySelector("#pe").textContent = "Isi kode dan nama.");
+    const { error } = await sb.from("project").insert({ code, nama, rigs: rigs(box.querySelector("#pr2").value) }); if (error) return (box.querySelector("#pe").textContent = error.message); proyekAdmin(box); };
+  box.querySelectorAll("[data-sv]").forEach((b) => (b.onclick = async () => { const { error } = await sb.from("project").update({ rigs: rigs(box.querySelector(`[data-rg="${b.dataset.sv}"]`).value) }).eq("code", b.dataset.sv); if (error) return alert(error.message); b.textContent = "✓"; }));
+  box.querySelectorAll("[data-ak]").forEach((b) => (b.onclick = async () => { const { error } = await sb.from("project").update({ aktif: b.dataset.v === "1" }).eq("code", b.dataset.ak); if (error) return alert(error.message); proyekAdmin(box); }));
+}
+async function proyekFilter() {
+  const p = sessionStorage.getItem("filterProyek") || ""; if (!p) return null;
+  const pj = JSON.parse(localStorage.getItem("projects") || "[]").find((x) => x.code === p);
+  const { data } = await sb.from("v_bhid_project").select("bhid").eq("project", p);
+  return { code: p, nama: pj?.nama ?? p, rigs: pj?.rigs ?? [], bhids: (data ?? []).map((r) => r.bhid) };
+}
+const proyekSelect = () => { const pj = JSON.parse(localStorage.getItem("projects") || "[]"), cur = sessionStorage.getItem("filterProyek") || "";
+  return `<div><label>Proyek</label><select id="fproj"><option value="">Semua proyek</option>${pj.map((p) => `<option value="${esc(p.code)}" ${cur === p.code ? "selected" : ""}>${esc(p.nama)}</option>`).join("")}</select></div>`; };
+
 // ---------- Rekap operator: folder per operator, kepatuhan harian, status HP ----------
 let lastBeat = 0;
 async function beat(force) {
@@ -1037,13 +1139,15 @@ const ago = (t) => { if (!t) return "-"; const m = Math.round((Date.now() - Date
 async function rekapView(v) {
   const tgl = sessionStorage.getItem("rekapTgl") || todayWIB();
   v.innerHTML = `<div class="card"><h2>Rekap & pelacakan operator</h2>
-    <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div><button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button></div>
+    <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div>${proyekSelect()}<button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button></div>
     <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. Form Logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.</p></div>
-    <div id="rs" class="card">Memuat…</div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rp" class="card"></div>` : ""}`;
-  $("#rgo").onclick = () => { sessionStorage.setItem("rekapTgl", $("#rt").value); rekapView(v); };
+    <div id="rs" class="card">Memuat…</div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rp" class="card"></div><div id="rpj" class="card"></div>` : ""}`;
+  $("#rgo").onclick = () => { sessionStorage.setItem("rekapTgl", $("#rt").value); sessionStorage.setItem("filterProyek", $("#fproj").value); rekapView(v); };
   if (!online()) return ($("#rs").textContent = "Rekap perlu sinyal internet.");
   const from14 = new Date(Date.parse(tgl) - 13 * 864e5).toISOString().slice(0, 10);
-  const { data: all, error } = await sb.from("v_kepatuhan_harian").select("*").gte("tanggal", from14).lte("tanggal", tgl);
+  const fp = sessionStorage.getItem("filterProyek") || "";
+  const [{ data: all0, error }, { data: pnAll }] = await Promise.all([sb.from("v_kepatuhan_harian").select("*").gte("tanggal", from14).lte("tanggal", tgl), sb.from("penugasan").select("user_id,project")]);
+  const PJ = Object.fromEntries((pnAll ?? []).map((p) => [p.user_id, p.project])), all = (all0 ?? []).filter((r) => !fp || PJ[r.user_id] === fp);
   if (error) return ($("#rs").innerHTML = `<p class="err">${esc(error.message)}</p>`);
   const day = (all ?? []).filter((r) => r.tanggal === tgl).sort((a, b) => ST_ORD.indexOf(a.status) - ST_ORD.indexOf(b.status) || (a.nama ?? "").localeCompare(b.nama ?? ""));
   const cnt = (s) => day.filter((r) => r.status === s).length, hp = day.filter((r) => r.antrean > 0);
@@ -1065,6 +1169,7 @@ async function rekapView(v) {
     const csv = [cols.join(","), ...(all ?? []).map((r) => cols.map((c) => `"${String(Array.isArray(r[c]) ? r[c].join("; ") : r[c] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })); a.download = `TGEP_Rekap_Operator_${from14}_${tgl}.csv`; a.click(); };
   if (me?.role === "admin") {
+    proyekAdmin($("#rpj"));
     const [{ data: us }, { data: pn }] = await Promise.all([sb.from("app_user").select("user_id,full_name,role,company").in("role", ["driller", "geologist"]).order("full_name"), sb.from("penugasan").select("*")]);
     const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p]));
     $("#rp").innerHTML = `<h3>Penugasan rig (admin)</h3><p class="muted">Operator tanpa rig berstatus “TANPA PENUGASAN”. Hilangkan centang “wajib” untuk staf yang tidak bertugas harian (cuti, kantor).</p>
@@ -1212,7 +1317,7 @@ const DATASETS = {
   bbm: { t: "Pemakaian BBM, oli & barang", v: "v_consumable_use", order: ["report_date", "rig"], bh: "bhid" },
   lubang: { t: "Ringkasan per lubang", v: "v_dash_hole", order: ["bhid"], bh: "bhid" },
   kinerja: { t: "Kinerja rig harian", v: "v_dash_rig_day", order: ["tanggal", "rig"], bh: null },
-  arsip: { t: "Foto formulir arsip", v: "form_photo", order: ["created_at"], bh: "bhid" },
+  arsipfoto: { t: "Foto formulir arsip", v: "form_photo", order: ["created_at"], bh: "bhid" },
   koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
   arsip: { t: "Arsip terhapus (admin)", v: "deleted_record", order: ["deleted_at"], bh: "bhid", admin: true },
 };
@@ -1220,6 +1325,7 @@ const OKV = new Set(["OK", "OK-SW", "BELUM OVEN", "MENUNGGU CEK"]);
 function dbQuery(d, f) {
   let q = sb.from(d.v).select("*", { count: "exact" });
   if (f.bh && d.bh) q = q.ilike(d.bh, `%${f.bh}%`);
+  if (f.proj) { if (d.bh) q = q.in(d.bh, f.proj.bhids.length ? f.proj.bhids : ["-"]); else if (["v_dash_rig_day", "p2h_check"].includes(d.v)) q = q.in("rig", f.proj.rigs.length ? f.proj.rigs : ["-"]); }
   if (f.bad && d.bad && ["chk_harian", "flags"].includes(d.bad[0])) q = q.neq(d.bad[0], "");
   else if (f.bad && d.bad) q = q.or(d.bad.map((c) => `and(${c}.not.is.null,${c}.not.in.(${[...OKV].map((x) => `"${x}"`).join(",")}))`).join(","));
   const desc = ["deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "form_photo", "v_ddr_list", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day"].includes(d.v);
@@ -1236,6 +1342,7 @@ async function dbView(v) {
    <p class="muted">Data yang sama dengan aplikasi lapangan, dalam format data bor standar (Collar · Survey · Geology · Density · Assay). Unduhan bisa dibuka di Excel, Leapfrog, Micromine, Surpac, Datamine, QGIS.</p>
    <div class="row" style="flex-wrap:wrap;align-items:flex-end">
     <div><label>Tabel</label><select id="ds">${keys.map((k) => `<option value="${k}" ${st.ds === k ? "selected" : ""}>${DATASETS[k].t}</option>`).join("")}</select></div>
+    ${proyekSelect()}
     <div><label>BHID (sebagian)</label><input id="fb" value="${esc(st.bh)}" placeholder="mis. TGE00"></div>
     <div style="flex:0;white-space:nowrap"><label><input type="checkbox" id="fbad" ${st.bad ? "checked" : ""} style="width:auto"> hanya yang bermasalah</label></div>
     <button id="go" style="flex:0">Tampilkan</button>
@@ -1243,9 +1350,12 @@ async function dbView(v) {
     <button class="sec" id="csv" style="flex:0">Unduh CSV tabel ini</button>
    </div><div id="info" class="muted" style="margin-top:8px"></div></div>
    <div class="card"><div id="tb"></div><div class="row" style="margin-top:8px"><button class="sec" id="pv" style="flex:0">← Sebelumnya</button><button class="sec" id="nx" style="flex:0">Berikutnya →</button></div></div>`;
-  const read = () => ({ ds: $("#ds").value, bh: $("#fb").value.trim().toUpperCase(), bad: $("#fbad").checked, page: st.page });
+  let projF = null;
+  const read = () => ({ ds: $("#ds").value, bh: $("#fb").value.trim().toUpperCase(), bad: $("#fbad").checked, page: st.page, proj: projF });
+  $("#fproj").onchange = async () => { sessionStorage.setItem("filterProyek", $("#fproj").value); projF = await proyekFilter(); };
+  projF = await proyekFilter();
   const show = async (page = 0) => {
-    const f = read(); f.page = page; sessionStorage.setItem("dbst", JSON.stringify(f)); st.page = page;
+    const f = read(); f.page = page; sessionStorage.setItem("dbst", JSON.stringify({ ...f, proj: undefined })); st.page = page;
     const d = DATASETS[f.ds]; $("#tb").innerHTML = `<p class="muted">Memuat…</p>`;
     const { data, count, error } = await dbQuery(d, f).range(page * 200, page * 200 + 199);
     if (error) return ($("#tb").innerHTML = `<p class="err">${esc(error.message)}</p>`);
