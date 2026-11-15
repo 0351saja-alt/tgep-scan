@@ -105,7 +105,7 @@ async function render() {
   }
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
   const navs = [["prog", "Progres bor"], ["ddr", "DDR"], ...(staff ? [["foto", "Foto formulir"], ["core", "Foto core"]] : []),
-    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["ttd", "TTD saya"]];
+    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = "prog";
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
   app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div>`;
@@ -123,6 +123,7 @@ async function render() {
   if (tab === "users") return usersView($("#v"));
   if (tab === "ddr") return ddrView($("#v"));
   if (tab === "ttd") return ttdView($("#v"));
+  if (tab === "dok") return dokView($("#v"));
   if (tab === "dash") return dashView($("#v"));
 }
 
@@ -931,6 +932,64 @@ function computeKPI(days, tm, cu, holes) {
     ["Kepatuhan P2H", pct(p2hOk, activeDays.length), activeDays.length && p2hOk < activeDays.length ? "!" : ""], ["DDR bertanda tangan", pct(ddrOk, activeDays.length), activeDays.length && ddrOk < activeDays.length ? "!" : ""],
     ["Conto bermasalah (QC)", pct(nBad, nC), nBad ? "!" : ""], ["Foto core lengkap", pct(nFoto, nC), nC && nFoto < nC ? "!" : ""],
   ];
+}
+
+// ---------- Dokumen: formulir kosong, SOP, panduan ----------
+const DOK_CACHE = "tgep-dokumen";
+const hexToBytes = (h) => { h = h.startsWith("\\x") ? h.slice(2) : h; const a = new Uint8Array(h.length / 2); for (let i = 0; i < a.length; i++) a[i] = parseInt(h.substr(i * 2, 2), 16); return a; };
+const fmtSize = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
+async function dokBlob(d) {
+  const key = `./_dok/${d.id}/${encodeURIComponent(d.file_name)}`, c = await caches.open(DOK_CACHE);
+  const hit = await c.match(key); if (hit) return hit.blob();
+  if (!online()) throw new Error("Dokumen belum tersimpan di HP; buka sekali saat ada sinyal.");
+  let blob;
+  if (d.url) { const r = await fetch(d.url, { cache: "no-store" }); if (!r.ok) throw new Error("Gagal mengunduh " + d.file_name); blob = await r.blob(); }
+  else { const { data, error } = await sb.from("document").select("content").eq("id", d.id).single(); if (error) throw error; blob = new Blob([hexToBytes(data.content)], { type: d.mime }); }
+  await c.put(key, new Response(blob, { headers: { "Content-Type": d.mime } }));
+  return blob;
+}
+async function dokView(v) {
+  const list = await cached("dokList", async () => (await sb.from("document").select("id,judul,kategori,keterangan,versi,file_name,mime,size_bytes,url,untuk_peran,aktif,uploaded_at").order("kategori").order("judul")).data);
+  const c = await caches.open(DOK_CACHE), have = new Set((await c.keys()).map((r) => new URL(r.url).pathname.split("/_dok/")[1]?.split("/")[0]));
+  const KAT = { FORMULIR: "Formulir kosong untuk dicetak", SOP: "SOP", PANDUAN: "Panduan aplikasi", LAINNYA: "Lainnya" };
+  const admin = me?.role === "admin";
+  v.innerHTML = `<div class="card"><h2>Dokumen</h2><p class="muted">Unduh formulir kosong untuk dicetak, SOP, dan panduan aplikasi. Dokumen yang sudah dibuka sekali tersimpan di HP dan bisa dibuka lagi tanpa sinyal.</p></div>
+    ${Object.keys(KAT).map((k) => { const xs = list.filter((d) => d.kategori === k && (d.aktif || admin)); if (!xs.length) return k === "SOP" ? `<div class="card"><h3>SOP</h3><p class="muted">Belum ada file SOP. ${admin ? "Unggah PDF SOP lewat formulir di bawah." : "Hubungi admin."}</p></div>` : "";
+      return `<div class="card"><h3>${KAT[k]}</h3><ul class="list">${xs.map((d) => `<li style="flex-wrap:wrap"><span style="flex:1"><b>${esc(d.judul)}</b> ${d.versi ? `<span class="muted">${esc(d.versi)}</span>` : ""}${d.aktif ? "" : ` <span class="err">(nonaktif)</span>`}<br><span class="muted">${esc(d.keterangan ?? "")} · ${fmtSize(d.size_bytes)}${have.has(d.id) ? " · tersimpan di HP ✓" : ""}${admin ? ` · untuk: ${esc(d.untuk_peran.join(", "))}` : ""}</span></span>
+        <button data-op="${d.id}" style="flex:0;white-space:nowrap">Buka</button><button class="sec" data-dl="${d.id}" style="flex:0;white-space:nowrap">Unduh</button>${admin ? `<button class="sec" data-tg="${d.id}" style="flex:0">${d.aktif ? "Nonaktifkan" : "Aktifkan"}</button>` : ""}</li>`).join("")}</ul></div>`; }).join("")}
+    ${admin ? `<div class="card"><h3>Unggah dokumen (admin)</h3>
+      <label>File (PDF, Word, Excel; maks. 10 MB)</label><input id="uf" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
+      <div class="row"><div><label>Judul *</label><input id="uj"></div><div style="flex:.6"><label>Kategori</label><select id="uk"><option>SOP</option><option>FORMULIR</option><option>PANDUAN</option><option>LAINNYA</option></select></div><div style="flex:.4"><label>Versi</label><input id="uv" placeholder="v1"></div></div>
+      <label>Keterangan</label><input id="uket">
+      <label>Boleh diunduh oleh</label><div class="row">${["driller", "geologist", "verifier", "admin"].map((r) => `<label style="flex:0;white-space:nowrap"><input type="checkbox" value="${r}" class="ur" ${r !== "driller" ? "checked" : ""}> ${r}</label>`).join("")}</div>
+      <p class="muted">Dokumen yang diunggah di sini disimpan di database (privat) dan hanya bisa diunduh akun yang disetujui sesuai peran yang dicentang. Versi lama sebaiknya dinonaktifkan, bukan dihapus.</p>
+      <button id="ub">Unggah</button><div id="ue" class="err"></div></div>` : ""}`;
+  const get = (id) => list.find((d) => d.id === id);
+  v.querySelectorAll("[data-op]").forEach((b) => (b.onclick = async () => {
+    const w = window.open("", "_blank");
+    try { const u = URL.createObjectURL(await dokBlob(get(b.dataset.op))); if (w) w.location = u; else location.href = u; } catch (e) { w?.close(); alert(e.message); }
+  }));
+  v.querySelectorAll("[data-dl]").forEach((b) => (b.onclick = async () => {
+    try { const d = get(b.dataset.dl), a = document.createElement("a"); a.href = URL.createObjectURL(await dokBlob(d)); a.download = d.file_name; document.body.appendChild(a); a.click(); a.remove(); render(); } catch (e) { alert(e.message); }
+  }));
+  v.querySelectorAll("[data-tg]").forEach((b) => (b.onclick = async () => {
+    const d = get(b.dataset.tg); const { error } = await sb.from("document").update({ aktif: !d.aktif }).eq("id", d.id);
+    if (error) return alert(error.message); localStorage.removeItem("dokList"); render();
+  }));
+  if (admin) $("#ub").onclick = async () => {
+    const f = $("#uf").files[0], judul = $("#uj").value.trim(), peran = [...v.querySelectorAll(".ur:checked")].map((x) => x.value);
+    if (!online()) return ($("#ue").textContent = "Unggah perlu sinyal.");
+    if (!f || !judul) return ($("#ue").textContent = "Pilih file dan isi judul.");
+    if (f.size > 10 * 1048576) return ($("#ue").textContent = "File lebih dari 10 MB.");
+    if (!peran.length) return ($("#ue").textContent = "Centang minimal satu peran.");
+    $("#ub").disabled = true; $("#ue").textContent = "Mengunggah…";
+    const bytes = new Uint8Array(await f.arrayBuffer()); let hex = "\\x"; for (let i = 0; i < bytes.length; i += 32768) hex += Array.from(bytes.subarray(i, i + 32768), (x) => x.toString(16).padStart(2, "0")).join("");
+    const { error } = await sb.from("document").insert({ judul, kategori: $("#uk").value, versi: $("#uv").value.trim() || null, keterangan: $("#uket").value.trim() || null,
+      file_name: f.name, mime: f.type || "application/octet-stream", size_bytes: f.size, content: hex, untuk_peran: peran });
+    $("#ub").disabled = false;
+    if (error) return ($("#ue").textContent = error.message);
+    localStorage.removeItem("dokList"); render();
+  };
 }
 
 // ---------- hapus (admin) dengan arsip ----------
