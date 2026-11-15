@@ -25,7 +25,7 @@ const SHEET = [["seq","No"],["depth_from","From"],["depth_to","To"],["core_lengt
  ["d_length_cm","P cm"],["d_diameter_cm","D cm"],["d_weight_gr","Basah g"],["d_volume_measure_ml","Arch Vol2 ml"],["d_wet_weight","Conto kg"],["comment","Komentar"]];
 const SHDR = [["bhid","BHID"],["date","Tanggal"],["page","Hal."],["logger","Logger"],["rigmc_id","Rig"],["xgps","X GPS"],["ygps","Y GPS"],["zgps","Z GPS"],["total_depth","EOH"],["core_size","Core size"]];
 const PHDR = [["bhid","BHID"],["page","Halaman"],["date","Tanggal"],["logger","Logger/petugas"]];
-const FORMS = { SHEET: "Formulir lapangan 1 lembar (F-BOR)", HEADER: "F01 Header lubang (lama)", LOG: "F02 Logging (lama)", DENSITY: "F03 Density (lama)" };
+const FORMS = { SHEET: "Form Logging", HEADER: "F01 Header lubang (lama)", LOG: "F02 Logging (lama)", DENSITY: "F03 Density (lama)" };
 const NUMERIC = new Set(["seq","depth_from","depth_to","core_length","lose_from","lose_to","geolithcode_prc_1","geolithcode_prc_2","rock_prc","total_silica","total_garnierit",
  "min_1_prc","min_2_prc","min_3_prc","len1","len2","len3","dia1","dia2","dia3","d_weight_gr","d_wtr_volume_ml","d_volume_measure_ml","d_dry_weight_gr","d_wet_weight",
  "recheck_weight_kg","xgps","ygps","zgps","depth_tp","depth_l","depth_s","total_depth","total_sample","water_table"]);
@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-15.4";
+const APP_VERSION = "2026-11-15.5";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -178,7 +178,7 @@ async function pdfToJpegs(file, onProg) {
 async function fotoView(v) {
   const staff = isStaff(), last = JSON.parse(localStorage.getItem("fotoLast") || "{}");
   const queue = (await qAll()).filter((x) => !x.kind || x.kind === "arsip");
-  const jenisOpt = (staff ? `<option value="SHEET">F-BOR — formulir lapangan 1 lembar (dibaca otomatis)</option>` : "") + Object.entries(ARSIP).map(([k, t]) => `<option value="${k}">${t} (arsip foto, tidak dibaca otomatis)</option>`).join("");
+  const jenisOpt = (staff ? `<option value="SHEET">Form Logging — logging geologi + density (dibaca otomatis)</option>` : "") + Object.entries(ARSIP).map(([k, t]) => `<option value="${k}">${t} (arsip foto, tidak dibaca otomatis)</option>`).join("");
   v.innerHTML = `<div class="card"><h2>Foto / unggah formulir</h2>
    <label>Ini formulir apa? *</label><select id="jn">${jenisOpt}</select>
    <div class="row"><div><label>BHID <span id="bhReq">*</span></label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" placeholder="mis. RJDH010" autocapitalize="characters"></div><div><label>Rig</label><input id="rg" value="${esc(localStorage.getItem("rig") || "")}" autocapitalize="characters"></div></div>
@@ -193,7 +193,7 @@ async function fotoView(v) {
    <div class="card"><h3>Kiriman saya</h3><ul class="list" id="mine"><li class="muted">Memuat…</li></ul></div>`;
   if (last.jenis && $("#jn").querySelector(`option[value="${last.jenis}"]`)) $("#jn").value = last.jenis;
   const upd = () => { const j = $("#jn").value, fb = j === "SHEET"; $("#bhReq").style.display = fb ? "" : "none"; $("#tglRow").style.display = fb ? "none" : "";
-    $("#tip").textContent = fb ? "F-BOR: letakkan di permukaan datar, cahaya merata, keempat kotak hitam di sudut harus masuk. Hasil CamScanner boleh, asal tidak terpotong dan tidak tertutup tanda air." : "Arsip: foto/scan disimpan apa adanya sebagai bukti; isinya tidak dibaca otomatis. DDR tetap wajib diisi di menu DDR."; };
+    $("#tip").textContent = fb ? "Form Logging: letakkan di permukaan datar, cahaya merata, keempat kotak hitam di sudut harus masuk. Hasil CamScanner boleh, asal tidak terpotong dan tidak tertutup tanda air." : "Arsip: foto/scan disimpan apa adanya sebagai bukti; isinya tidak dibaca otomatis. DDR tetap wajib diisi di menu DDR."; };
   $("#jn").onchange = upd; upd();
   const meta = () => {
     const jenis = $("#jn").value, bhid = $("#bh").value.trim().toUpperCase(), rig = $("#rg").value.trim().toUpperCase();
@@ -202,14 +202,22 @@ async function fotoView(v) {
     $("#e").textContent = ""; if (bhid) localStorage.setItem("bhid", bhid); if (rig) localStorage.setItem("rig", rig); localStorage.setItem("fotoLast", JSON.stringify({ jenis }));
     return { jenis, bhid, rig, tanggal: $("#tg").value || null, shift: $("#sh").value || null, keterangan: $("#kt").value.trim() || null };
   };
+  const cekLogging = async (blob, nama) => {
+    try { const bmp = await createImageBitmap(blob), lc = await localCheck(bmp); const why = [];
+      if (lc.sharpness < 25) why.push("terlalu buram"); if (lc.brightness < 45) why.push("terlalu gelap"); if (Math.max(lc.width, lc.height) < 1000) why.push("resolusi terlalu kecil");
+      if (why.length) { $("#e").textContent = `Ditolak sebelum dikirim${nama ? " (" + nama + ")" : ""}: ${why.join(", ")}. Foto ulang dengan cahaya merata dan HP tidak bergoyang.`; return false; }
+    } catch { /* format tidak dikenali browser: biarkan server yang memeriksa */ }
+    return true;
+  };
   const put = async (m, blob, sumber, file_name, halaman, jumlah, captured_at) => {
     const client_uuid = crypto.randomUUID();
+    if (m.jenis === "SHEET" && !(await cekLogging(blob, file_name))) return false;
     if (m.jenis === "SHEET") return qPut({ client_uuid, form_type: "SHEET", bhid: m.bhid, blob, captured_at, sumber, file_name });
     return qPut({ kind: "arsip", client_uuid, blob, row: { client_uuid, jenis: m.jenis, rig: m.rig || null, bhid: m.bhid || null, tanggal: m.tanggal, shift: m.shift, keterangan: m.keterangan, halaman, jumlah_halaman: jumlah, sumber, file_name, captured_at } });
   };
   $("#bCam").onclick = () => meta() && $("#fCam").click();
   $("#bUp").onclick = () => meta() && $("#fUp").click();
-  $("#fCam").onchange = async (ev) => { const f = ev.target.files[0], m = meta(); if (!f || !m) return; await put(m, await shrink(f), "KAMERA", null, null, null, new Date().toISOString()); ev.target.value = ""; render(); sync(); };
+  $("#fCam").onchange = async (ev) => { const f = ev.target.files[0], m = meta(); if (!f || !m) return; const ok = await put(m, await shrink(f), "KAMERA", null, null, null, new Date().toISOString()); ev.target.value = ""; if (ok === false) return; render(); sync(); };
   $("#fUp").onchange = async (ev) => {
     const fs = [...ev.target.files], m = meta(); if (!fs.length || !m) return;
     let n = 0;
@@ -217,18 +225,18 @@ async function fotoView(v) {
       for (const f of fs) {
         if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
           const pages = await pdfToJpegs(f, (i, t) => ($("#pr").textContent = `Membaca ${f.name}: halaman ${i}/${t}…`));
-          for (let i = 0; i < pages.length; i++) { await put(m, pages[i], "PDF", f.name, i + 1, pages.length, new Date(f.lastModified || Date.now()).toISOString()); n++; }
-        } else { $("#pr").textContent = `Menyiapkan ${f.name}…`; await put(m, await shrink(f), "GALERI", f.name, fs.length > 1 ? fs.indexOf(f) + 1 : null, fs.length > 1 ? fs.length : null, new Date(f.lastModified || Date.now()).toISOString()); n++; }
+          for (let i = 0; i < pages.length; i++) { if ((await put(m, pages[i], "PDF", `${f.name} hal. ${i + 1}`, i + 1, pages.length, new Date(f.lastModified || Date.now()).toISOString())) !== false) n++; }
+        } else { $("#pr").textContent = `Menyiapkan ${f.name}…`; if ((await put(m, await shrink(f), "GALERI", f.name, fs.length > 1 ? fs.indexOf(f) + 1 : null, fs.length > 1 ? fs.length : null, new Date(f.lastModified || Date.now()).toISOString())) !== false) n++; }
       }
     } catch (e) { $("#e").textContent = "Gagal membaca file: " + e.message; }
-    ev.target.value = ""; $("#pr").textContent = `${n} halaman masuk antrean.`; setTimeout(() => { render(); sync(); }, 600);
+    ev.target.value = ""; $("#pr").textContent = `${n} halaman masuk antrean.`; if (n) setTimeout(() => { render(); sync(); }, $("#e").textContent ? 4000 : 600);
   };
   $("#sy").onclick = sync;
   if (online()) {
     const [{ data: a }, { data: b }] = await Promise.all([
       staff ? sb.from("scan_job").select("id,form_type,bhid_hint,status,created_at,n_disagree,n_rule_flags,error,sumber").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30) : Promise.resolve({ data: [] }),
       sb.from("form_photo").select("jenis,rig,bhid,tanggal,halaman,jumlah_halaman,sumber,created_at").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30)]);
-    const items = [...(a ?? []).map((j) => ({ t: j.created_at, h: `<li><span class="pill ${j.status}">${j.status}</span><span>${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}${j.sumber ? " · " + j.sumber : ""}<br><span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca, ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span></li>` })),
+    const items = [...(a ?? []).map((j) => ({ t: j.created_at, h: `<li><span class="pill ${j.status}">${j.status === "REJECTED" ? "DITOLAK" : j.status}</span><span>${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}${j.sumber ? " · " + j.sumber : ""}<br><span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca, ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span></li>` })),
       ...(b ?? []).map((p) => ({ t: p.created_at, h: `<li><span class="pill APPROVED">ARSIP</span><span>${esc(ARSIP[p.jenis])} · ${esc(p.bhid || p.rig || "")}${p.halaman ? ` · hal. ${p.halaman}/${p.jumlah_halaman ?? "?"}` : ""} · ${p.sumber}<br><span class="muted">${p.tanggal ?? ""} · dikirim ${new Date(p.created_at).toLocaleString("id-ID")}</span></span></li>` }))].sort((x, y) => (x.t < y.t ? 1 : -1));
     $("#mine").innerHTML = items.map((x) => x.h).join("") || `<li class="muted">Belum ada.</li>`;
   } else $("#mine").innerHTML = `<li class="muted">Offline — daftar akan tampil saat ada sinyal.</li>`;
@@ -1030,7 +1038,7 @@ async function rekapView(v) {
   const tgl = sessionStorage.getItem("rekapTgl") || todayWIB();
   v.innerHTML = `<div class="card"><h2>Rekap & pelacakan operator</h2>
     <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div><button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button></div>
-    <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. F-BOR/logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.</p></div>
+    <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. Form Logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.</p></div>
     <div id="rs" class="card">Memuat…</div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rp" class="card"></div>` : ""}`;
   $("#rgo").onclick = () => { sessionStorage.setItem("rekapTgl", $("#rt").value); rekapView(v); };
   if (!online()) return ($("#rs").textContent = "Rekap perlu sinyal internet.");
@@ -1040,7 +1048,7 @@ async function rekapView(v) {
   const day = (all ?? []).filter((r) => r.tanggal === tgl).sort((a, b) => ST_ORD.indexOf(a.status) - ST_ORD.indexOf(b.status) || (a.nama ?? "").localeCompare(b.nama ?? ""));
   const cnt = (s) => day.filter((r) => r.status === s).length, hp = day.filter((r) => r.antrean > 0);
   $("#rs").innerHTML = `<h3>${tgl}</h3><div class="row" style="flex-wrap:wrap;gap:6px">${["LENGKAP", "SEBAGIAN", "BELUM", "TANPA PENUGASAN"].map((s) => `<span class="pill" style="background:${ST_COL[s]};color:#12251E">${s}: ${cnt(s)}</span>`).join("")}<span class="pill" style="background:${hp.length ? "#F6C9C3" : "#C8EBD4"};color:#12251E">Data tertahan di HP: ${hp.length} orang</span></div>
-    <div class="tw" style="margin-top:8px"><table><tr><th>Operator</th><th>Peran / rig</th><th>Status</th><th>Belum dikirim</th><th>P2H</th><th>Progres</th><th>DDR/TTD</th><th>F-BOR</th><th>Core</th><th>Arsip</th><th>Logging terlambat (rig)</th><th>Kirim terakhir</th><th>HP</th><th></th></tr>
+    <div class="tw" style="margin-top:8px"><table><tr><th>Operator</th><th>Peran / rig</th><th>Status</th><th>Belum dikirim</th><th>P2H</th><th>Progres</th><th>DDR/TTD</th><th>Form Logging</th><th>Core</th><th>Arsip</th><th>Logging terlambat (rig)</th><th>Kirim terakhir</th><th>HP</th><th></th></tr>
     ${day.map((r) => `<tr><td><b>${esc(r.nama ?? "-")}</b><br><span class="muted">${esc(r.perusahaan ?? "")}</span></td><td>${esc(r.peran)}<br>${esc(r.rig ?? "—")}</td>
       <td style="background:${ST_COL[r.status] ?? "#fff"}">${esc(r.status)}</td><td>${esc((r.kurang ?? []).join(", "))}</td>
       <td>${r.p2h}</td><td>${r.progres}</td><td>${r.ddr_ttd}</td><td>${r.fbor}</td><td>${r.foto_core}</td><td>${r.arsip}</td><td style="${r.peran === "geologist" && r.lubang_logging_terlambat ? "background:#F6C9C3" : ""}">${r.peran === "geologist" ? (r.lubang_logging_terlambat ? r.lubang_logging_terlambat + " lubang" : "0") : "-"}</td><td>${r.terakhir ? fmtT(r.terakhir).slice(-8) : "-"}</td>
@@ -1075,7 +1083,7 @@ async function logLubang(box) {
   const [{ data, error }, { data: gp }] = await Promise.all([sb.from("v_logging_lubang").select("*").neq("status", "BELUM ADA RUN").order("terakhir_bor", { ascending: false }).limit(200), sb.from("qc_param").select("value").eq("name", "LOGGING_GRACE_DAYS").maybeSingle()]);
   if (error) return (box.innerHTML = `<p class="err">${esc(error.message)}</p>`);
   const g = gp?.value ?? 2, col = { LENGKAP: "#C8EBD4", "MENUNGGU PERIKSA": "#FFE58A", "DALAM TENGGAT": "#E3E8E1", TERLAMBAT: "#F6C9C3" }, rows = (data ?? []).sort((a, b) => ["TERLAMBAT", "MENUNGGU PERIKSA", "DALAM TENGGAT", "LENGKAP"].indexOf(a.status) - ["TERLAMBAT", "MENUNGGU PERIKSA", "DALAM TENGGAT", "LENGKAP"].indexOf(b.status));
-  box.innerHTML = `<h3>Logging F-BOR per lubang</h3><p class="muted">Kedalaman bor (dari foto RUN) dibandingkan kedalaman yang sudah masuk database. F-BOR boleh dikirim per hari atau per lubang; baru <b>TERLAMBAT</b> bila interval yang sudah dibor belum di-logging lebih dari <b>${g} hari</b>.${me?.role === "admin" ? ` Ubah tenggat: <input id="gd" type="number" min="0" max="30" value="${g}" style="width:70px"> hari <button class="sec" id="gs" style="width:auto">Simpan</button>` : ""}</p>
+  box.innerHTML = `<h3>Form Logging per lubang</h3><p class="muted">Kedalaman bor (dari foto RUN) dibandingkan kedalaman yang sudah masuk database. Form Logging boleh dikirim per hari atau per lubang; baru <b>TERLAMBAT</b> bila interval yang sudah dibor belum di-logging lebih dari <b>${g} hari</b>.${me?.role === "admin" ? ` Ubah tenggat: <input id="gd" type="number" min="0" max="30" value="${g}" style="width:70px"> hari <button class="sec" id="gs" style="width:auto">Simpan</button>` : ""}</p>
     <div class="tw"><table><tr><th>BHID</th><th>Rig</th><th>Bor (m)</th><th>Logging (m)</th><th>Belum (m)</th><th>Conto</th><th>Scan menunggu</th><th>Belum sejak</th><th>Status</th></tr>
     ${rows.map((l) => `<tr><td><b>${esc(l.bhid)}</b></td><td>${esc(l.rig ?? "")}</td><td>${l.kedalaman_bor ?? ""}</td><td>${l.kedalaman_logging}</td><td>${l.belum_logging_m}</td><td>${l.jumlah_conto}</td><td>${l.scan_menunggu}</td><td>${l.belum_sejak ? `${fmtT(l.belum_sejak).slice(0, 10)} (${l.umur_hari} hr)` : "-"}</td><td style="background:${col[l.status] ?? "#fff"}">${esc(l.status)}</td></tr>`).join("") || `<tr><td colspan="9" class="muted">Belum ada lubang dengan foto RUN.</td></tr>`}</table></div>`;
   box.querySelector("#gs")?.addEventListener("click", async () => { const { error: e } = await sb.from("qc_param").update({ value: Number(box.querySelector("#gd").value) }).eq("name", "LOGGING_GRACE_DAYS"); if (e) return alert(e.message); logLubang(box); });
@@ -1084,7 +1092,7 @@ async function folderView(v, uid, nama) {
   const to = sessionStorage.getItem("rekapTgl") || todayWIB(), from = new Date(Date.parse(to) - 29 * 864e5).toISOString().slice(0, 10);
   v.innerHTML = `<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">Folder: ${esc(nama || "-")}</h2><button class="sec" id="bk" style="flex:0">← Rekap</button></div>
     <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Dari</label><input id="ff" type="date" value="${from}"></div><div><label>Sampai</label><input id="ft" type="date" value="${to}"></div>
-    <div><label>Jenis</label><select id="fj"><option value="">Semua</option>${["PROGRES", "P2H", "DDR", "TTD DDR", "F-BOR", "FOTO CORE", "ARSIP DDR", "ARSIP P2H", "ARSIP DRILL_LOG_LAMA", "ARSIP SURVEY", "ARSIP LAINNYA"].map((j) => `<option>${j}</option>`).join("")}</select></div><button id="fg" style="flex:0">Tampilkan</button></div></div>
+    <div><label>Jenis</label><select id="fj"><option value="">Semua</option>${["PROGRES", "P2H", "DDR", "TTD DDR", "FORM LOGGING", "FOTO CORE", "ARSIP DDR", "ARSIP P2H", "ARSIP DRILL_LOG_LAMA", "ARSIP SURVEY", "ARSIP LAINNYA"].map((j) => `<option>${j}</option>`).join("")}</select></div><button id="fg" style="flex:0">Tampilkan</button></div></div>
     <div class="card" id="fl">Memuat…</div>`;
   $("#bk").onclick = () => rekapView(v);
   const load = async () => {
