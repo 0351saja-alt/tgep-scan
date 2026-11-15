@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-15.9";
+const APP_VERSION = "2026-11-15.10";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -121,21 +121,21 @@ async function render() {
     return;
   }
   if (online() && !sessionStorage.getItem("tugasLoaded")) { sessionStorage.setItem("tugasLoaded", "1"); await loadTugas(); loadLanjutan(); }
-  if (!myTugas && !sessionStorage.getItem("proyekOk") && JSON.parse(localStorage.getItem("projects") || "[]").length) return pilihProyekView(false);
+  if (me?.role !== "client" && !myTugas && !sessionStorage.getItem("proyekOk") && JSON.parse(localStorage.getItem("projects") || "[]").length) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
+  const navs = R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
     ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
-  if (!navs.some(([k]) => k === tab)) tab = "prog";
+  if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
   beat();
-  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div><p class="muted" style="text-align:center;font-size:12px;margin:18px 0">${myTugas ? `Proyek <b>${esc(myTugas.nama)}</b> · ${esc(myTugas.rig ?? "-")} · <a href="#" id="gantiP">ganti</a> · ` : `<a href="#" id="gantiP">pilih proyek & rig</a> · `}TGEP Scan Drill Log · versi ${APP_VERSION}</p>`;
+  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div><p class="muted" style="text-align:center;font-size:12px;margin:18px 0">${myTugas ? `Proyek <b>${esc(myTugas.nama)}</b> · ${esc(myTugas.rig ?? "-")}${me?.role === "client" ? "" : ` · <a href="#" id="gantiP">ganti</a>`} · ` : me?.role === "client" ? "" : `<a href="#" id="gantiP">pilih proyek & rig</a> · `}TGEP Scan Drill Log · versi ${APP_VERSION}</p>`;
   $("#gantiP")?.addEventListener("click", (e) => { e.preventDefault(); pilihProyekView(false); });
   if (!sessionStorage.getItem("tolakCek")) { sessionStorage.setItem("tolakCek", "1"); cekPenolakan(true); }
   app.querySelectorAll("nav [data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; localStorage.setItem("tab", tab); render(); }));
   $("#out").onclick = async () => { if (!confirm("Keluar dari akun? Foto di antrean tetap tersimpan di HP.")) return; localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); session = null; await sb.auth.signOut().catch(() => {}); render(); };
   if (me?.role === "admin" && navigator.onLine && !session.offline) sb.from("registration_request").select("user_id", { count: "exact", head: true }).eq("status", "PENDING")
     .then(({ count }) => { const b = app.querySelector('nav [data-t="users"]'); if (b && count) b.textContent = `Pengguna (${count} baru)`; });
-  document.querySelector("main").style.maxWidth = tab === "db" || tab === "dash" || tab === "rekap" ? "none" : "";
+  document.querySelector("main").style.maxWidth = tab === "db" || tab === "dash" || tab === "rekap" || tab === "klien" ? "none" : "";
   if (tab === "foto") return fotoView($("#v"));
   if (tab === "review") return reviewList($("#v"));
   if (tab === "data") return dataView($("#v"));
@@ -148,6 +148,7 @@ async function render() {
   if (tab === "dok") return dokView($("#v"));
   if (tab === "rekap") return rekapView($("#v"));
   if (tab === "dash") return dashView($("#v"));
+  if (tab === "klien") return klienView($("#v"));
 }
 
 function loginView() {
@@ -652,7 +653,7 @@ async function usersView(v) {
   const roleOf = Object.fromEntries((au ?? []).map((x) => [x.user_id, x.role]));
   const pend = rq.filter((r) => r.status === "PENDING"), rest = rq.filter((r) => r.status !== "PENDING");
   const link = new URL("daftar.html", location.href).href;
-  const opt = (sel) => ["driller", "geologist", "verifier", "admin"].map((r) => `<option ${r === sel ? "selected" : ""}>${r}</option>`).join("");
+  const opt = (sel) => ["driller", "geologist", "verifier", "admin", "client"].map((r) => `<option ${r === sel ? "selected" : ""}>${r}</option>`).join("");
   const row = (r, pending) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>${esc(r.full_name)}</b> · ${esc(r.email)}<br><span class="muted">${esc(r.position ?? "")} · ${esc(r.company ?? "")} · ${esc(r.phone ?? "")}${r.reason ? " · " + esc(r.reason) : ""}<br>
       ${pending ? `minta: ${esc(r.requested_role)} · daftar ${new Date(r.created_at).toLocaleString("id-ID")}` : `status: ${roleOf[r.user_id] ? "AKTIF (" + roleOf[r.user_id] + ")" : r.status === "REJECTED" ? "DITOLAK/NONAKTIF" : r.status}${r.decision_note ? " · " + esc(r.decision_note) : ""}`}</span></span>
       <select data-role="${r.user_id}" style="flex:0;width:auto">${opt(roleOf[r.user_id] ?? r.requested_role)}</select>
@@ -662,7 +663,9 @@ async function usersView(v) {
     <p>Link pendaftaran untuk dibagikan: <b>${esc(link)}</b> <button class="sec" id="cp" style="padding:4px 10px">Salin</button></p>
     <p class="muted">Pendaftar tidak bisa melihat atau mengirim data sampai disetujui. Periksa nama, perusahaan dan nomor HP sebelum menyetujui — email belum diverifikasi otomatis.</p></div>
     <div class="card"><h3>Menunggu persetujuan (${pend.length})</h3><ul class="list">${pend.map((r) => row(r, true)).join("") || `<li class="muted">Tidak ada.</li>`}</ul></div>
-    <div class="card"><h3>Semua pengguna</h3><ul class="list">${rest.map((r) => row(r, false)).join("") || `<li class="muted">-</li>`}</ul></div>`;
+    <div class="card"><h3>Semua pengguna</h3><ul class="list">${rest.map((r) => row(r, false)).join("") || `<li class="muted">-</li>`}</ul></div>
+    <div class="card" id="akc"></div>`;
+  aksesKlien($("#akc"));
   $("#cp").onclick = async () => { await navigator.clipboard?.writeText(link); $("#cp").textContent = "Tersalin"; };
   const act = async (uid, role) => {
     const note = role ? prompt("Catatan (opsional), mis. 'kru RIG-03':") ?? "" : prompt("Alasan menolak / menonaktifkan (wajib):");
@@ -822,7 +825,7 @@ async function ddrView(v) {
     <p class="muted">Urutan sama dengan formulir DDR kontraktor. Kolom * wajib. Pemakaian barang wajib diisi semua (0 bila tidak dipakai).</p>
     <div class="row"><div><label>PROJECT</label><input id="pj" value="${esc(last.project ?? "")}"></div><div><label>LOCATION</label><input id="lc" value="${esc(last.location ?? "")}"></div></div>
     <div class="row"><div><label>HOLE ID *</label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters"></div><div><label>RIG NO *</label><input id="rg" value="${esc(rig)}" autocapitalize="characters"></div><div><label>RIG TYPE</label><input id="rt" value="${esc(last.rig_type ?? "")}"></div></div>
-    <div class="row"><div><label>DATE *</label><input id="dt" type="date" value="${todayWIB()}"></div><div><label>TIME *</label><select id="sh"><option value="PAGI" ${shift === "PAGI" ? "selected" : ""}>Day (06–18)</option><option value="MALAM" ${shift === "MALAM" ? "selected" : ""}>Night (18–06)</option></select></div><div><label>Kontraktor *</label><input id="ct" value="${esc(last.contractor ?? "")}"></div></div>
+    <div class="row"><div><label>DATE *</label><input id="dt" type="date" value="${todayWIB()}"></div><div><label>TIME *</label><select id="sh"><option value="PAGI" ${shift === "PAGI" ? "selected" : ""}>Day (06–18)</option><option value="MALAM" ${shift === "MALAM" ? "selected" : ""}>Night (18–06)</option></select></div><div><label>Client *</label><input id="ct" value="${esc(last.contractor ?? "")}"></div></div>
     <div class="row"><div><label>DRILLER *</label><input id="dn" value="${esc(last.driller_name ?? "")}"></div><div><label>ASSISTANT</label><input id="hp" value="${esc(last.helpers ?? "")}"></div><div style="flex:.5"><label>CREW *</label><input id="cc" inputmode="numeric" value="${esc(last.crew_count ?? "")}"></div></div>
 
     <h3>1. DRILLING</h3>
@@ -953,7 +956,7 @@ async function printDDR(id) {
   <style>body{font-family:Arial,sans-serif;font-size:11px;margin:16px;color:#111} h1{font-size:17px;margin:0} h3{margin:10px 0 2px;font-size:12px} table{border-collapse:collapse;width:100%;margin:4px 0} td,th{border:1px solid #888;padding:3px 5px;text-align:left} th{background:#e6efe9}
   .g{display:grid;grid-template-columns:repeat(3,1fr);gap:6px} .g img{width:100%;border:1px solid #ccc} .two{display:grid;grid-template-columns:1fr 1fr;gap:10px} @media print{button{display:none}}</style></head><body>
   <button onclick="print()">Cetak / simpan PDF</button>
-  <h1>DAILY DRILLING REPORT</h1><div>${esc(d.contractor ?? "")} · status: <b>${d.status === "SIGNED" ? "LENGKAP DITANDATANGANI" : "DRAF"}</b></div>
+  <h1>DAILY DRILLING REPORT</h1><div>CLIENT: <b>${esc(d.contractor ?? "")}</b> · status: <b>${d.status === "SIGNED" ? "LENGKAP DITANDATANGANI" : "DRAF"}</b></div>
   <table><tr><th>PROJECT</th><td>${esc(d.project ?? "")}</td><th>DATE</th><td>${esc(d.report_date)}</td><th>DRILLER</th><td>${esc(d.driller_name ?? "")}</td></tr>
   <tr><th>LOCATION</th><td>${esc(d.location ?? "")}</td><th>TIME</th><td>${d.shift === "PAGI" ? "Day" : "Night"}</td><th>ASSISTANT</th><td>${esc(d.helpers ?? "")}</td></tr>
   <tr><th>HOLE ID</th><td>${esc(d.bhid ?? "")}</td><th>RIG NO</th><td>${esc(d.rig)}</td><th>CREW</th><td>${d.crew_count ?? ""}</td></tr>
@@ -993,10 +996,11 @@ async function dashView(v) {
     R(sb.from("v_consumable_use").select("*").gte("report_date", st.from).lte("report_date", st.to)),
     sb.from("v_dash_hole").select("*"),
   ]);
-  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0 && (!pf || pf.bhids.includes(h.bhid))), K = computeKPI(days, tm ?? [], cu ?? [], holes);
+  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0 && (!pf || pf.bhids.includes(h.bhid))), K = computeKPI(days, tm ?? [], cu ?? [], holes).filter(([l]) => me?.role !== "client" || !GEO_KPI.includes(l));
   $("#kpi").innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">${K.map(([l, val, note]) => `<div style="background:#fff;border-radius:10px;padding:10px;border-left:5px solid ${note === "!" ? "#C8281F" : "#1E9E69"}"><div class="muted" style="font-size:12px">${esc(l)}</div><div style="font-size:22px;font-weight:700">${esc(val)}</div></div>`).join("")}</div>
-    <p class="muted" style="margin-top:8px">Periode ${st.from} s/d ${st.to}${st.rig ? " · rig " + esc(st.rig) : " · semua rig"}. Data geologi (tebal zona, conto) mencakup semua lubang yang sudah disetujui.</p>`;
-  const { data: kp } = await sb.from("v_kepatuhan_harian").select("nama,rig,status,kurang,antrean").eq("tanggal", st.to);
+    <p class="muted" style="margin-top:8px">Periode ${st.from} s/d ${st.to}${st.rig ? " · rig " + esc(st.rig) : " · semua rig"}. ${me?.role === "client" ? "Akun client: data operasional rig yang ditugaskan (meter, jam, standby, BBM, P2H, DDR)." : "Data geologi (tebal zona, conto) mencakup semua lubang yang sudah disetujui."}</p>`;
+  const klien = me?.role === "client";
+  const { data: kp } = klien ? { data: [] } : await sb.from("v_kepatuhan_harian").select("nama,rig,status,kurang,antrean").eq("tanggal", st.to);
   if (kp?.length) { const c = document.createElement("div"); c.className = "card"; const bel = kp.filter((r) => ["BELUM", "SEBAGIAN"].includes(r.status)), hp = kp.filter((r) => r.antrean > 0);
     c.innerHTML = `<h3 style="margin:0 0 6px">Pengiriman operator ${st.to}</h3><p>Lengkap <b>${kp.filter((r) => r.status === "LENGKAP").length}</b> · sebagian <b>${kp.filter((r) => r.status === "SEBAGIAN").length}</b> · belum <b>${kp.filter((r) => r.status === "BELUM").length}</b> · data tertahan di HP <b>${hp.length}</b> orang</p>${bel.length ? `<p class="err">${bel.map((r) => `${esc(r.nama)} (${esc(r.rig ?? "-")}): ${esc((r.kurang ?? []).join(", "))}`).join(" · ")}</p>` : ""}<button class="sec" id="toRek" style="width:auto">Buka Rekap operator</button>`;
     $("#kpi").after(c); c.querySelector("#toRek").onclick = () => { tab = "rekap"; localStorage.setItem("tab", tab); render(); }; }
@@ -1023,6 +1027,7 @@ async function dashView(v) {
   const hk = by(dh ?? [], (x) => x.kategori, (x) => x.menit), hg = by(dh ?? [], (x) => x.kelompok, (x) => x.menit);
   new Chart(box("c11", "Distribusi jam DDR per kegiatan (jam)"), { type: "bar", data: { labels: Object.keys(hk).length ? Object.keys(hk) : ["(belum ada DDR)"], datasets: [{ label: "jam", data: Object.values(hk).map((m) => +(m / 60).toFixed(2)), backgroundColor: "#2F6FB0" }] }, options: { indexAxis: "y" } });
   new Chart(box("c12", "Drilling / Working / Standby (DDR)"), { type: "pie", data: { labels: Object.keys(hg).length ? Object.keys(hg) : ["(belum ada DDR)"], datasets: [{ data: Object.keys(hg).length ? Object.values(hg) : [1], backgroundColor: ["#1E9E69", "#E8892B", "#C8281F"] }] } });
+  if (klien) return;
   const ed = [0, 2, 4, 6, 8, 10, 12, 15, 20, 30], lab = ed.slice(0, -1).map((e, i) => `${e}–${ed[i + 1]} m`);
   new Chart(box("c7", "Histogram tebal zona per lubang"), { type: "bar", data: { labels: lab, datasets: [{ label: "Limonit", data: hist(holes.map((h) => Number(h.tebal_limonit)), ed), backgroundColor: "#E8892B" }, { label: "Saprolit", data: hist(holes.map((h) => Number(h.tebal_saprolit)), ed), backgroundColor: "#1E9E69" }] }, options: { scales: { y: { title: { display: true, text: "jumlah lubang" } } } } });
   const nl = holes.reduce((s, h) => s + h.conto_limonit, 0), ns = holes.reduce((s, h) => s + h.conto_saprolit, 0), nt = holes.reduce((s, h) => s + h.jumlah_conto, 0);
@@ -1032,6 +1037,7 @@ async function dashView(v) {
   const avg = (k) => { const xs = holes.map((h) => Number(h[k])).filter((x) => isFinite(x) && x > 0); return xs.length ? +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(3) : null; };
   new Chart(box("c10", "Rata-rata density kering per zona (t/m³)"), { type: "bar", data: { labels: ["Limonit", "Saprolit"], datasets: [{ label: "dry density", data: [avg("dry_density_limonit"), avg("dry_density_saprolit")], backgroundColor: ["#E8892B", "#1E9E69"] }] } });
 }
+const GEO_KPI = ["Lubang berdata", "Jumlah conto", "Rata tebal limonit", "Rata tebal saprolit", "Conto bermasalah (QC)", "Foto core lengkap"];
 function computeKPI(days, tm, cu, holes) {
   const s = (xs, k) => xs.reduce((a, x) => a + (Number(x[k]) || 0), 0), pct = (a, b) => (b ? Math.round((100 * a) / b) + "%" : "-");
   const m = s(days, "meter_bor"), jam = s(days, "jam_kerja_bor"), bbm = s(days, "bbm_liter"), activeDays = days.filter((d) => Number(d.meter_bor) > 0);
@@ -1067,10 +1073,10 @@ async function laporanProgres(st) {
       R(sb.from("v_dash_time").select("*").gte("tanggal", st.from).lte("tanggal", st.to)),
       inB(sb.from("v_dash_hole").select("*"), "bhid"),
       R(sb.from("v_logging_lubang").select("*")),
-      R(sb.from("v_kepatuhan_harian").select("tanggal,user_id,nama,peran,rig,status,kurang").gte("tanggal", st.from).lte("tanggal", st.to)),
+      me?.role === "client" ? { data: [] } : R(sb.from("v_kepatuhan_harian").select("tanggal,user_id,nama,peran,rig,status,kurang").gte("tanggal", st.from).lte("tanggal", st.to)),
       sb.from("penugasan").select("user_id,project"),
       R(sb.from("ddr").select("bhid,rig,report_date,target_m,total_depth_m").lte("report_date", st.to)).order("report_date"),
-      inB(sb.from("v_sample_qc").select("bhid,chk_density,status"), "bhid"),
+      me?.role === "client" ? { data: [] } : inB(sb.from("v_sample_qc").select("bhid,chk_density,status"), "bhid"),
     ]);
     const days = rd ?? [], holesAll = hl ?? [], holes = holesAll.filter((h) => h.jumlah_conto > 0);
     const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p.project]));
@@ -1087,7 +1093,8 @@ async function laporanProgres(st) {
       return { b, rig: l.rig ?? "", mulai: (h.start_date ?? l.mulai ?? "").toString().slice(0, 10), akhir: (l.terakhir_bor ?? h.stop_date ?? "").toString().slice(0, 10), bor, tgt, logm: n(l.kedalaman_logging), conto: n(l.jumlah_conto ?? h.jumlah_conto), lstat: l.status ?? "-", tl: h.tebal_limonit, ts: h.tebal_saprolit, rec: h.recovery_pct, selesai }; };
     const HR = bhids.map(holeRow), nSelesai = HR.filter((h) => h.selesai).length;
     const mPer = sum(days, "meter_bor"), mCum = sum(rdAll ?? [], "meter_bor");
-    const K = computeKPI(days, tm ?? [], [], holes);
+    const klien = me?.role === "client";
+    const K = computeKPI(days, tm ?? [], [], holes).filter(([l]) => !klien || !GEO_KPI.includes(l));
     // per rig
     const rigs = [...new Set(days.map((d) => d.rig))].sort();
     const rigRows = rigs.map((r) => { const xs = days.filter((d) => d.rig === r), act = xs.filter((d) => n(d.meter_bor) > 0), m = sum(xs, "meter_bor"), j = sum(xs, "jam_kerja_bor"), b = sum(xs, "bbm_liter");
@@ -1116,10 +1123,10 @@ async function laporanProgres(st) {
     if (PJ?.target_meter) notes.push(`Realisasi kumulatif ${mCum.toFixed(1)} m dari target ${PJ.target_meter} m (${pct(mCum, PJ.target_meter)}%).`);
     if (PJ?.target_lubang) notes.push(`Lubang selesai ${nSelesai} dari target ${PJ.target_lubang} lubang (${pct(nSelesai, PJ.target_lubang)}%).`);
     for (const [k, x] of Object.entries(kpiV)) if (x.f === "!") notes.push(`Perlu perhatian — ${k}: ${x.v}.`);
-    if (lgc("TERLAMBAT")) notes.push(`${lgc("TERLAMBAT")} lubang Form Logging terlambat: ${HR.filter((h) => h.lstat === "TERLAMBAT").map((h) => h.b).join(", ")}.`);
-    const lowOp = opRows.filter((r) => r[3] && (parseInt(r[7]) || 0) < 80); if (lowOp.length) notes.push(`Operator dengan kepatuhan kirim < 80%: ${lowOp.map((r) => `${r[0]} (${r[7]})`).join(", ")}.`);
+    if (!klien && lgc("TERLAMBAT")) notes.push(`${lgc("TERLAMBAT")} lubang Form Logging terlambat: ${HR.filter((h) => h.lstat === "TERLAMBAT").map((h) => h.b).join(", ")}.`);
+    const lowOp = opRows.filter((r) => r[3] && (parseInt(r[7]) || 0) < 80); if (!klien && lowOp.length) notes.push(`Operator dengan kepatuhan kirim < 80%: ${lowOp.map((r) => `${r[0]} (${r[7]})`).join(", ")}.`);
     if (sbRows[0]) notes.push(`Penyebab standby/perbaikan terbesar: ${sbRows[0][0]} (${sbRows[0][1]} jam).`);
-    if (nLab) notes.push(`${nLab} conto density menunggu hasil laboratorium (berat kering oven).`);
+    if (!klien && nLab) notes.push(`${nLab} conto density menunggu hasil laboratorium (berat kering oven).`);
     if (!notes.length) notes.push("Tidak ada catatan khusus pada periode ini.");
     // tabel
     const T = {
@@ -1136,7 +1143,8 @@ async function laporanProgres(st) {
       catatan: [["Catatan otomatis"], ...notes.map((x) => [x])],
     };
     const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
-    for (const [k, nm] of [["ringkasan", "Ringkasan"], ["catatan", "Catatan"], ["rig", "Per rig"], ["harian", "Harian"], ["lubang", "Status lubang"], ["standby", "Standby"], ["operator", "Kepatuhan operator"], ["qc", "Data & QC"]])
+    if (klien) T.lubang = T.lubang.map((r) => [r[0], r[1], r[2], r[3], r[4], r[5], r[12]]);
+    for (const [k, nm] of [["ringkasan", "Ringkasan"], ["catatan", "Catatan"], ["rig", "Per rig"], ["harian", "Harian"], ["lubang", "Status lubang"], ["standby", "Standby"], ...(klien ? [] : [["operator", "Kepatuhan operator"], ["qc", "Data & QC"]])])
       X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(T[k]), nm);
     const fname = `TGEP_Laporan_Progres_${st.proj || "semua"}_${st.from}_${st.to}.xlsx`;
     window._lapDL = () => X.writeFile(wb, fname);
@@ -1151,15 +1159,73 @@ async function laporanProgres(st) {
     <h2>2. Catatan & hal yang perlu ditindaklanjuti</h2><ul>${notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
     <h2>3. Progres per rig</h2>${tbl(T.rig)}
     <h2>4. Meter bor harian</h2>${svg}${tbl(T.harian)}
-    <h2>5. Status lubang</h2>${tbl(T.lubang, { col: 1 })}<p style="color:#555">SELESAI = tanggal selesai terisi atau kedalaman ≥ target/total depth di DDR. Kedalaman dari foto RUN aplikasi; tebal zona dan recovery dari Form Logging yang sudah disetujui.</p>
+    <h2>5. Status lubang</h2>${klien ? tbl([["BHID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.selesai ? "SELESAI" : "BERJALAN"])]) : tbl(T.lubang, { col: 1 })}<p style="color:#555">SELESAI = tanggal selesai terisi atau kedalaman ≥ target/total depth di DDR. Kedalaman dari foto RUN aplikasi${klien ? "" : "; tebal zona dan recovery dari Form Logging yang sudah disetujui"}.</p>
     <h2>6. Penyebab standby & perbaikan</h2>${sbRows.length ? tbl(T.standby) : "<p>Tidak ada standby/perbaikan tercatat.</p>"}
-    <h2>7. Kepatuhan pengiriman operator</h2>${opRows.length ? tbl(T.operator, { col: 1 }) : "<p>Belum ada data operator.</p>"}
-    <h2>8. Kelengkapan data & QC</h2>${tbl(T.qc)}
+    ${klien ? "" : `<h2>7. Kepatuhan pengiriman operator</h2>${opRows.length ? tbl(T.operator, { col: 1 }) : "<p>Belum ada data operator.</p>"}
+    <h2>8. Kelengkapan data & QC</h2>${tbl(T.qc)}`}
     <table style="margin-top:24px"><tr><td style="height:70px;width:50%;vertical-align:top"><b>Disusun oleh</b><br><br><br>Nama / tanggal:</td><td style="vertical-align:top"><b>Diperiksa oleh</b><br><br><br>Nama / tanggal:</td></tr></table>
     <small>Dibuat otomatis dari database aplikasi TGEP Scan Drill Log · ${new Date().toLocaleString("id-ID")} · oleh ${esc(me?.full_name ?? "")}. Angka mengikuti data yang sudah masuk server saat laporan dibuat.</small></body></html>`);
     w.document.close();
   } catch (e) { w.document.body.innerHTML = `<p style="font-family:Arial;color:#b00">Gagal menyusun laporan: ${esc(e.message)}</p>`; }
 }
+// ---------- Akun client: laporan per rig (baca saja) ----------
+async function aksesKlien(box) {
+  const [{ data: us }, { data: pn }, { data: pj }] = await Promise.all([sb.from("app_user").select("user_id,full_name,company,email").eq("role", "client").order("full_name"), sb.from("penugasan").select("*"), sb.from("project").select("code,nama,rigs").order("nama")]);
+  const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p]));
+  box.innerHTML = `<h3>Akses akun client</h3><p class="muted">Client hanya bisa melihat Dashboard, Laporan rig (DDR, progres harian, BBM, P2H) dan Dokumen yang dibuka untuk peran client — <b>tanpa</b> data geologi, conto, foto core, scan formulir, atau data operator. Pilih proyek: client melihat semua rig proyek itu; isi rig bila hanya satu rig.</p>
+    <ul class="list">${(us ?? []).map((u) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:200px"><b>${esc(u.full_name ?? "")}</b><br><span class="muted">${esc(u.company ?? "")} · ${esc(u.email ?? "")}</span></span>
+      <select data-kp="${u.user_id}" style="max-width:220px"><option value="">— belum ada akses —</option>${(pj ?? []).map((p) => `<option value="${esc(p.code)}" ${P[u.user_id]?.project === p.code ? "selected" : ""}>${esc(p.nama)} (${esc((p.rigs ?? []).join(", ") || "tanpa rig")})</option>`).join("")}</select>
+      <input data-kr="${u.user_id}" value="${esc(P[u.user_id]?.rig ?? "")}" placeholder="rig (opsional)" style="max-width:130px" autocapitalize="characters">
+      <button class="sec" data-ks="${u.user_id}" style="flex:0">Simpan</button></li>`).join("") || `<li class="muted">Belum ada akun client. Setujui pendaftar dengan peran <b>client</b> di atas.</li>`}</ul>`;
+  box.querySelectorAll("[data-ks]").forEach((b) => (b.onclick = async () => {
+    const id = b.dataset.ks, project = box.querySelector(`[data-kp="${id}"]`).value || null, rig = box.querySelector(`[data-kr="${id}"]`).value.trim().toUpperCase() || null;
+    const { error } = await sb.from("penugasan").upsert({ user_id: id, project, rig, wajib_harian: false, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+    if (error) return alert(error.message); b.textContent = "Tersimpan ✓";
+  }));
+}
+async function klienView(v) {
+  const to = todayWIB(), from = new Date(Date.now() - 30 * 864e5).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+  const st = JSON.parse(sessionStorage.getItem("klien") || "null") ?? { from, to, rig: "" };
+  v.innerHTML = `<div class="card"><h2>Laporan rig</h2><p class="muted">Rekap operasional rig yang dibuka untuk akun Anda. Data masuk dari aplikasi lapangan (foto bergeotag, P2H, DDR bertanda tangan).</p>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
+    <div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="xl" style="flex:0;white-space:nowrap">Unduh Excel rekap</button>
+    <button class="sec" id="lp" style="flex:0;white-space:nowrap">Laporan progres</button></div><div id="info" class="muted"></div></div>
+    <div class="card" id="kr">Memuat…</div><div class="card" id="kd"></div>`;
+  const rd = () => ({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() });
+  $("#go").onclick = () => { sessionStorage.setItem("klien", JSON.stringify(rd())); klienView(v); };
+  $("#lp").onclick = () => laporanProgres({ ...rd(), proj: "" });
+  if (!online()) return ($("#kr").textContent = "Laporan perlu sinyal internet.");
+  const F = (q, col) => { q = q.gte(col, st.from).lte(col, st.to); return st.rig ? q.eq("rig", st.rig) : q; };
+  const [{ data: days, error }, { data: dl }] = await Promise.all([F(sb.from("v_dash_rig_day").select("*"), "tanggal").order("tanggal", { ascending: false }).order("rig"), F(sb.from("v_ddr_list").select("*"), "report_date").order("report_date", { ascending: false }).limit(500)]);
+  if (error) return ($("#kr").innerHTML = `<p class="err">${esc(error.message)}</p>`);
+  if (!(days ?? []).length && !(dl ?? []).length) { $("#kr").innerHTML = `<p>Belum ada data untuk periode ini. Bila tetap kosong, minta admin TGEP memastikan akses proyek/rig akun Anda sudah diatur.</p>`; return; }
+  const f1 = (x) => (x == null ? "" : Number(x).toFixed(1)), n = (x) => Number(x) || 0;
+  const rigs = [...new Set((days ?? []).map((d) => d.rig))].sort();
+  $("#kr").innerHTML = `<h3>Ringkasan per rig</h3><div class="tw"><table><tr><th>Rig</th><th>Hari aktif</th><th>Meter</th><th>m/jam</th><th>Standby (jam)</th><th>BBM (L)</th><th>L/m</th><th>P2H ada</th><th>DDR ber-TTD</th></tr>
+    ${rigs.map((r) => { const xs = days.filter((d) => d.rig === r), a = xs.filter((d) => n(d.meter_bor) > 0), m = xs.reduce((s, d) => s + n(d.meter_bor), 0), j = xs.reduce((s, d) => s + n(d.jam_kerja_bor), 0), b = xs.reduce((s, d) => s + n(d.bbm_liter), 0);
+      return `<tr><td><b>${esc(r)}</b></td><td>${a.length}</td><td>${f1(m)}</td><td>${j ? (m / j).toFixed(2) : "-"}</td><td>${f1(xs.reduce((s, d) => s + n(d.standby_menit), 0) / 60)}</td><td>${b.toFixed(0)}</td><td>${m ? (b / m).toFixed(2) : "-"}</td><td>${a.filter((d) => d.ada_p2h).length}/${a.length}</td><td>${a.filter((d) => d.n_ddr_ttd > 0).length}/${a.length}</td></tr>`; }).join("")}</table></div>
+    <h3>Rekap harian</h3><div class="tw"><table><tr><th>Tanggal</th><th>Rig</th><th>Meter</th><th>Run</th><th>Recovery %</th><th>Jam bor</th><th>Standby (mnt)</th><th>m/jam</th><th>BBM (L)</th><th>P2H</th><th>DDR (TTD)</th><th>Kejadian</th></tr>
+    ${(days ?? []).map((d) => `<tr><td>${d.tanggal}</td><td>${esc(d.rig)}</td><td>${f1(d.meter_bor)}</td><td>${d.jumlah_run ?? ""}</td><td>${d.recovery_pct ?? ""}</td><td>${f1(d.jam_kerja_bor)}</td><td>${d.standby_menit ?? ""}</td><td>${d.meter_per_jam ?? ""}</td><td>${d.bbm_liter ?? ""}</td>
+      <td style="${!d.ada_p2h || d.p2h_bermasalah ? "background:#F6C9C3" : ""}">${d.ada_p2h ? (d.p2h_bermasalah ? "ada masalah" : "OK") : "tidak ada"}</td><td>${d.n_ddr ?? 0} (${d.n_ddr_ttd ?? 0})</td><td>${esc(String(d.kejadian_bermasalah ?? ""))}</td></tr>`).join("")}</table></div>`;
+  $("#kd").innerHTML = `<h3>DDR (${(dl ?? []).length})</h3><ul class="list">${(dl ?? []).map((d) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · ${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">${d.status === "SIGNED" ? "lengkap ditandatangani" : "draf"} · ${f1(d.coring_ddr_m)} m coring · ${esc(d.ttd ?? "belum ada TTD")}</span></span>
+    <button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`).join("") || `<li class="muted">Belum ada DDR.</li>`}</ul>`;
+  $("#kd").querySelectorAll("[data-pr]").forEach((b) => (b.onclick = () => printDDR(b.dataset.pr)));
+  $("#xl").onclick = async () => {
+    $("#info").textContent = "Menyiapkan Excel…";
+    try {
+      const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
+      const flat = (rows) => (rows ?? []).map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (o[c] && typeof o[c] === "object") o[c] = Array.isArray(o[c]) && o[c].every((x) => typeof x !== "object") ? o[c].join("; ") : JSON.stringify(o[c]); return o; });
+      const src = [["Kinerja rig harian", "v_dash_rig_day", "tanggal"], ["Progres harian bor", "v_drill_progress_daily", "tanggal"], ["DDR", "v_ddr_list", "report_date"], ["Distribusi jam DDR", "v_ddr_hours", "tanggal"], ["BBM oli barang", "v_consumable_use", "report_date"], ["Aktivitas bor", "v_drill_event_qc", "captured_at"], ["P2H", "p2h_check", "captured_at"]];
+      for (const [nm, vw, col] of src) {
+        const out = []; for (let i = 0; ; i += 1000) { let q = sb.from(vw).select("*"); q = col === "captured_at" ? q.gte(col, `${st.from}T00:00:00+07:00`).lte(col, `${st.to}T23:59:59+07:00`) : q.gte(col, st.from).lte(col, st.to); if (st.rig) q = q.eq("rig", st.rig);
+          const { data, error: e } = await q.order(col).range(i, i + 999); if (e) throw e; out.push(...data); if (data.length < 1000) break; }
+        X.utils.book_append_sheet(wb, out.length ? X.utils.json_to_sheet(flat(out)) : X.utils.aoa_to_sheet([["(kosong)"]]), nm);
+      }
+      X.writeFile(wb, `TGEP_Rekap_Rig_${st.rig || "semua"}_${st.from}_${st.to}.xlsx`); $("#info").textContent = "Excel diunduh (7 sheet).";
+    } catch (e) { $("#info").textContent = e.message; }
+  };
+}
+
 // ---------- Proyek & rig, lanjutan isian, pemberitahuan penolakan ----------
 let myTugas = JSON.parse(localStorage.getItem("myTugas") || "null");
 async function loadTugas() {
@@ -1355,7 +1421,7 @@ async function dokView(v) {
       <label>File (PDF, Word, Excel; maks. 50 MB)</label><input id="uf" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
       <div class="row"><div><label>Judul *</label><input id="uj"></div><div style="flex:.6"><label>Kategori</label><select id="uk"><option>SOP</option><option>FORMULIR</option><option>PANDUAN</option><option>LAINNYA</option></select></div><div style="flex:.4"><label>Versi</label><input id="uv" placeholder="v1"></div></div>
       <label>Keterangan</label><input id="uket">
-      <label>Boleh diunduh oleh</label><div class="row">${["driller", "geologist", "verifier", "admin"].map((r) => `<label style="flex:0;white-space:nowrap"><input type="checkbox" value="${r}" class="ur" ${r !== "driller" ? "checked" : ""}> ${r}</label>`).join("")}</div>
+      <label>Boleh diunduh oleh</label><div class="row">${["driller", "geologist", "verifier", "admin", "client"].map((r) => `<label style="flex:0;white-space:nowrap"><input type="checkbox" value="${r}" class="ur" ${r !== "driller" ? "checked" : ""}> ${r}</label>`).join("")}</div>
       <p class="muted">Dokumen yang diunggah di sini disimpan di database (privat) dan hanya bisa diunduh akun yang disetujui sesuai peran yang dicentang. Versi lama sebaiknya dinonaktifkan, bukan dihapus.</p>
       <button id="ub">Unggah</button><div id="ue" class="err"></div></div>` : ""}`;
   const get = (id) => list.find((d) => d.id === id);
