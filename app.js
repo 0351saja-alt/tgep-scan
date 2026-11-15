@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-15.12";
+const APP_VERSION = "2026-11-15.13";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -820,10 +820,10 @@ async function ddrView(v) {
   const items = await cached("ddrItems2", async () => (await sb.from("consumable_item").select("item,unit,kategori").eq("active", true).order("sort")).data);
   cached("signers", async () => (await sb.from("signature_profile").select("user_id,full_name,title")).data);
   const q = (await qAll()).filter((x) => x.kind === "ddr");
-  const rig = localStorage.getItem("rig") || "", shift = localStorage.getItem("shift") || "PAGI", last = JSON.parse(localStorage.getItem("ddrLast") || "{}");
+  const rig = localStorage.getItem("rig") || "", shift = localStorage.getItem("shift") || "PAGI", last = JSON.parse(localStorage.getItem("ddrLast") || "{}"); if (last.v !== 2) delete last.contractor;
   const cats = [...new Set(items.map((i) => i.kategori))];
   v.innerHTML = `<div class="card"><h2>DAILY DRILLING REPORT</h2>
-    <p class="muted">Urutan sama dengan formulir DDR kontraktor. Kolom * wajib. Pemakaian barang wajib diisi semua (0 bila tidak dipakai).</p>
+    <p class="muted">Urutan sama dengan formulir DDR lapangan. Kolom * wajib. Kolom <b>Client</b> diisi nama perusahaan client. Pemakaian barang wajib diisi semua (0 bila tidak dipakai).</p>
     <div class="row"><div><label>PROJECT</label><input id="pj" value="${esc(last.project ?? "")}"></div><div><label>LOCATION</label><input id="lc" value="${esc(last.location ?? "")}"></div></div>
     <div class="row"><div><label>HOLE ID *</label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters"></div><div><label>RIG NO *</label><input id="rg" value="${esc(rig)}" autocapitalize="characters"></div><div><label>RIG TYPE</label><input id="rt" value="${esc(last.rig_type ?? "")}"></div></div>
     <div class="row"><div><label>DATE *</label><input id="dt" type="date" value="${todayWIB()}"></div><div><label>TIME *</label><select id="sh"><option value="PAGI" ${shift === "PAGI" ? "selected" : ""}>Day (06–18)</option><option value="MALAM" ${shift === "MALAM" ? "selected" : ""}>Night (18–06)</option></select></div><div><label>Client *</label><input id="ct" value="${esc(last.contractor ?? "")}"></div></div>
@@ -888,7 +888,7 @@ async function ddrView(v) {
     row.consumables = cons;
     const tot = hours.reduce((s, h) => s + durMin(h.mulai, h.selesai), 0);
     if (tot > 720 && !confirm(`Total jam ${(tot / 60).toFixed(1)} > 12 jam. Tetap simpan?`)) return;
-    localStorage.setItem("ddrLast", JSON.stringify({ contractor: row.contractor, driller_name: row.driller_name, crew_count: row.crew_count, helpers: row.helpers, project: row.project, location: row.location, rig_type: row.rig_type, target_m: row.target_m }));
+    localStorage.setItem("ddrLast", JSON.stringify({ v: 2, contractor: row.contractor, driller_name: row.driller_name, crew_count: row.crew_count, helpers: row.helpers, project: row.project, location: row.location, rig_type: row.rig_type, target_m: row.target_m }));
     localStorage.setItem("rig", row.rig); localStorage.setItem("shift", row.shift); localStorage.setItem("bhid", row.bhid);
     const signs = [];
     for (const slot of ["DRILLER", "WELLSITE", "CLIENT"]) { const s = await signDialog(slot); if (s) signs.push(s); }
