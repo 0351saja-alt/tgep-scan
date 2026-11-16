@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-15.13";
+const APP_VERSION = "2026-11-17.1";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -121,14 +121,14 @@ async function render() {
     return;
   }
   if (online() && !sessionStorage.getItem("tugasLoaded")) { sessionStorage.setItem("tugasLoaded", "1"); await loadTugas(); loadLanjutan(); }
-  if (me?.role !== "client" && !myTugas && !sessionStorage.getItem("proyekOk") && JSON.parse(localStorage.getItem("projects") || "[]").length) return pilihProyekView(false);
+  if (!["client", "admin", "verifier"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
   const navs = R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["fk", "Foto & scan"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
     ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
   beat();
-  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div><p class="muted" style="text-align:center;font-size:12px;margin:18px 0">${myTugas ? `Proyek <b>${esc(myTugas.nama)}</b> · ${esc(myTugas.rig ?? "-")}${me?.role === "client" ? "" : ` · <a href="#" id="gantiP">ganti</a>`} · ` : me?.role === "client" ? "" : `<a href="#" id="gantiP">pilih proyek & rig</a> · `}TGEP Scan Drill Log · versi ${APP_VERSION}</p>`;
+  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div><p class="muted" style="text-align:center;font-size:12px;margin:18px 0">${myTugas ? `Proyek <b>${esc(myTugas.nama)}</b> · ${esc(myTugas.rig ?? "semua rig")}${me?.role === "client" ? "" : ` · <a href="#" id="gantiP">${myTugas.pilih_rig ? "ganti rig" : "penugasan"}</a>`} · ` : ["client", "admin", "verifier"].includes(me?.role) ? "" : `<a href="#" id="gantiP">belum ada penugasan</a> · `}TGEP Scan Drill Log · versi ${APP_VERSION}</p>`;
   $("#gantiP")?.addEventListener("click", (e) => { e.preventDefault(); pilihProyekView(false); });
   if (!sessionStorage.getItem("tolakCek")) { sessionStorage.setItem("tolakCek", "1"); cekPenolakan(true); }
   app.querySelectorAll("nav [data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; localStorage.setItem("tab", tab); render(); }));
@@ -187,7 +187,7 @@ async function fotoView(v) {
   const jenisOpt = (staff ? `<option value="SHEET">Form Logging — logging geologi + density (dibaca otomatis)</option>` : "") + Object.entries(ARSIP).map(([k, t]) => `<option value="${k}">${t} (arsip foto, tidak dibaca otomatis)</option>`).join("");
   v.innerHTML = `<div class="card"><h2>Foto / unggah formulir</h2>
    <label>Ini formulir apa? *</label><select id="jn">${jenisOpt}</select>
-   <div class="row"><div><label>BHID <span id="bhReq">*</span></label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" placeholder="mis. RJDH010" autocapitalize="characters"></div><div><label>Rig</label><input id="rg" value="${esc(localStorage.getItem("rig") || "")}" autocapitalize="characters"></div></div>
+   <div class="row"><div><label>BHID <span id="bhReq">*</span></label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" placeholder="mis. RJDH010" autocapitalize="characters"></div><div><label>Rig</label>${rigField()}</div></div>
    <div class="row" id="tglRow"><div><label>Tanggal formulir</label><input id="tg" type="date" value="${todayWIB()}"></div><div><label>Shift</label><select id="sh"><option value="">—</option><option value="PAGI">Day</option><option value="MALAM">Night</option></select></div></div>
    <label>Keterangan</label><input id="kt" placeholder="mis. DDR Rig 04 shift malam, hal. 1–2" value="">
    <p class="muted" id="tip"></p>
@@ -536,7 +536,7 @@ async function progView(v) {
   const rig = localStorage.getItem("rig") || "", bh = localStorage.getItem("bhid") || "", shift = localStorage.getItem("shift") || "PAGI";
   const q = (await qAll()).filter((x) => x.kind === "event" || x.kind === "p2h");
   v.innerHTML = `<div class="card"><h2>Progres pemboran</h2>
-   <div class="row"><div><label>Rig</label><input id="rg" value="${esc(rig)}" placeholder="mis. RIG-03" autocapitalize="characters"></div>
+   <div class="row"><div><label>Rig</label>${rigField()}</div>
    <div><label>BHID</label><input id="pb" value="${esc(bh)}" autocapitalize="characters"></div>
    <div style="flex:0.7"><label>Shift</label><select id="sh"><option ${shift === "PAGI" ? "selected" : ""}>PAGI</option><option ${shift === "MALAM" ? "selected" : ""}>MALAM</option></select></div></div>
    <p class="muted">Setiap tombol membuka kamera. Koordinat GPS dan jam dicatat otomatis dan dicetak di foto. GPS tetap jalan tanpa sinyal internet.</p>
@@ -824,10 +824,10 @@ async function ddrView(v) {
   const cats = [...new Set(items.map((i) => i.kategori))];
   v.innerHTML = `<div class="card"><h2>DAILY DRILLING REPORT</h2>
     <p class="muted">Urutan sama dengan formulir DDR lapangan. Kolom * wajib. Kolom <b>Client</b> diisi nama perusahaan client. Pemakaian barang wajib diisi semua (0 bila tidak dipakai).</p>
-    <div class="row"><div><label>PROJECT</label><input id="pj" value="${esc(last.project ?? "")}"></div><div><label>LOCATION</label><input id="lc" value="${esc(last.location ?? "")}"></div></div>
-    <div class="row"><div><label>HOLE ID *</label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters"></div><div><label>RIG NO *</label><input id="rg" value="${esc(rig)}" autocapitalize="characters"></div><div><label>RIG TYPE</label><input id="rt" value="${esc(last.rig_type ?? "")}"></div></div>
+    <div class="row"><div><label>PROJECT</label>${rigTerkunci() ? `<input id="pj" value="${esc(myTugas.project ?? "")}" readonly title="Diatur admin">` : `<input id="pj" value="${esc(last.project ?? "")}">`}</div><div><label>LOCATION</label><input id="lc" value="${esc(last.location ?? "")}"></div></div>
+    <div class="row"><div><label>HOLE ID *</label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters"></div><div><label>RIG NO *</label>${rigField()}</div><div><label>RIG TYPE</label><input id="rt" value="${esc(last.rig_type ?? "")}"></div></div>
     <div class="row"><div><label>DATE *</label><input id="dt" type="date" value="${todayWIB()}"></div><div><label>TIME *</label><select id="sh"><option value="PAGI" ${shift === "PAGI" ? "selected" : ""}>Day (06–18)</option><option value="MALAM" ${shift === "MALAM" ? "selected" : ""}>Night (18–06)</option></select></div><div><label>Client *</label><input id="ct" value="${esc(last.contractor ?? "")}"></div></div>
-    <div class="row"><div><label>DRILLER *</label><input id="dn" value="${esc(last.driller_name ?? "")}"></div><div><label>ASSISTANT</label><input id="hp" value="${esc(last.helpers ?? "")}"></div><div style="flex:.5"><label>CREW *</label><input id="cc" inputmode="numeric" value="${esc(last.crew_count ?? "")}"></div></div>
+    <div class="row"><div><label>DRILLER *</label>${me?.role === "driller" ? `<input id="dn" value="${esc(me.full_name ?? "")}" readonly title="Nama akun Anda">` : `<input id="dn" value="${esc(last.driller_name ?? "")}">`}</div><div><label>ASSISTANT</label><input id="hp" value="${esc(last.helpers ?? "")}"></div><div style="flex:.5"><label>CREW *</label><input id="cc" inputmode="numeric" value="${esc(last.crew_count ?? "")}"></div></div>
 
     <h3>1. DRILLING</h3>
     <b>OPEN HOLE (m)</b><div id="oh"></div><button class="sec" id="ohAdd" style="width:auto">+ baris open hole</button>
@@ -1178,18 +1178,18 @@ async function laporanProgres(st) {
 }
 // ---------- Akun client: laporan per rig (baca saja) ----------
 async function aksesKlien(box) {
-  const [{ data: us }, { data: pn }, { data: pj }] = await Promise.all([sb.from("app_user").select("user_id,full_name,company,email").eq("role", "client").order("full_name"), sb.from("penugasan").select("*"), sb.from("project").select("code,nama,rigs").order("nama")]);
+  const [{ data: us }, { data: pn }, { data: pj }] = await Promise.all([sb.from("app_user").select("user_id,full_name,company,email").eq("role", "client").order("full_name"), sb.from("penugasan").select("*"), sb.from("project").select("code,nama,rigs,aktif").order("nama")]);
   const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p]));
-  box.innerHTML = `<h3>Akses akun client</h3><p class="muted">Client bisa melihat dan mengunduh Dashboard, Laporan rig dan Database data rig (DDR, progres, BBM, P2H, aktivitas) serta Dokumen yang dibuka untuk peran client. Centang “boleh lihat & unduh data geologi” agar client juga mendapat collar, survey, geologi, density, assay dan QAQC <b>yang sudah disetujui</b> untuk lubang proyeknya. Foto core dan scan formulir hanya terbuka setelah Anda merilisnya (kotak di bawah); data operator tidak pernah dibuka untuk client. Pilih proyek: client melihat semua rig proyek itu; isi rig bila hanya satu rig.</p>
+  box.innerHTML = `<h3>Akses akun client</h3><p class="muted">Client bisa melihat dan mengunduh Dashboard, Laporan rig dan Database data rig (DDR, progres, BBM, P2H, aktivitas) serta Dokumen yang dibuka untuk peran client. Centang “boleh lihat & unduh data geologi” agar client juga mendapat collar, survey, geologi, density, assay dan QAQC <b>yang sudah disetujui</b> untuk lubang proyeknya. Foto core dan scan formulir hanya terbuka setelah Anda merilisnya (kotak di bawah); data operator tidak pernah dibuka untuk client. Pilih proyek: client melihat semua rig proyek itu; centang rig bila hanya rig tertentu.</p>
     <ul class="list">${(us ?? []).map((u) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:200px"><b>${esc(u.full_name ?? "")}</b><br><span class="muted">${esc(u.company ?? "")} · ${esc(u.email ?? "")}</span></span>
-      <select data-kp="${u.user_id}" style="max-width:220px"><option value="">— belum ada akses —</option>${(pj ?? []).map((p) => `<option value="${esc(p.code)}" ${P[u.user_id]?.project === p.code ? "selected" : ""}>${esc(p.nama)} (${esc((p.rigs ?? []).join(", ") || "tanpa rig")})</option>`).join("")}</select>
-      <input data-kr="${u.user_id}" value="${esc(P[u.user_id]?.rig ?? "")}" placeholder="rig (opsional)" style="max-width:130px" autocapitalize="characters">
-      <label style="flex:0;white-space:nowrap"><input type="checkbox" data-kg="${u.user_id}" ${P[u.user_id]?.akses_geologi ? "checked" : ""} style="width:auto"> boleh lihat & unduh data geologi</label>
+      ${proyekSel(u.user_id, pj, P[u.user_id]?.project ?? "", "— belum ada akses —")}
+      <span data-rcw="${u.user_id}" style="display:flex;gap:10px;flex:0;align-items:center">${rigCek(u.user_id, P[u.user_id]?.project, pj, P[u.user_id]?.rigs)}</span>
+      <label style="flex:0;white-space:nowrap;margin:0"><input type="checkbox" data-kg="${u.user_id}" ${P[u.user_id]?.akses_geologi ? "checked" : ""} style="width:auto"> boleh lihat & unduh data geologi</label>
       <button class="sec" data-ks="${u.user_id}" style="flex:0">Simpan</button></li>`).join("") || `<li class="muted">Belum ada akun client. Setujui pendaftar dengan peran <b>client</b> di atas.</li>`}</ul>`;
+  pasangRigCek(box, pj);
   box.querySelectorAll("[data-ks]").forEach((b) => (b.onclick = async () => {
-    const id = b.dataset.ks, project = box.querySelector(`[data-kp="${id}"]`).value || null, rig = box.querySelector(`[data-kr="${id}"]`).value.trim().toUpperCase() || null;
-    const akses_geologi = box.querySelector(`[data-kg="${id}"]`).checked;
-    const { error } = await sb.from("penugasan").upsert({ user_id: id, project, rig, akses_geologi, wajib_harian: false, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+    const id = b.dataset.ks, project = box.querySelector(`[data-pp="${id}"]`).value || null;
+    const { error } = await sb.rpc("admin_set_penugasan", { p_user: id, p_project: project, p_rigs: ambilRig(box, id), p_akses_geologi: box.querySelector(`[data-kg="${id}"]`).checked, p_wajib_harian: false, p_catatan: P[id]?.catatan ?? null });
     if (error) return alert(error.message); b.textContent = "Tersimpan ✓";
   }));
 }
@@ -1294,25 +1294,49 @@ async function fotoKlienBH(bhid, jenis) {
 let myTugas = JSON.parse(localStorage.getItem("myTugas") || "null");
 async function loadTugas() {
   if (!online()) return myTugas;
-  const [{ data: t }, { data: pj }] = await Promise.all([sb.from("penugasan").select("project,rig,akses_geologi").eq("user_id", session.user.id).maybeSingle(), sb.from("project").select("*").eq("aktif", true).order("nama")]);
+  const [{ data: a, error }, { data: pj }] = await Promise.all([sb.rpc("my_assignment"), sb.from("project").select("*").eq("aktif", true).order("nama")]);
   localStorage.setItem("projects", JSON.stringify(pj ?? []));
-  myTugas = t?.project ? { ...t, nama: (pj ?? []).find((p) => p.code === t.project)?.nama ?? t.project } : null;
+  if (error) return myTugas;
+  const rigs = a?.rigs ?? [], simpan = localStorage.getItem("rig");
+  myTugas = a?.ada_penugasan ? { project: a.proyek, nama: a.nama_proyek ?? a.proyek, rigs, pilih_rig: !!a.pilih_rig, akses_geologi: !!a.akses_geologi, wajib_harian: a.wajib_harian,
+    rig: rigs.includes(simpan) ? simpan : rigs[0] ?? null } : null;
   localStorage.setItem("myTugas", JSON.stringify(myTugas));
   if (myTugas?.rig) localStorage.setItem("rig", myTugas.rig);
   return myTugas;
 }
+// Proyek & rig diatur admin (penugasan). Driller/geologist tidak bisa mengetik rig; wellsite dengan >1 rig memilih rig yang sedang diisi.
+const rigTerkunci = () => !!myTugas && !["admin", "verifier", "client"].includes(me?.role);
+function rigField() {
+  const cur = localStorage.getItem("rig") || "";
+  if (!rigTerkunci()) return `<input id="rg" value="${esc(cur)}" placeholder="mis. RIG 1" autocapitalize="characters">`;
+  const rs = myTugas.rigs ?? [];
+  if (rs.length > 1) return `<select id="rg">${rs.map((r) => `<option ${myTugas.rig === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select>`;
+  return `<input id="rg" value="${esc(myTugas.rig ?? "")}" placeholder="semua rig proyek" readonly title="Rig diatur admin">`;
+}
+document.addEventListener("change", (e) => {
+  if (e.target?.id !== "rg" || e.target.tagName !== "SELECT" || !myTugas) return;
+  myTugas.rig = e.target.value; localStorage.setItem("rig", e.target.value); localStorage.setItem("myTugas", JSON.stringify(myTugas));
+});
 function pilihProyekView(paksa) {
-  const pj = JSON.parse(localStorage.getItem("projects") || "[]");
-  app.innerHTML = `<div class="card"><h2>Proyek & rig</h2><p class="muted">Pilih proyek dan rig tempat Anda bekerja. Semua kiriman otomatis tercatat ke proyek ini; bisa diganti kapan saja dari bagian bawah aplikasi.</p>
-    ${pj.length ? `<label>Proyek *</label><select id="pp">${pj.map((p) => `<option value="${esc(p.code)}" ${myTugas?.project === p.code ? "selected" : ""}>${esc(p.nama)}</option>`).join("")}</select>
-    <label>Rig</label><select id="pr"></select><div style="margin-top:10px"><button id="ps">Simpan & lanjut</button></div>`
-    : `<p class="err">Belum ada proyek yang dibuat admin.${me?.role === "admin" ? " Buat proyek di menu Rekap operator → Proyek & rig." : " Hubungi admin."}</p>`}
-    ${paksa ? "" : `<div style="margin-top:8px"><button class="sec" id="pl">Lewati dulu</button></div>`}<div id="e" class="err"></div></div>`;
-  const isiRig = () => { const p = pj.find((x) => x.code === $("#pp").value); $("#pr").innerHTML = (p?.rigs?.length ? p.rigs : [""]).map((r) => `<option ${myTugas?.rig === r ? "selected" : ""}>${esc(r)}</option>`).join(""); };
-  if (pj.length) { $("#pp").onchange = isiRig; isiRig();
-    $("#ps").onclick = async () => { const { error } = await sb.rpc("set_my_project", { p_project: $("#pp").value, p_rig: $("#pr").value || null }); if (error) return ($("#e").textContent = error.message); await loadTugas(); sessionStorage.setItem("proyekOk", "1"); render(); }; }
+  const t = myTugas;
+  app.innerHTML = `<div class="card"><h2>Penugasan proyek & rig</h2>${t ? `<p>Proyek: <b>${esc(t.nama)}</b> <span class="muted">(${esc(t.project)})</span></p>
+      <p>Rig tugas: <b>${esc((t.rigs ?? []).join(", ") || "semua rig proyek")}</b></p>
+      ${t.pilih_rig ? `<label>Saya sekarang mengisi untuk rig</label><select id="prg">${t.rigs.map((r) => `<option ${t.rig === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select>` : ""}
+      <p class="muted">Proyek dan rig diatur admin dan terkunci di semua formulir. Hubungi admin bila penugasan Anda tidak sesuai.</p>
+      <div style="margin-top:10px"><button id="ps">Lanjut</button></div>`
+    : `<p class="err">Akun Anda belum diberi penugasan proyek/rig oleh admin.</p><p class="muted">Data lapangan belum bisa dikirim sampai admin mengisi penugasan. Hubungi admin, lalu tekan Muat ulang.</p>
+      <div style="margin-top:10px"><button id="pr">Muat ulang</button></div>`}
+    ${paksa ? "" : `<div style="margin-top:8px"><button class="sec" id="pl">${t ? "Kembali" : "Lewati dulu"}</button></div>`}<div id="e" class="err"></div></div>`;
+  $("#ps")?.addEventListener("click", () => { const r = $("#prg")?.value; if (r) { t.rig = r; localStorage.setItem("rig", r); localStorage.setItem("myTugas", JSON.stringify(t)); } sessionStorage.setItem("proyekOk", "1"); render(); });
+  $("#pr")?.addEventListener("click", async () => { await loadTugas(); if (myTugas) { sessionStorage.setItem("proyekOk", "1"); render(); } else $("#e").textContent = online() ? "Penugasan belum diisi admin." : "Tidak ada sinyal."; });
   $("#pl")?.addEventListener("click", () => { sessionStorage.setItem("proyekOk", "1"); render(); });
 }
+// Editor penugasan (admin): proyek + centang rig. Tanpa centang = semua rig proyek.
+const rigCek = (uid, code, pj, sel) => { const p = (pj ?? []).find((x) => x.code === code);
+  return (p?.rigs ?? []).map((r) => `<label style="flex:0;white-space:nowrap;margin:0"><input type="checkbox" data-rc="${uid}" value="${esc(r)}" ${(sel ?? []).includes(r) ? "checked" : ""} style="width:auto"> ${esc(r)}</label>`).join(" ") || (code ? `<span class="muted">proyek tanpa rig</span>` : ""); };
+const proyekSel = (uid, pj, cur, kosong) => `<select data-pp="${uid}" style="max-width:240px"><option value="">${kosong}</option>${(pj ?? []).filter((p) => p.aktif !== false || p.code === cur).map((p) => `<option value="${esc(p.code)}" ${cur === p.code ? "selected" : ""}>${esc(p.nama)}</option>`).join("")}</select>`;
+function pasangRigCek(box, pj) { box.querySelectorAll("[data-pp]").forEach((s) => (s.onchange = () => { box.querySelector(`[data-rcw="${s.dataset.pp}"]`).innerHTML = rigCek(s.dataset.pp, s.value, pj, []); })); }
+const ambilRig = (box, uid) => [...box.querySelectorAll(`[data-rc="${uid}"]:checked`)].map((x) => x.value);
 async function loadLanjutan() {
   if (!online()) return; const { data } = await sb.from("v_lanjutan").select("jenis,bhid,kotak_terakhir,to_terakhir");
   if (data) localStorage.setItem("lanjut", JSON.stringify(Object.fromEntries(data.map((r) => [`${r.jenis}|${r.bhid}`, r]))));
@@ -1349,7 +1373,7 @@ let tolakTimer = null;
 const jadwalCekTolak = () => { clearTimeout(tolakTimer); tolakTimer = setTimeout(() => cekPenolakan(true), 120e3); };
 async function proyekAdmin(box) {
   const { data: pj } = await sb.from("project").select("*").order("nama");
-  box.innerHTML = `<h3>Proyek & rig (admin)</h3><p class="muted">Pengguna memilih proyek & rig dari daftar ini saat pertama masuk. Rig ditulis dipisah koma. Target lubang & meter dipakai di Laporan progres (realisasi vs rencana).</p>
+  box.innerHTML = `<h3>Proyek & rig (admin)</h3><p class="muted">Rig proyek dipakai di penugasan driller/wellsite/client (bagian Penugasan di atas). Rig ditulis dipisah koma. Target lubang & meter dipakai di Laporan progres (realisasi vs rencana).</p>
     <ul class="list">${(pj ?? []).map((p) => `<li style="flex-wrap:wrap"><span style="flex:1"><b>${esc(p.nama)}</b> <span class="muted">(${esc(p.code)})</span>${p.aktif ? "" : ' <span class="err">nonaktif</span>'}</span>
       <input data-rg="${esc(p.code)}" value="${esc((p.rigs ?? []).join(", "))}" style="max-width:220px"><input data-tl="${esc(p.code)}" type="number" value="${p.target_lubang ?? ""}" placeholder="target lubang" style="max-width:120px"><input data-tm="${esc(p.code)}" type="number" step="0.1" value="${p.target_meter ?? ""}" placeholder="target meter" style="max-width:120px"><button class="sec" data-sv="${esc(p.code)}" style="flex:0">Simpan</button><button class="sec" data-ak="${esc(p.code)}" data-v="${p.aktif ? 0 : 1}" style="flex:0">${p.aktif ? "Nonaktifkan" : "Aktifkan"}</button></li>`).join("") || `<li class="muted">Belum ada proyek.</li>`}</ul>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Kode</label><input id="pc" placeholder="mis. TGEP-BLK-A" autocapitalize="characters"></div><div><label>Nama proyek</label><input id="pn" placeholder="mis. Eksplorasi Blok A"></div><div><label>Rig (pisah koma)</label><input id="pr2" placeholder="RIG03, RIG04"></div><button id="pa" style="flex:0">Tambah</button></div><div id="pe" class="err"></div>`;
@@ -1413,16 +1437,19 @@ async function rekapView(v) {
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })); a.download = `TGEP_Rekap_Operator_${from14}_${tgl}.csv`; a.click(); };
   if (me?.role === "admin") {
     proyekAdmin($("#rpj"));
-    const [{ data: us }, { data: pn }] = await Promise.all([sb.from("app_user").select("user_id,full_name,role,company").in("role", ["driller", "geologist"]).order("full_name"), sb.from("penugasan").select("*")]);
+    const [{ data: us }, { data: pn }, { data: pj }] = await Promise.all([sb.from("app_user").select("user_id,full_name,role,company").in("role", ["driller", "geologist"]).order("full_name"), sb.from("penugasan").select("*"), sb.from("project").select("code,nama,rigs,aktif").order("nama")]);
     const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p]));
-    $("#rp").innerHTML = `<h3>Penugasan rig (admin)</h3><p class="muted">Operator tanpa rig berstatus “TANPA PENUGASAN”. Hilangkan centang “wajib” untuk staf yang tidak bertugas harian (cuti, kantor).</p>
-      <ul class="list">${(us ?? []).map((u) => `<li style="flex-wrap:wrap"><span style="flex:1"><b>${esc(u.full_name ?? "")}</b> · ${esc(u.role)}<br><span class="muted">${esc(u.company ?? "")}</span></span>
-        <input data-rig="${u.user_id}" value="${esc(P[u.user_id]?.rig ?? "")}" placeholder="RIG04" style="max-width:110px" autocapitalize="characters">
-        <label style="flex:0;white-space:nowrap"><input type="checkbox" data-wj="${u.user_id}" ${P[u.user_id]?.wajib_harian === false ? "" : "checked"}> wajib</label>
+    $("#rp").innerHTML = `<h3>Penugasan proyek & rig (admin)</h3><p class="muted">Pilih proyek dan centang rig tiap driller / wellsite. Driller biasanya satu rig; wellsite yang mengawasi dua rig dicentang keduanya (ia memilih rig saat mengisi). Tanpa centang = semua rig proyek. Pengguna tidak bisa mengubah sendiri. Hilangkan “wajib” untuk staf yang tidak bertugas harian (cuti, kantor).</p>
+      <ul class="list">${(us ?? []).map((u) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:180px"><b>${esc(u.full_name ?? "")}</b> · ${esc(u.role)}<br><span class="muted">${esc(u.company ?? "")}</span></span>
+        ${proyekSel(u.user_id, pj, P[u.user_id]?.project ?? "", "— tanpa penugasan —")}
+        <span data-rcw="${u.user_id}" style="display:flex;gap:10px;flex:0;align-items:center">${rigCek(u.user_id, P[u.user_id]?.project, pj, P[u.user_id]?.rigs)}</span>
+        <label style="flex:0;white-space:nowrap;margin:0"><input type="checkbox" data-wj="${u.user_id}" ${P[u.user_id]?.wajib_harian === false ? "" : "checked"} style="width:auto"> wajib</label>
         <button class="sec" data-sp="${u.user_id}" style="flex:0">Simpan</button></li>`).join("") || `<li class="muted">Belum ada driller/geologist.</li>`}</ul>`;
+    pasangRigCek($("#rp"), pj);
     $("#rp").querySelectorAll("[data-sp]").forEach((b) => (b.onclick = async () => {
-      const id = b.dataset.sp, rig = $("#rp").querySelector(`[data-rig="${id}"]`).value.trim().toUpperCase() || null, wj = $("#rp").querySelector(`[data-wj="${id}"]`).checked;
-      const { error } = await sb.from("penugasan").upsert({ user_id: id, rig, wajib_harian: wj, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+      const id = b.dataset.sp, box = $("#rp"), project = box.querySelector(`[data-pp="${id}"]`).value || null;
+      const { error } = await sb.rpc("admin_set_penugasan", { p_user: id, p_project: project, p_rigs: ambilRig(box, id), p_akses_geologi: P[id]?.akses_geologi ?? false,
+        p_wajib_harian: box.querySelector(`[data-wj="${id}"]`).checked, p_catatan: P[id]?.catatan ?? null });
       if (error) return alert(error.message); b.textContent = "Tersimpan ✓"; setTimeout(() => rekapView(v), 500);
     }));
   }
