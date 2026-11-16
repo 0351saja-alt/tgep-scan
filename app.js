@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.2";
+const APP_VERSION = "2026-11-17.3";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -538,13 +538,16 @@ const shiftDari = (d) => { const w = new Date(d.toLocaleString("en-US", { timeZo
   const t = new Date(w.getTime() - 6 * 36e5); const tgl = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
   return { tanggal: tgl, shift: h >= 6 && h < 18 ? "PAGI" : "MALAM" }; };
 const kunciPersonil = (rig, tgl, sh) => `personil|${rig}|${tgl}|${sh}`;
+const crewMin = () => Number(localStorage.getItem("crewMin")) || 4;   // qc_param CREW_MIN: driller + helper/mekanik, tanpa WSG
 const jabatanSaya = () => (me?.role === "geologist" ? "WSG" : me?.role === "driller" ? "Driller" : "Lainnya");
 function personilAwal(rig, t, capturedAt) {
   const { tanggal, shift } = shiftDari(capturedAt), hariIni = JSON.parse(localStorage.getItem(kunciPersonil(rig, tanggal, shift)) || "null");
   let L = t === "KELUAR" && hariIni ? hariIni : hariIni ?? JSON.parse(localStorage.getItem(`personilLast|${rig}`) || "[]");
   L = L.map((x) => ({ ...x }));
   if (t === "MASUK" && me?.full_name && !L.some((x) => x.nama.toUpperCase() === me.full_name.toUpperCase())) L.unshift({ nama: me.full_name, jabatan: jabatanSaya() });
-  if (!L.length) L = [{ nama: "", jabatan: "WSG" }, { nama: "", jabatan: "Driller" }, { nama: "", jabatan: "Helper" }, { nama: "", jabatan: "Helper" }];
+  if (!L.some((x) => x.jabatan === "WSG")) L.unshift({ nama: "", jabatan: "WSG" });
+  if (!L.some((x) => x.jabatan === "Driller")) L.push({ nama: "", jabatan: "Driller" });
+  while (t === "MASUK" && L.filter((x) => x.jabatan !== "WSG").length < crewMin()) L.push({ nama: "", jabatan: "Helper" });
   return L.sort((a, b) => JABATAN.indexOf(a.jabatan) - JABATAN.indexOf(b.jabatan));
 }
 function personilEditor(box, list) {
@@ -554,7 +557,8 @@ function personilEditor(box, list) {
   box.innerHTML = `<datalist id="dlNama">${riwayat.map((n) => `<option value="${esc(n)}">`).join("")}</datalist><div data-pl>${list.map(baris).join("")}</div>
     <button class="sec" data-pa style="width:auto;margin-top:6px">+ personil</button><div class="muted" data-pc style="margin-top:4px"></div>`;
   const hitung = () => { const L = ambilPersonil(box), n = (j) => L.filter((x) => x.jabatan === j).length;
-    box.querySelector("[data-pc]").textContent = `${L.length} orang · WSG ${n("WSG")} · Driller ${n("Driller")} · crew ${L.length - n("WSG") - n("Driller")}`; };
+    const cr = L.length - n("WSG"), kos = [...box.querySelectorAll("[data-ps] input")].filter((x) => !x.value.trim()).length;
+    box.querySelector("[data-pc]").innerHTML = `${L.length} orang · WSG ${n("WSG")} · <b style="color:${cr < crewMin() ? "var(--red)" : "inherit"}">crew ${cr}/${crewMin()}</b> (driller ${n("Driller")})${kos ? ` · <span style="color:var(--red)">${kos} nama kosong</span>` : ""}`; };
   const pasang = () => { box.querySelectorAll("[data-hp]").forEach((b) => (b.onclick = () => { b.closest("[data-ps]").remove(); hitung(); })); box.querySelectorAll("[data-ps] input,[data-ps] select").forEach((x) => (x.oninput = hitung)); };
   box.querySelector("[data-pa]").onclick = () => { box.querySelector("[data-pl]").insertAdjacentHTML("beforeend", baris({ nama: "", jabatan: "Helper" })); pasang(); box.querySelector("[data-pl] [data-ps]:last-child input").focus(); hitung(); };
   pasang(); hitung();
@@ -634,7 +638,12 @@ async function progView(v) {
         if (dup.length) return (m.querySelector("#me").textContent = "Nama ganda: " + [...new Set(dup)].join(", "));
         if (t === "MASUK") {
           if (!n("Driller")) return (m.querySelector("#me").textContent = "Isi minimal satu Driller.");
-          if (L.length - n("WSG") - n("Driller") < 1) return (m.querySelector("#me").textContent = "Isi minimal satu crew (Helper / Mekanik / Lainnya).");
+          const cr = L.length - n("WSG"), kos = [...m.querySelectorAll("#psnBox [data-ps] input")].filter((x) => !x.value.trim()).length;
+          if (cr < crewMin()) {
+            if (!m.querySelector("#rn").value.trim()) { m.querySelector("#rn").focus();
+              return (m.querySelector("#me").textContent = `Crew baru ${cr} dari ${crewMin()} orang${kos ? ` (${kos} nama kosong)` : ""}. Isi semua nama crew, atau tulis alasannya di kolom Alasan (mis. 1 helper sakit).`); }
+            if (!confirm(`Crew hanya ${cr} dari ${crewMin()} orang. Simpan dengan alasan: "${m.querySelector("#rn").value.trim()}"?`)) return;
+          }
           if (!n("WSG") && !confirm("Tidak ada WSG di daftar personil. Tetap simpan? (akan ditandai di rekap)")) return;
         }
         row.personil = L; simpanPersonilLokal(r.rig, capturedAt, t, L);
@@ -1361,6 +1370,7 @@ async function loadTugas() {
   if (!online()) return myTugas;
   const [{ data: a, error }, { data: pj }] = await Promise.all([sb.rpc("my_assignment"), sb.from("project").select("*").eq("aktif", true).order("nama")]);
   localStorage.setItem("projects", JSON.stringify(pj ?? []));
+  sb.from("qc_param").select("value").eq("name", "CREW_MIN").maybeSingle().then(({ data }) => { if (data?.value) localStorage.setItem("crewMin", data.value); });
   if (error) return myTugas;
   const rigs = a?.rigs ?? [], simpan = localStorage.getItem("rig");
   myTugas = a?.ada_penugasan ? { project: a.proyek, nama: a.nama_proyek ?? a.proyek, rigs, pilih_rig: !!a.pilih_rig, akses_geologi: !!a.akses_geologi, wajib_harian: a.wajib_harian,
