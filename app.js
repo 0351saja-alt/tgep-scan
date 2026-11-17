@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-17.43";
+const APP_VERSION = "2026-11-17.44";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1319,13 +1319,43 @@ async function printDDR(id) {
 }
 
 // ---------- Dashboard ----------
+// Logo perusahaan: pakai file logo-terra.png bila sudah ada di aplikasi; bila belum, wordmark sementara.
+function logoPT(h = 40) {
+  return `<span style="flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;height:${h}px;min-width:${h}px;border-radius:${h / 4}px;background:#fff;padding:3px 8px">
+    <img src="logo-terra.png" alt="PT Terra Grapindo Eco Prima" style="height:${h - 8}px;display:block" onerror="this.replaceWith(Object.assign(document.createElement('b'),{textContent:'TERRA',style:'font:800 ${Math.round(h / 2.6)}px Arial;letter-spacing:.08em;color:#12251E'}))"></span>`;
+}
+// Peta + panel grafik + 3D di halaman Dashboard (tetap tampil walau data bor belum ada)
+async function petaDashboard(st, basi = () => false) {
+  const box = $("#dPeta"), box3 = $("#d3D"); if (!box) return;
+  if (online()) { const { data } = await sb.from("wilayah").select("nama,nomor_sk,titik").eq("aktif", true); if (data) localStorage.setItem("wilayah", JSON.stringify(data)); }
+  const LB = online() ? ((await ambilLubangPeta()).data ?? []) : JSON.parse(localStorage.getItem("petaLubangDash") || "[]"); localStorage.setItem("petaLubangDash", JSON.stringify(LB));
+  const bh = LB.map((x) => x.bhid), prof = online() && bh.length ? ((await sb.from("v_profil_bor").select("*").in("bhid", bh).order("bhid").order("dari_m")).data ?? []) : [];
+  const { data: rd } = online() ? await sb.from("v_dash_rig_day").select("tanggal,rig,meter_bor,jam_kerja_bor").gte("tanggal", st.from).lte("tanggal", st.to).order("tanggal") : { data: [] };
+  const days = rd ?? [], tg = [...new Set(days.map((d) => d.tanggal))].sort(); let cum = 0;
+  const dayRows = tg.map((t) => { const m = days.filter((d) => d.tanggal === t).reduce((s, d) => s + (+d.meter_bor || 0), 0); cum += m; return [t, 0, +m.toFixed(1), +cum.toFixed(1)]; });
+  await muatZona(); const A = await analisisData(LB, prof, days);
+  const tgtM = LB.reduce((s, x) => s + (+x.rencana_kedalaman || 0), 0), selesai = LB.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status));
+  const panel = [{ judul: "Status titik bor", svg: panelStatus(LB, cum, tgtM), h: 118 }, { judul: "Meter bor harian & kumulatif", svg: panelHarian(dayRows), h: 106 },
+    { judul: "Sebaran kedalaman akhir lubang (m)", svg: panelHist(selesai.map((x) => +x.kedalaman), "#22c55e", "m"), h: 112 }, { judul: "Tebal rata-rata tiap layer", svg: panelLayer(A.zona), h: 116 }];
+  if (basi()) return;
+  box.classList.remove("muted"); box.innerHTML = `<div style="overflow-x:auto">${await petaSVG(LB, { w: 1200, h: 600, grafik: prof, gh: 74, panel })}</div>`;
+  const info = $("#petaInfo"); if (info) info.textContent = `${LB.length} titik · ${selesai.length} selesai · ${LB.filter((x) => x.status === "PROGRES").length} progres`;
+  if (box3) { box3.classList.remove("muted"); box3.innerHTML = await blok3D(LB, prof, { w: 1100, h: 520 }).catch((e) => `<p class="muted">Tampilan 3D belum bisa dibuat: ${esc(e.message)}</p>`); }
+}
 async function dashView(v) {
+  const tok = (dashView.tok = (dashView.tok ?? 0) + 1), basi = () => tok !== dashView.tok || tab !== "dash";   // render lama dibatalkan bila ada render baru
   const to = todayWIB(), from = new Date(Date.now() - 30 * 864e5).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
   const st = JSON.parse(sessionStorage.getItem("dash") || "null") ?? { from, to, rig: "" };
-  v.innerHTML = `<div class="card"><h2>Dashboard progres & evaluasi</h2>
+  v.innerHTML = `<div class="card dashHead" style="display:flex;align-items:center;gap:14px;background:linear-gradient(120deg,#0d1f18,#12251E 60%,#1b4a37);color:#fff">${logoPT(46)}
+    <div style="flex:1"><div style="font:700 11px Arial;letter-spacing:.16em;color:#7CE0B0">PT TERRA GRAPINDO ECO PRIMA</div><div style="font:800 21px Arial">Dashboard eksplorasi nikel laterit</div><div style="font-size:12px;opacity:.75">X-Terra · data dari lapangan, terverifikasi</div></div></div>
+    <div class="card"><h2>Dashboard progres & evaluasi</h2>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
     ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0;white-space:nowrap">Cetak layar</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button><button id="pres" style="flex:0;white-space:nowrap;background:#12251E">🎞 Presentasi 16:9</button></div></div>
-    <div id="kpi" class="card"></div><div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px"></div>`;
+    <div id="kpi" class="card"></div>
+    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0;flex:1">Peta pemboran & grafik per lubang</h3><span class="muted" style="flex:0;white-space:nowrap" id="petaInfo"></span></div><div id="dPeta" class="muted" style="margin-top:6px">Memuat peta…</div></div>
+    <div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px"></div>
+    <div class="card"><h3 style="margin:0 0 6px">Tampilan 3D pemboran</h3><div id="d3D" class="muted">Memuat tampilan 3D…</div></div>`;
+  petaDashboard(st, () => tok !== dashView.tok).catch((e) => { if ($("#dPeta")) $("#dPeta").textContent = "Peta gagal dimuat: " + e.message; });
   $("#pr").onclick = () => print();
   $("#lap").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value });
   $("#pres").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value, slide: true });
@@ -1348,10 +1378,12 @@ async function dashView(v) {
     <p class="muted" style="margin-top:8px">Periode ${st.from} s/d ${st.to}${st.rig ? " · rig " + esc(st.rig) : " · semua rig"}. ${isClient() ? `Akun client: data rig proyek Anda${clientGeo() ? " termasuk data geologi yang sudah disetujui" : " (meter, jam, standby, BBM, P2H, DDR)"}.` : "Data geologi (tebal zona, conto) mencakup semua lubang yang sudah disetujui."}</p>`;
   const klien = isClient() && !clientGeo();
   const { data: kp } = isClient() ? { data: [] } : await sb.from("v_kepatuhan_harian").select("nama,rig,status,kurang,antrean").eq("tanggal", st.to);
+  if (basi()) return;
   if (kp?.length) { const c = document.createElement("div"); c.className = "card"; const bel = kp.filter((r) => ["BELUM", "SEBAGIAN"].includes(r.status)), hp = kp.filter((r) => r.antrean > 0);
     c.innerHTML = `<h3 style="margin:0 0 6px">Pengiriman operator ${st.to}</h3><p>Lengkap <b>${kp.filter((r) => r.status === "LENGKAP").length}</b> · sebagian <b>${kp.filter((r) => r.status === "SEBAGIAN").length}</b> · belum <b>${kp.filter((r) => r.status === "BELUM").length}</b> · data tertahan di HP <b>${hp.length}</b> orang</p>${bel.length ? `<p class="err">${bel.map((r) => `${esc(r.nama)} (${esc(r.rig ?? "-")}): ${esc((r.kurang ?? []).join(", "))}`).join(" · ")}</p>` : ""}<button class="sec" id="toRek" style="width:auto">Buka Rekap operator</button>`;
     $("#kpi").after(c); c.querySelector("#toRek").onclick = () => { tab = "rekap"; localStorage.setItem("tab", tab); render(); }; }
   const { Chart } = await import("./vendor/chart.js");
+  if (basi()) return;
   const box = (id, title) => { const d = document.createElement("div"); d.className = "card"; d.innerHTML = `<h3 style="margin:0 0 6px">${title}</h3><canvas id="${id}" height="230"></canvas>`; $("#ch").appendChild(d); return d.querySelector("canvas"); };
   const pal = ["#1E9E69", "#E8892B", "#2F6FB0", "#C8281F", "#8E5BB5", "#7A8B83", "#D4B12A", "#12251E", "#57B8C9", "#B5651D"];
   const by = (xs, kf, vf) => xs.reduce((m, x) => ((m[kf(x)] = (m[kf(x)] ?? 0) + (Number(vf(x)) || 0)), m), {});
@@ -3180,8 +3212,17 @@ async function loadMe() {
   const { data, error } = await sb.from("app_user").select("full_name,role").eq("user_id", session.user.id).maybeSingle();
   if (error) { me = JSON.parse(localStorage.getItem("me") || "null"); return; }   // gangguan jaringan: pakai identitas terakhir
   if (!data || data.role === "nonaktif") {
-    // akun yang pernah aktif lalu dihapus / dinonaktifkan: tutup akses total, hapus semua data tersimpan di HP
-    if (data?.role === "nonaktif" || localStorage.getItem("me")) return aksesDicabut(data?.role === "nonaktif" ? "dinonaktifkan" : "dihapus");
+    // Tutup akses total HANYA bila server autentikasi memastikan akun dihapus/diblokir, atau peran tertulis "nonaktif".
+    // Data akun yang sesaat tidak terbaca TIDAK dianggap dihapus (pakai identitas terakhir).
+    if (data?.role === "nonaktif") return aksesDicabut("dinonaktifkan");
+    if (localStorage.getItem("me")) {
+      const { data: u, error: ue } = await sb.auth.getUser();
+      if (ue && /not.?found|does not exist|banned|user_not_found|user_banned/i.test(ue.message + " " + (ue.code ?? ""))) return aksesDicabut(/banned/i.test(ue.message + (ue.code ?? "")) ? "dinonaktifkan" : "dihapus");
+      if (ue || !u?.user) { me = JSON.parse(localStorage.getItem("me") || "null"); return; }
+      const { data: d2 } = await sb.from("app_user").select("full_name,role").eq("user_id", session.user.id).maybeSingle();
+      if (d2 && d2.role !== "nonaktif") { me = d2; localStorage.setItem("me", JSON.stringify(d2)); return; }
+      if (d2?.role === "nonaktif") return aksesDicabut("dinonaktifkan");
+    }
     me = null; return;   // pendaftar baru: menunggu persetujuan
   }
   me = data; localStorage.setItem("me", JSON.stringify(data));
