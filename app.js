@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.07";
+const APP_VERSION = "2026-11-18.08";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2933,6 +2933,106 @@ const UTM = (() => { const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996, e2 =
   return { ke, dari }; })();
 // Elevasi DEMNAS di satu titik: baca piksel tile terrain-RGB zoom 14 (sama dengan yang dipakai peta)
 const demCache = {};
+// ---------- Peta 3D bawah permukaan (three.js): topografi tembus pandang + lubang bor menembus ke bawah, bisa diputar ----------
+async function bawahPermukaan3D(L, PRF = []) {
+  const lay = document.createElement("div"); lay.id = "bp3";
+  lay.style.cssText = "position:fixed;inset:0;z-index:9999;background:#0e1a15;display:flex;flex-direction:column;color:#fff;font:13px system-ui";
+  const topoNow = localStorage.getItem("topo3d") || "redup";
+  lay.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;background:#12251E">
+    <b style="font-size:15px;margin-right:6px">Peta 3D bawah permukaan</b>
+    <select id="bpT" style="flex:0 0 auto;width:auto;padding:4px">${[["redup", "Topo redup + blur"], ["sedang", "Topo sedang"], ["asli", "Topo asli"]].map(([k, l]) => `<option value="${k}" ${topoNow === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+    <label style="margin:0;color:#cfe3d9">Tembus pandang <input id="bpO" type="range" min="0.1" max="1" step="0.05" value="${localStorage.getItem("bp3op") || 0.45}" style="width:90px;vertical-align:middle"></label>
+    <label style="margin:0;color:#cfe3d9">Relief × <input id="bpV" type="range" min="1" max="4" step="0.5" value="1.5" style="width:70px;vertical-align:middle"><span id="bpVv">1,5</span></label>
+    <label style="margin:0;color:#cfe3d9">Lubang × <input id="bpH" type="range" min="1" max="30" step="1" value="1" style="width:90px;vertical-align:middle"><span id="bpHv"></span></label>
+    <button id="bpA" class="sec" style="flex:0;padding:4px 10px">Atas</button><button id="bpS" class="sec" style="flex:0;padding:4px 10px">Samping</button>
+    <button id="bpP" class="sec" style="flex:0;padding:4px 10px">Simpan gambar</button><button id="bpX" style="flex:0;padding:4px 12px;margin-left:auto">✕ Tutup</button></div>
+    <div id="bpC" style="flex:1;position:relative;min-height:0"><div id="bpL" style="position:absolute;left:10px;top:10px;background:rgba(0,0,0,.55);border-radius:8px;padding:6px 9px;font-size:12px;line-height:1.6;pointer-events:none"></div>
+      <div id="bpM" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px">Memuat topografi DEMNAS…</div></div>
+    <div id="bpI" style="padding:6px 10px;background:#12251E;color:#cfe3d9;font-size:12px;min-height:1.4em">Seret untuk memutar · dua jari / klik kanan untuk menggeser · cubit / roda untuk zoom · ketuk lubang untuk keterangan layer.</div>`;
+  document.body.appendChild(lay);
+  let stop = false, ren = null; const tutup = () => { stop = true; try { ren?.dispose(); ren?.forceContextLoss(); } catch {} lay.remove(); };
+  $("#bpX").onclick = tutup;
+  let THREE, OC; try { THREE = await import("./vendor/three.module.min.js"); OC = (await import("./vendor/OrbitControls.js")).OrbitControls; }
+  catch (e) { $("#bpM").textContent = "Pustaka 3D gagal dimuat (perlu sinyal pertama kali): " + e.message; return; }
+  const P = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat));
+  if (!P.length) { $("#bpM").textContent = "Belum ada titik bor."; return; }
+  const dalam = (x) => Math.max(+x.kd || 0, ...PRF.filter((r) => r.bhid === x.bhid).map((r) => +r.sampai_m));
+  // area & grid DEM
+  const lat0 = P.reduce((s, p) => s + +p.lat, 0) / P.length, kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110574, pad = 350;
+  const lo0 = Math.min(...P.map((p) => +p.lon)) - pad / kx, lo1 = Math.max(...P.map((p) => +p.lon)) + pad / kx, la0 = Math.min(...P.map((p) => +p.lat)) - pad / ky, la1 = Math.max(...P.map((p) => +p.lat)) + pad / ky;
+  const wM = (lo1 - lo0) * kx, hM = (la1 - la0) * ky, NX = 110, NY = Math.max(20, Math.round((NX * hM) / wM)), clo = (lo0 + lo1) / 2, cla = (la0 + la1) / 2;
+  const Z = []; for (let j = 0; j <= NY; j++) { if (stop) return; Z[j] = await Promise.all(Array.from({ length: NX + 1 }, (_, i) => tinggiDi(lo0 + ((lo1 - lo0) * i) / NX, la1 - ((la1 - la0) * j) / NY).catch(() => null)));
+    if (j % 10 === 0) $("#bpM").textContent = `Memuat topografi DEMNAS… ${Math.round((100 * j) / NY)}%`; }
+  const fl = Z.flat().filter((v) => v != null); if (!fl.length) { $("#bpM").textContent = "DEMNAS belum tersedia untuk area ini (buka Peta sekali saat ada sinyal, lalu Simpan offline)."; return; }
+  const zMin = Math.min(...fl), zMax = Math.max(...fl), zz = (v) => (v == null ? zMin : v);
+  for (const p of P) p.z = zz(await tinggiDi(+p.lon, +p.lat).catch(() => null));
+  const RK = await (await fetch("peta/kontur/index.json")).json().catch(() => null), stops = RK?.elev_stops ?? [[0, [38, 115, 77]], [1100, [245, 245, 245]]];
+  const warnaE = (v) => { let a = stops[0], b = stops[stops.length - 1]; for (let k = 0; k < stops.length - 1; k++) if (v >= stops[k][0] && v <= stops[k + 1][0]) { a = stops[k]; b = stops[k + 1]; }
+    const t = b[0] === a[0] ? 0 : (v - a[0]) / (b[0] - a[0]); return [0, 1, 2].map((c) => a[1][c] + (b[1][c] - a[1][c]) * t); };
+  // tekstur: warna elevasi + bayangan relief, lalu blur/kontras sesuai pilihan
+  const dasar = document.createElement("canvas"); dasar.width = NX * 8; dasar.height = NY * 8; { const g = dasar.getContext("2d"), cw = dasar.width / NX, ch = dasar.height / NY;
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) { const a = zz(Z[j][i]), b = zz(Z[j][i + 1]), c = zz(Z[j + 1][i]), m = (a + b + c + zz(Z[j + 1][i + 1])) / 4;
+      const sx = (b - a) / (wM / NX), sy = (a - c) / (hM / NY), sh = Math.max(0.55, Math.min(1.2, 0.9 + 1.6 * (-sx * 0.7 + sy * 0.7) / Math.hypot(sx, sy, 1)));
+      const col = warnaE(m).map((v) => Math.max(0, Math.min(255, Math.round(v * sh)))); g.fillStyle = `rgb(${col.join(",")})`; g.fillRect(i * cw, j * ch, cw + 1, ch + 1); } }
+  const FIL = { redup: "blur(5px) saturate(0.35) contrast(0.55) brightness(1.15)", sedang: "blur(2px) saturate(0.65) contrast(0.8) brightness(1.05)", asli: "none" };
+  const tekstur = (k) => { const c = document.createElement("canvas"); c.width = dasar.width; c.height = dasar.height; const g = c.getContext("2d"); g.filter = FIL[k] ?? FIL.redup; g.drawImage(dasar, 0, 0); g.filter = "none";
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; };
+  // adegan
+  $("#bpM").remove(); const box = $("#bpC"), W = () => box.clientWidth, H = () => box.clientHeight;
+  ren = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); ren.setPixelRatio(Math.min(2, devicePixelRatio)); ren.setSize(W(), H()); ren.setClearColor(0xeef3f1); box.prepend(ren.domElement);
+  const sc = new THREE.Scene(), cam = new THREE.PerspectiveCamera(45, W() / H(), 1, Math.max(wM, hM) * 20), ctl = new OC(cam, ren.domElement); ctl.enableDamping = true; ctl.maxPolarAngle = Math.PI * 0.95;
+  sc.add(new THREE.AmbientLight(0xffffff, 1.6)); const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(-1, 2, 1); sc.add(sun);
+  const pos = (lon, lat) => [(lon - clo) * kx, -(lat - cla) * ky];
+  const maxD = Math.max(5, ...P.map((p) => Math.max(dalam(p), +p.rk || 0))), span = Math.max(wM, hM);
+  const heAuto = Math.max(1, Math.round((zMax - zMin + 60) * 0.8 / maxD)); $("#bpH").value = Math.min(30, heAuto);
+  let grp = null, terr = null, hit = [];
+  const label = (txt, warna = "#111") => { const c = document.createElement("canvas"), g = c.getContext("2d"); g.font = "bold 44px system-ui"; c.width = Math.ceil(g.measureText(txt).width) + 24; c.height = 60;
+    g.font = "bold 44px system-ui"; g.fillStyle = "rgba(255,255,255,.88)"; g.fillRect(0, 0, c.width, c.height); g.fillStyle = warna; g.fillText(txt, 12, 46);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false })); const k = span * 0.0007; s.scale.set(c.width * k * 0.5, c.height * k * 0.5, 1); s.renderOrder = 10; return s; };
+  const bangun = () => {
+    const VE = +$("#bpV").value, HE = +$("#bpH").value; $("#bpVv").textContent = String(VE).replace(".", ","); $("#bpHv").textContent = HE + "×";
+    if (grp) { sc.remove(grp); grp.traverse((o) => { o.geometry?.dispose(); o.material?.map?.dispose?.(); o.material?.dispose?.(); }); }
+    grp = new THREE.Group(); sc.add(grp); hit = [];
+    const geo = new THREE.PlaneGeometry(wM, hM, NX, NY); geo.rotateX(-Math.PI / 2); const ps = geo.attributes.position;
+    for (let j = 0; j <= NY; j++) for (let i = 0; i <= NX; i++) ps.setY(j * (NX + 1) + i, (zz(Z[j][i]) - zMin) * VE); geo.computeVertexNormals();
+    terr = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tekstur($("#bpT").value), transparent: true, opacity: +$("#bpO").value, side: THREE.DoubleSide, depthWrite: false })); terr.renderOrder = 5; grp.add(terr);
+    // garis tepi blok dan alas
+    const yb = -maxD * HE - 20, tepi = [[-wM / 2, -hM / 2], [wM / 2, -hM / 2], [wM / 2, hM / 2], [-wM / 2, hM / 2], [-wM / 2, -hM / 2]];
+    grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(tepi.map(([x, z]) => new THREE.Vector3(x, yb, z))), new THREE.LineBasicMaterial({ color: 0x6b7a72 })));
+    for (const [x, z] of tepi.slice(0, 4)) grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, yb, z), new THREE.Vector3(x, 0, z)]), new THREE.LineBasicMaterial({ color: 0x9aa8a0 })));
+    const r = Math.max(3, span * 0.005), zon = new Map();
+    for (const p of P) { const [x, z] = pos(+p.lon, +p.lat), y0 = (p.z - zMin) * VE, dip = (Math.abs(+p.dip || 90) * Math.PI) / 180, az = ((+p.az || 0) * Math.PI) / 180;
+      const dir = new THREE.Vector3(Math.sin(az) * Math.cos(dip), -Math.sin(dip), -Math.cos(az) * Math.cos(dip)).normalize(), at = (d) => new THREE.Vector3(x, y0, z).addScaledVector(dir, d * HE);
+      const D = dalam(p), R = PRF.filter((q) => q.bhid === p.bhid), iv = R.length ? R.map((q) => [+q.dari_m, +q.sampai_m, q.warna, q.nama_zona]) : D > 0 ? [[0, D, p.warna, LABEL_STATUS[p.status] ?? p.status]] : [];
+      for (const [a, b, w, nm] of iv) { if (!(b > a)) continue; const A = at(a), B = at(b), len = A.distanceTo(B);
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 14), new THREE.MeshLambertMaterial({ color: w || "#999" })); m.position.copy(A).add(B).multiplyScalar(0.5);
+        m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir); m.userData = `${p.bhid} · ${nm} ${a.toFixed(1)}–${b.toFixed(1)} m (tebal ${(b - a).toFixed(1)} m)`; grp.add(m); hit.push(m);
+        if (R.length) zon.set(nm, w); }
+      if (+p.rk > D) { const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([at(D), at(+p.rk)]), new THREE.LineDashedMaterial({ color: 0x333333, dashSize: r * 2, gapSize: r * 1.5 })); ln.computeLineDistances(); grp.add(ln); }
+      const col = new THREE.Mesh(new THREE.SphereGeometry(r * 1.5, 16, 12), new THREE.MeshLambertMaterial({ color: WARNA_STATUS[p.status] ?? "#999" })); col.position.set(x, y0, z); col.userData = `${p.bhid} · ${LABEL_STATUS[p.status] ?? p.status}${D ? ` · kedalaman ${D.toFixed(1)} m` : ""}${+p.rk ? ` · rencana ${p.rk} m` : ""}`; grp.add(col); hit.push(col);
+      const lb = label(p.bhid); lb.position.set(x, y0 + span * 0.035, z); grp.add(lb);
+      grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, y0, z), lb.position.clone()]), new THREE.LineBasicMaterial({ color: 0x333333 }))); }
+    const u = label("U ↑", "#c00"); u.position.set(0, (zMax - zMin) * VE + span * 0.05, -hM / 2); grp.add(u);
+    $("#bpL").innerHTML = [...zon].map(([n, w]) => `<div><span style="display:inline-block;width:12px;height:12px;background:${esc(w)};border:1px solid #fff;margin-right:6px;vertical-align:-1px"></span>${esc(n)}</div>`).join("")
+      + `<div>${["RENCANA", "PROGRES", "EOH"].map((k) => `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${WARNA_STATUS[k]};border:1px solid #fff;margin:0 4px 0 0"></span>${k === "EOH" ? "EOH/STB" : LABEL_STATUS[k].replace(" (continue)", "")}`).join(" &nbsp;")}</div>
+      <div style="opacity:.8">Relief ${zMin.toFixed(0)}–${zMax.toFixed(0)} m ×${VE} · lubang ×${HE} · garis putus = sisa rencana</div>`;
+  };
+  bangun();
+  const lihat = (atas) => { const d = span * 0.95; ctl.target.set(0, -maxD * +$("#bpH").value * 0.3, 0); if (atas) cam.position.set(0, d * 1.3, d * 0.05); else cam.position.set(-d * 0.75, d * 0.45, d * 0.75); ctl.update(); };
+  lihat(false);
+  $("#bpA").onclick = () => lihat(true); $("#bpS").onclick = () => lihat(false);
+  $("#bpT").onchange = (e) => { localStorage.setItem("topo3d", e.target.value); terr.material.map.dispose(); terr.material.map = tekstur(e.target.value); terr.material.needsUpdate = true; };
+  $("#bpO").oninput = (e) => { localStorage.setItem("bp3op", e.target.value); terr.material.opacity = +e.target.value; };
+  $("#bpV").oninput = bangun; $("#bpH").oninput = bangun;
+  $("#bpP").onclick = () => { ren.render(sc, cam); const a = document.createElement("a"); a.href = ren.domElement.toDataURL("image/png"); a.download = `Peta3D_bawah_permukaan_${new Date().toISOString().slice(0, 10)}.png`; a.click(); };
+  const ray = new THREE.Raycaster(), v2 = new THREE.Vector2(); let turun = null;
+  ren.domElement.addEventListener("pointerdown", (e) => (turun = [e.clientX, e.clientY]));
+  ren.domElement.addEventListener("pointerup", (e) => { if (!turun || Math.hypot(e.clientX - turun[0], e.clientY - turun[1]) > 6) return; const b = ren.domElement.getBoundingClientRect();
+    v2.set(((e.clientX - b.left) / b.width) * 2 - 1, -((e.clientY - b.top) / b.height) * 2 + 1); ray.setFromCamera(v2, cam); const h = ray.intersectObjects(hit)[0];
+    $("#bpI").textContent = h ? h.object.userData : "Ketuk kolom lubang untuk keterangan layer."; });
+  const ubah = () => { if (stop) return; cam.aspect = W() / H(); cam.updateProjectionMatrix(); ren.setSize(W(), H()); }; addEventListener("resize", ubah);
+  const jalan = () => { if (stop) return removeEventListener("resize", ubah); ctl.update(); ren.render(sc, cam); requestAnimationFrame(jalan); }; jalan();
+}
 async function tinggiDi(lon, lat) {
   const z = 14, n = 2 ** z, xf = (lon + 180) / 360 * n, r = lat * Math.PI / 180, yf = (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n, x = Math.floor(xf), y = Math.floor(yf), k = `${x}/${y}`;
   demCache[k] ??= new Promise((ok) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => { const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0); ok(g); }; im.onerror = () => ok(null); im.src = `peta/dem/${z}/${x}/${y}.png`; });
@@ -2976,7 +3076,7 @@ async function petaView(v) {
   const bisaTulis = ["verifier", "admin"].includes(me?.role);
   v.innerHTML = `<div class="card" id="pmCard" style="padding:8px"><div class="row" style="flex-wrap:wrap;align-items:center;gap:6px">
       <select id="pmB" style="flex:0 0 140px"><option value="sat">Citra satelit</option><option value="osm">Peta jalan (OSM)</option><option value="none">Tanpa latar</option></select>
-      <button class="sec" id="pm3" style="flex:0">3D</button><label id="pmKl" style="flex:0;white-space:nowrap;margin:0;display:none">Kolom bor <input id="pmK" type="range" min="0.5" max="3" step="0.25" value="${localStorage.getItem("kolom3d") || 1}" style="width:80px;vertical-align:middle"></label><select id="pmTopo" title="Tampilan topografi saat 3D" style="flex:0 0 150px">${[["redup", "Topo redup (bor jelas)"], ["sedang", "Topo sedang"], ["asli", "Topo asli"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select><label style="flex:0;white-space:nowrap;margin:0">Tinggi <input id="pmX" type="range" min="1" max="4" step="0.5" value="1.5" style="width:80px;vertical-align:middle"> <span id="pmXv">1,5×</span></label>
+      <button class="sec" id="pm3" style="flex:0">3D</button><button class="sec" id="pmBP" style="flex:0;white-space:nowrap;background:#12251E;color:#fff">🧊 3D bawah permukaan</button><label id="pmKl" style="flex:0;white-space:nowrap;margin:0;display:none">Kolom bor <input id="pmK" type="range" min="0.5" max="3" step="0.25" value="${localStorage.getItem("kolom3d") || 1}" style="width:80px;vertical-align:middle"></label><select id="pmTopo" title="Tampilan topografi saat 3D" style="flex:0 0 150px">${[["redup", "Topo redup (bor jelas)"], ["sedang", "Topo sedang"], ["asli", "Topo asli"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select><label style="flex:0;white-space:nowrap;margin:0">Tinggi <input id="pmX" type="range" min="1" max="4" step="0.5" value="1.5" style="width:80px;vertical-align:middle"> <span id="pmXv">1,5×</span></label>
       <button class="sec" id="pmL" style="flex:0">Lapisan ▾</button><button class="sec" id="pmF" style="flex:0">Impor file</button><input type="file" id="pmFi" multiple accept=".zip,.shp,.dbf,.prj,.shx,.cpg,.kml,.kmz,.geojson,.json,.csv,.txt" style="display:none">
       <button class="sec" id="pmT" style="flex:0">● Lacak</button><button class="sec" id="pmI" style="flex:0">Ke IUP</button><button class="sec" id="pmO" style="flex:0">Simpan offline</button></div>
     <div id="pmPanel" class="card" style="display:none;margin:8px 0 0;padding:8px;background:#f6f7f2"></div>
@@ -3222,6 +3322,7 @@ async function petaView(v) {
   $("#pm3").onclick = () => { const p = map.getPitch() > 5 ? 0 : 65, cs = L.filter((f) => +f.properties.kd > 0 || PRF.some((r) => r.bhid === f.properties.bhid)).map((f) => f.geometry.coordinates);
     if (p && cs.length) { const bb = new maplibregl.LngLatBounds(); cs.forEach((c) => bb.extend(c)); map.fitBounds(bb, { pitch: p, bearing: -20, padding: { top: 140, bottom: 60, left: 60, right: 60 }, maxZoom: 16.5, duration: 1000 }); }
     else map.easeTo({ pitch: p, bearing: p ? -20 : 0, duration: 800 }); $("#pm3").textContent = p ? "2D" : "3D"; };
+  $("#pmBP").onclick = () => bawahPermukaan3D(L.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] })), PRF);
   $("#pmK").oninput = (e) => { localStorage.setItem("kolom3d", e.target.value); gambarKolom3D(); terapkanTopo(); };
   map.on("pitchend", () => { $("#pm3").textContent = map.getPitch() > 5 ? "2D" : "3D"; terapkanTopo(); });
   $("#pmTopo").onchange = (e) => { localStorage.setItem("topo3d", e.target.value); terapkanTopo(); };
@@ -3260,7 +3361,7 @@ async function petaView(v) {
   $("#pmO").onclick = async () => {
     if (!online()) return alert("Perlu sinyal untuk menyimpan.");
     try { const idx = await (await fetch("peta/dem/index.json", { cache: "no-cache" })).json(), c = await caches.open("tgep-peta"),
-        U = ["vendor/maplibre-gl.js", "vendor/maplibre-gl.css", "vendor/shp.min.js", "vendor/togeojson.umd.js", "vendor/jszip.min.js", "peta/dem/index.json", "peta/kontur/index.json", "peta/kontur/kontur.geojson", "peta/kontur/elevasi.png", "peta/kontur/lereng.png", ...idx.tiles];
+        U = ["vendor/maplibre-gl.js", "vendor/maplibre-gl.css", "vendor/three.module.min.js", "vendor/OrbitControls.js", "vendor/shp.min.js", "vendor/togeojson.umd.js", "vendor/jszip.min.js", "peta/dem/index.json", "peta/kontur/index.json", "peta/kontur/kontur.geojson", "peta/kontur/elevasi.png", "peta/kontur/lereng.png", ...idx.tiles];
       let i = 0; for (const u of U) { await c.add(u); if (++i % 10 === 0) $("#pmInfo").textContent = `Menyimpan peta offline… ${i}/${U.length}`; }
       $("#pmInfo").textContent = `Peta offline tersimpan (${U.length} file). Relief, GPS, batas IUP, lubang & lapisan tetap bisa dibuka tanpa sinyal; citra satelit tetap perlu sinyal.`;
     } catch (er) { $("#pmInfo").textContent = "Gagal menyimpan offline: " + er.message; }
