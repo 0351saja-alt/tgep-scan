@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.12";
+const APP_VERSION = "2026-11-17.13";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -128,6 +128,7 @@ async function render() {
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
   beat();
+  if (location.hash.startsWith("#buka=")) { const [b, ...p] = decodeURIComponent(location.hash.slice(6)).split(":"); return bukaLinkView(b, p.join(":")); }
   app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div><p class="muted" style="text-align:center;font-size:12px;margin:18px 0">${myTugas ? `Proyek <b>${esc(myTugas.nama)}</b> · ${esc(myTugas.rig ?? "semua rig")}${me?.role === "client" ? "" : ` · <a href="#" id="gantiP">${myTugas.pilih_rig ? "ganti rig" : "penugasan"}</a>`} · ` : ["client", "admin", "verifier"].includes(me?.role) ? "" : `<a href="#" id="gantiP">belum ada penugasan</a> · `}X-Terra · versi ${APP_VERSION}</p>`;
   $("#gantiP")?.addEventListener("click", (e) => { e.preventDefault(); pilihProyekView(false); });
   if (!sessionStorage.getItem("tolakCek")) { sessionStorage.setItem("tolakCek", "1"); cekPenolakan(true); }
@@ -153,6 +154,15 @@ async function render() {
   if (tab === "peta") return petaView($("#v"));
 }
 
+async function bukaLinkView(bucket, path) {
+  app.innerHTML = `<div class="card"><h2>Membuka file…</h2><p class="muted">${esc(path)}</p><div id="bf"></div><div style="margin-top:10px"><button class="sec" id="bk">Kembali ke aplikasi</button></div></div>`;
+  $("#bk").onclick = () => { history.replaceState(null, "", location.pathname + location.search); render(); };
+  if (!online()) return ($("#bf").innerHTML = `<p class="err">Perlu sinyal untuk membuka file.</p>`);
+  const { data, error } = await sb.storage.from(bucket).createSignedUrl(path, 3600);
+  if (error || !data?.signedUrl) return ($("#bf").innerHTML = `<p class="err">File tidak bisa dibuka: ${esc(error?.message ?? "tidak ditemukan / akun ini tidak punya akses")}</p>`);
+  const gambar = /\.(jpe?g|png|webp|gif)$/i.test(path);
+  $("#bf").innerHTML = `${gambar ? `<img src="${data.signedUrl}" style="max-width:100%;border-radius:8px;margin:6px 0">` : ""}<p><a href="${data.signedUrl}" target="_blank" rel="noopener">Buka / unduh file asli</a> <span class="muted">(link unduhan berlaku 1 jam)</span></p>`;
+}
 function loginView() {
   const qp = new URLSearchParams(location.search);
   const after = qp.get("daftar") === "ok" ? `<div class="card" style="background:#DCEFE4"><b>Pendaftaran terkirim.</b> Akun Anda menunggu persetujuan admin TGEP. Setelah disetujui, masuk dengan email dan kata sandi yang Anda buat.</div>` : "";
@@ -1810,16 +1820,27 @@ const DATASETS = {
   kepatuhan: { t: "Rekap operator harian", v: "v_kepatuhan_harian", order: ["tanggal", "nama"], bh: null },
   logging: { t: "Status Form Logging per lubang", v: "v_logging_lubang", order: ["bhid"], bh: "bhid" },
   koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
+  corefile: { t: "Foto core (file)", v: "core_photo", sel: "id,bhid,box_no,depth_from,depth_to,photo_type,photo_path,status,sop_ok,ditolak,alasan_tolak,captured_at,created_at,project", order: ["bhid", "depth_from"], bh: "bhid" },
+  scanfile: { t: "Scan Form Logging (file)", v: "scan_job", sel: "id,form_type,bhid_hint,page_no,status,photo_path,sumber,file_name,captured_at,created_at,reviewed_at,review_note,project", order: ["created_at"], bh: "bhid_hint" },
   arsip: { t: "Arsip terhapus (admin)", v: "deleted_record", order: ["deleted_at"], bh: "bhid", admin: true },
 };
+// Kolom berisi file → tempat penyimpanan (bucket). Di tabel tampil tombol “Buka”; di Excel/CSV ada kolom *_link (link permanen, perlu login).
+const FILE_COL = { aktivitas: { photo_path: "progress-photos" }, p2h: { photo_path: "progress-photos" }, arsipfoto: { photo_path: "scan-photos" }, corefile: { photo_path: "core-photos" }, scanfile: { photo_path: "scan-photos" } };
+const linkFile = (bucket, path) => new URL("./", location.href).href + "#buka=" + encodeURIComponent(bucket) + ":" + encodeURIComponent(path);
+const tambahLink = (k, rows) => { const fc = FILE_COL[k]; if (!fc) return rows; return rows.map((r) => { const o = { ...r }; for (const [c, b] of Object.entries(fc)) if (r[c]) o[c + "_link"] = linkFile(b, r[c]); return o; }); };
+async function bukaFile(bucket, path) {
+  const w = window.open("", "_blank"); const { data, error } = await sb.storage.from(bucket).createSignedUrl(path, 3600);
+  if (error || !data?.signedUrl) { w?.close(); return alert("File tidak bisa dibuka: " + (error?.message ?? "tidak ditemukan / tidak punya akses")); }
+  if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
+}
 const OKV = new Set(["OK", "OK-SW", "MENUNGGU LAB", "MENUNGGU CEK"]);
 function dbQuery(d, f) {
-  let q = sb.from(d.v).select("*", { count: "exact" });
+  let q = sb.from(d.v).select(d.sel ?? "*", { count: "exact" });
   if (f.bh && d.bh) q = q.ilike(d.bh, `%${f.bh}%`);
   if (f.proj) { if (d.bh) q = q.in(d.bh, f.proj.bhids.length ? f.proj.bhids : ["-"]); else if (["v_dash_rig_day", "p2h_check", "v_kepatuhan_harian"].includes(d.v)) q = q.in("rig", f.proj.rigs.length ? f.proj.rigs : ["-"]); }
   if (f.bad && d.bad && ["chk_harian", "flags"].includes(d.bad[0])) q = q.neq(d.bad[0], "");
   else if (f.bad && d.bad) q = q.or(d.bad.map((c) => `and(${c}.not.is.null,${c}.not.in.(${[...OKV].map((x) => `"${x}"`).join(",")}))`).join(","));
-  const desc = ["v_kepatuhan_harian", "deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "form_photo", "v_ddr_list", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day"].includes(d.v);
+  const desc = ["v_kepatuhan_harian", "deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "form_photo", "v_ddr_list", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day", "scan_job"].includes(d.v);
   for (const o of d.order) q = q.order(o, { ascending: !desc });
   return q;
 }
@@ -2179,10 +2200,14 @@ async function dbView(v) {
     if (!data?.length) return ($("#tb").innerHTML = `<p class="muted">Tidak ada data.</p>`);
     const cols = Object.keys(data[0]).filter((c) => !["data", "related"].includes(c));
     const canDel = me?.role === "admin" && d.del, canRes = me?.role === "admin" && f.ds === "arsip";
-    const cell = (c, x) => { const s = x !== null && typeof x === "object" ? JSON.stringify(x) : x; const bad = c.startsWith("chk_") && x && !OKV.has(x); return `<td style="padding:4px 7px;white-space:nowrap;${bad ? "background:#F6C9C3" : ""}">${esc(s)}</td>`; };
+    const fc = FILE_COL[f.ds] ?? {};
+    const cell = (c, x) => { if (fc[c] && x) return `<td style="padding:4px 7px;white-space:nowrap"><button class="sec" data-fb="${fc[c]}" data-fp="${esc(x)}" style="padding:2px 10px">Buka</button> <a href="#" data-fl="${esc(linkFile(fc[c], x))}" title="Salin link permanen" style="text-decoration:none">🔗</a></td>`;
+      const s = x !== null && typeof x === "object" ? JSON.stringify(x) : x; const bad = c.startsWith("chk_") && x && !OKV.has(x); return `<td style="padding:4px 7px;white-space:nowrap;${bad ? "background:#F6C9C3" : ""}">${esc(s)}</td>`; };
     $("#tb").innerHTML = `<div class="tw"><table><tr>${canDel || canRes ? "<th></th>" : ""}${cols.map((c) => `<th style="padding:4px 7px">${esc(c)}</th>`).join("")}</tr>
       ${data.map((r) => `<tr>${canDel ? `<td><button class="danger" data-k="${esc(r[d.del[1]])}" style="padding:2px 8px">Hapus</button></td>` : ""}${canRes ? `<td>${r.restored_at ? "dipulihkan" : `<button class="sec" data-r="${r.id}" style="padding:2px 8px">Pulihkan</button>`}</td>` : ""}${cols.map((c) => cell(c, r[c])).join("")}</tr>`).join("")}</table></div>`;
     $("#tb").querySelectorAll("[data-k]").forEach((b) => (b.onclick = async () => { if (await adminDelete(d.del[0], b.dataset.k, "conto")) show(page); }));
+    $("#tb").querySelectorAll("[data-fb]").forEach((b) => (b.onclick = () => bukaFile(b.dataset.fb, b.dataset.fp)));
+    $("#tb").querySelectorAll("[data-fl]").forEach((a) => (a.onclick = async (e) => { e.preventDefault(); try { await navigator.clipboard.writeText(a.dataset.fl); a.textContent = "✓"; setTimeout(() => (a.textContent = "🔗"), 1200); } catch { prompt("Salin link ini:", a.dataset.fl); } }));
     $("#tb").querySelectorAll("[data-r]").forEach((b) => (b.onclick = async () => { const { error } = await sb.rpc("admin_restore", { p_id: Number(b.dataset.r) }); if (error) alert(error.message); else show(page); }));
   };
   $("#go").onclick = () => show(0); $("#pv").onclick = () => show(st.page - 1); $("#nx").onclick = () => show(st.page + 1);
@@ -2190,7 +2215,7 @@ async function dbView(v) {
   const tag = () => { const f = read(); return `${f.bh ? f.bh + "_" : ""}${new Date().toISOString().slice(0, 10)}`; };
   $("#csv").onclick = async () => {
     const f = read(), d = DATASETS[f.ds]; $("#info").textContent = "Menyiapkan CSV…";
-    try { const rows = await fetchAll(d, f); if (!rows.length) return ($("#info").textContent = "Tidak ada data.");
+    try { const rows = tambahLink(f.ds, await fetchAll(d, f)); if (!rows.length) return ($("#info").textContent = "Tidak ada data.");
       const cols = Object.keys(rows[0]).filter((c) => !["data", "related"].includes(c));
       const q = (x) => { if (x === null || x === undefined) return ""; const s = typeof x === "object" ? JSON.stringify(x) : String(x); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
       const csv = "\ufeff" + [cols.join(","), ...rows.map((r) => cols.map((c) => q(r[c])).join(","))].join("\r\n");
@@ -2203,8 +2228,8 @@ async function dbView(v) {
     try {
       const X = await import("./vendor/xlsx.js"); const wb = X.utils.book_new();
       const got = {};
-      for (const k of dsAllowed() ?? ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "jam", "bbm", "lubang", "kinerja", "logging", "kepatuhan"]) {
-        const rows = (await fetchAll(DATASETS[k], { ...f, bad: false })).map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (Array.isArray(o[c])) o[c] = o[c].join("; "); return o; }); got[k] = rows;
+      for (const k of dsAllowed() ?? ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "jam", "bbm", "lubang", "kinerja", "logging", "kepatuhan", "corefile", "scanfile", "arsipfoto"]) {
+        const rows = tambahLink(k, await fetchAll(DATASETS[k], { ...f, bad: false })).map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (Array.isArray(o[c])) o[c] = o[c].join("; "); return o; }); got[k] = rows;
         X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), DATASETS[k].t.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
       }
       const { data: tmx } = await sb.from("v_dash_time").select("*");
