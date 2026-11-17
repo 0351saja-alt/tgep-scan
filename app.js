@@ -15,7 +15,7 @@ const LOG = [["seq","No"],["depth_from","From"],["depth_to","To"],["core_length"
  ["geomnrlcode_id_1","Min1"],["min_1_prc","%"],["geomnrlcode_id_2","Min2"],["min_2_prc","%"],["geomnrlcode_id_3","Min3"],["min_3_prc","%"],["comment","Komentar"]];
 const DEN = [["seq","No"],["len1","P1"],["len2","P2"],["len3","P3"],["dia1","D1"],["dia2","D2"],["dia3","D3"],["d_weight_gr","Berat basah g"],["d_wtr_volume_ml","Vol1 ml"],
  ["d_volume_measure_ml","Arch Vol2 ml"],["d_dry_weight_gr","Berat kering g"],["d_wet_weight","Berat conto kg"],["recheck_weight_kg","Timbang ulang kg"],["comment","Komentar"]];
-const HDR = [["bhid","BHID"],["area","Area"],["prospect","Prospek"],["grid","Grid"],["start_date","Mulai"],["stop_date","Selesai"],["xgps","X GPS"],["ygps","Y GPS"],["zgps","Z GPS"],
+const HDR = [["bhid","Hole ID"],["area","Area"],["prospect","Prospek"],["grid","Grid"],["start_date","Mulai"],["stop_date","Selesai"],["xgps","X GPS"],["ygps","Y GPS"],["zgps","Z GPS"],
  ["rigmc_id","Rig"],["teamleader","Ketua tim"],["operator","Operator"],["logger","Logger"],["field_geos","Field geos"],["depth_tp","Akhir TP"],["depth_l","Akhir L"],["depth_s","Akhir S"],
  ["total_depth","EOH"],["total_sample","Total sample"],["water_table","Air tanah"],["core_size","Core size"],["core_barrel_type","Barrel"],["samptype_id","Tipe conto"],
  ["drilprpose_id","Tujuan"],["spacing_id","Spasi"],["morphology_id","Morfologi"],["weather_id","Cuaca"],["vgtation_id","Vegetasi"],["brtype_id","Batuan dasar"],["comment","Komentar"]];
@@ -23,8 +23,8 @@ const SHEET = [["seq","No"],["depth_from","From"],["depth_to","To"],["core_lengt
  ["geolithcode_id_1","Lito1"],["geolithcode_prc_1","%1"],["geolithcode_id_2","Lito2"],["geolithcode_prc_2","%2 (hitung)"],["colour","Warna"],["geohrdns_id","Hard"],["geowthrg_id","Wth"],["geosrp_id","Serp"],
  ["total_silica","Sil%"],["total_garnierit","Gar%"],["geomnrlcode_id_1","Min1"],["min_1_prc","%"],["geomnrlcode_id_2","Min2"],["min_2_prc","%"],
  ["d_length_cm","P cm"],["d_diameter_cm","D cm"],["d_weight_gr","Basah g"],["d_volume_measure_ml","Arch Vol2 ml"],["d_wet_weight","Conto kg"],["comment","Komentar"]];
-const SHDR = [["bhid","BHID"],["date","Tanggal"],["page","Hal."],["logger","Logger"],["rigmc_id","Rig"],["xgps","X GPS"],["ygps","Y GPS"],["zgps","Z GPS"],["total_depth","EOH"],["core_size","Core size"]];
-const PHDR = [["bhid","BHID"],["page","Halaman"],["date","Tanggal"],["logger","Logger/petugas"]];
+const SHDR = [["bhid","Hole ID"],["date","Tanggal"],["page","Hal."],["logger","Logger"],["rigmc_id","Rig"],["xgps","X GPS"],["ygps","Y GPS"],["zgps","Z GPS"],["total_depth","EOH"],["core_size","Core size"]];
+const PHDR = [["bhid","Hole ID"],["page","Halaman"],["date","Tanggal"],["logger","Logger/petugas"]];
 const FORMS = { SHEET: "Form Logging", HEADER: "F01 Header lubang (lama)", LOG: "F02 Logging (lama)", DENSITY: "F03 Density (lama)" };
 const NUMERIC = new Set(["seq","depth_from","depth_to","core_length","lose_from","lose_to","geolithcode_prc_1","geolithcode_prc_2","rock_prc","total_silica","total_garnierit",
  "min_1_prc","min_2_prc","min_3_prc","len1","len2","len3","dia1","dia2","dia3","d_weight_gr","d_wtr_volume_ml","d_volume_measure_ml","d_dry_weight_gr","d_wet_weight",
@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.26";
+const APP_VERSION = "2026-11-17.27";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -208,7 +208,7 @@ async function fotoView(v) {
   const jenisOpt = (staff ? `<option value="SHEET">Form Logging — logging geologi + density (dibaca otomatis)</option>` : "") + Object.entries(ARSIP).map(([k, t]) => `<option value="${k}">${t} (arsip foto, tidak dibaca otomatis)</option>`).join("");
   v.innerHTML = `<div class="card"><h2>Foto / unggah formulir</h2>
    <label>Ini formulir apa? *</label><select id="jn">${jenisOpt}</select>
-   <div class="row"><div><label>BHID <span id="bhReq">*</span></label><input id="bh" data-bhid value="${esc(localStorage.getItem("bhid") || "")}" placeholder="mis. DH-NPG 01" autocapitalize="characters"></div><div><label>Rig</label>${rigField()}</div></div>
+   <div class="row"><div><label>Hole ID <span id="bhReq">*</span></label><input id="bh" data-bhid value="${esc(localStorage.getItem("bhid") || "")}" placeholder="mis. DH-NPG 01" autocapitalize="characters"></div><div><label>Rig</label>${rigField()}</div></div>
    <div class="row" id="tglRow"><div><label>Tanggal formulir</label><input id="tg" type="date" value="${todayWIB()}"></div><div><label>Shift</label><select id="sh"><option value="">—</option><option value="PAGI">Day</option><option value="MALAM">Night</option></select></div></div>
    <label>Keterangan</label><input id="kt" placeholder="mis. DDR Rig 04 shift malam, hal. 1–2" value="">
    <p class="muted" id="tip"></p>
@@ -224,8 +224,8 @@ async function fotoView(v) {
   $("#jn").onchange = upd; upd();
   const meta = () => {
     const jenis = $("#jn").value, bhid = bakuBH($("#bh").value), rig = $("#rg").value.trim().toUpperCase();
-    if (jenis === "SHEET" && !bhid) { $("#e").textContent = "Isi BHID dulu."; return null; }
-    if (jenis !== "SHEET" && !bhid && !rig) { $("#e").textContent = "Isi BHID atau Rig supaya arsip bisa dicari."; return null; }
+    if (jenis === "SHEET" && !bhid) { $("#e").textContent = "Isi Hole ID dulu."; return null; }
+    if (jenis !== "SHEET" && !bhid && !rig) { $("#e").textContent = "Isi Hole ID atau Rig supaya arsip bisa dicari."; return null; }
     $("#e").textContent = ""; if (bhid) localStorage.setItem("bhid", bhid); if (rig) localStorage.setItem("rig", rig); localStorage.setItem("fotoLast", JSON.stringify({ jenis }));
     return { jenis, bhid, rig, tanggal: $("#tg").value || null, shift: $("#sh").value || null, keterangan: $("#kt").value.trim() || null };
   };
@@ -377,7 +377,7 @@ async function reviewDetail(v, id) {
 }
 
 async function dataView(v) {
-  v.innerHTML = `<div class="card"><h2>Data tersimpan & hasil cek</h2><div class="row"><input id="bh" placeholder="BHID" value="${esc(localStorage.getItem("bhid") || "")}"><button id="go" style="flex:0">Tampilkan</button></div><div id="dout"></div></div>`;
+  v.innerHTML = `<div class="card"><h2>Data tersimpan & hasil cek</h2><div class="row"><input id="bh" placeholder="Hole ID" value="${esc(localStorage.getItem("bhid") || "")}"><button id="go" style="flex:0">Tampilkan</button></div><div id="dout"></div></div>`;
   $("#go").onclick = async () => {
     const bh = $("#bh").value.trim().toUpperCase();
     const { data, error } = await sb.from("v_sample_qc").select("sample_no,sample_id,depth_from,depth_to,core_length,core_recovery,geozone_id,geolithcode_id_1,d_wet_density,d_wet_arch,d_dry_density,d_dry_arch,d_arch_diff_pct,d_moisture_pct,d_wet_weight,chk_interval,chk_recovery,chk_lith,chk_code,chk_zone,chk_density,chk_arch,chk_weight").eq("bhid", bh).order("depth_from");
@@ -419,11 +419,11 @@ async function coreView(v) {
   const bh = localStorage.getItem("bhid") || "", lastType = localStorage.getItem("coreType") || "UTUH";
   const qd = (await qAll()).filter((x) => x.kind === "core");
   v.innerHTML = `<div class="card"><h2>Foto core</h2>
-   <div class="row"><div><label>BHID</label><input id="cb" data-bhid value="${esc(bh)}" autocapitalize="characters"></div><div><label>Jenis foto</label><select id="cty"><option value="UTUH" ${lastType === "UTUH" ? "selected" : ""}>Core UTUH</option><option value="BELAH" ${lastType === "BELAH" ? "selected" : ""}>Core BELAH</option></select></div></div>
+   <div class="row"><div><label>Hole ID</label><input id="cb" data-bhid value="${esc(bh)}" autocapitalize="characters"></div><div><label>Jenis foto</label><select id="cty"><option value="UTUH" ${lastType === "UTUH" ? "selected" : ""}>Core UTUH</option><option value="BELAH" ${lastType === "BELAH" ? "selected" : ""}>Core BELAH</option></select></div></div>
    <p id="cl" class="muted"></p>
    <div class="row"><div><label>Kotak ke-</label><input id="cx" inputmode="numeric"></div><div><label>FROM (m)</label><input id="cf" inputmode="decimal"></div><div><label>TO (m)</label><input id="ct" inputmode="decimal"></div></div>
    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="crt" style="width:auto"> Foto ulang kotak yang sudah pernah dikirim (mis. karena ditolak)</label>
-   <p class="muted">Template SOP: 1 corebox per foto, teduh, meteran 0–100 cm, papan BHID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
+   <p class="muted">Template SOP: 1 corebox per foto, teduh, meteran 0–100 cm, papan Hole ID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
    <div class="big"><button id="cgo">📷 Ambil foto corebox</button></div>
    <input id="cfile" type="file" accept="image/*" capture="environment" class="hide"><div id="lc"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean foto core (${qd.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
@@ -442,7 +442,7 @@ async function coreView(v) {
   await isi();
   $("#cgo").onclick = () => {
     const f = num($("#cf").value), to = num($("#ct").value), box = parseInt($("#cx").value), retake = $("#crt").checked;
-    if (!$("#cb").value.trim()) return ($("#e").textContent = "Isi BHID.");
+    if (!$("#cb").value.trim()) return ($("#e").textContent = "Isi Hole ID.");
     if (!(box > 0)) return ($("#e").textContent = "Isi nomor kotak.");
     if (!(isFinite(f) && isFinite(to) && to > f)) return ($("#e").textContent = "Isi FROM dan TO kotak ini (TO > FROM).");
     if (to - f > 1.6) return ($("#e").textContent = "Ditolak: satu foto = satu corebox; rentang lebih dari 1,6 m tidak sesuai template.");
@@ -491,7 +491,7 @@ async function coverage(bh) {
     for (const p of arr) { if (end !== null && p.depth_from > end + 0.02) gaps.push(`${t}: ${fmtD(end)}–${fmtD(p.depth_from)} m belum difoto`); if (end !== null && p.depth_from < end - 0.02) gaps.push(`${t}: ${fmtD(p.depth_from)}–${fmtD(Math.min(end, p.depth_to))} m difoto dobel`); end = Math.max(end ?? 0, p.depth_to); }
   }
   const isV = ["verifier", "admin"].includes(me?.role);
-  ko.innerHTML = `<p><b>${nBad ? `${nBad} conto belum lengkap / tidak sesuai SOP` : (s?.length ? "Semua conto lengkap dan sesuai SOP" : "Belum ada data logging untuk BHID ini")}</b></p>
+  ko.innerHTML = `<p><b>${nBad ? `${nBad} conto belum lengkap / tidak sesuai SOP` : (s?.length ? "Semua conto lengkap dan sesuai SOP" : "Belum ada data logging untuk Hole ID ini")}</b></p>
    ${gaps.length ? `<p class="err">${gaps.map(esc).join("<br>")}</p>` : ""}
    ${s?.length ? `<div class="tw"><table><tr><th>Conto</th><th>FROM–TO</th><th>Foto utuh</th><th>Foto belah</th></tr>${s.map((r) => `<tr><td>${r.seq}${esc(r.geozone_id ?? "")}</td><td>${fmtD(r.depth_from)}–${fmtD(r.depth_to)}</td>
      <td style="${bad(r.chk_foto_utuh) ? "background:#F6C9C3" : ""}">${esc(r.chk_foto_utuh)}</td><td style="${bad(r.chk_foto_belah) ? "background:#F6C9C3" : ""}">${esc(r.chk_foto_belah ?? "tidak wajib")}</td></tr>`).join("")}</table></div>` : ""}
@@ -617,7 +617,7 @@ async function progView(v) {
   const q = (await qAll()).filter((x) => x.kind === "event" || x.kind === "p2h");
   v.innerHTML = `<div class="card"><h2>Progres pemboran</h2>
    <div class="row"><div><label>Rig</label>${rigField()}</div>
-   <div><label>BHID</label><input id="pb" data-bhid value="${esc(bh)}" autocapitalize="characters"></div>
+   <div><label>Hole ID</label><input id="pb" data-bhid value="${esc(bh)}" autocapitalize="characters"></div>
    <div style="flex:0.7"><label>Shift</label><select id="sh"><option ${shift === "PAGI" ? "selected" : ""}>PAGI</option><option ${shift === "MALAM" ? "selected" : ""}>MALAM</option></select></div></div>
    <p class="muted">Setiap tombol membuka kamera. Koordinat GPS dan jam dicatat otomatis dan dicetak di foto. GPS tetap jalan tanpa sinyal internet.</p>
    <div class="big">
@@ -636,7 +636,7 @@ async function progView(v) {
   let pending = null;
   v.querySelectorAll("[data-ev]").forEach((b) => (b.onclick = () => {
     keep(); if (!localStorage.getItem("rig")) return ($("#e").textContent = "Isi nama rig dulu.");
-    if (b.dataset.ev !== "MASUK" && b.dataset.ev !== "KELUAR" && !localStorage.getItem("bhid")) return ($("#e").textContent = "Isi BHID dulu.");
+    if (b.dataset.ev !== "MASUK" && b.dataset.ev !== "KELUAR" && !localStorage.getItem("bhid")) return ($("#e").textContent = "Isi Hole ID dulu.");
     $("#e").textContent = ""; pending = b.dataset.ev; $("#pf").click();
   }));
   v.querySelector("[data-p2h]").onclick = () => { keep(); if (!localStorage.getItem("rig")) return ($("#e").textContent = "Isi nama rig dulu."); p2hForm(); };
@@ -1278,7 +1278,7 @@ async function laporanProgres(st) {
         ...K.filter(([a]) => a !== "Total meter bor").map(([a, b]) => [a, b])],
       rig: [["Rig", "Hari aktif", "Meter", "Run", "m/jam", "m/hari aktif", "Standby+perbaikan (jam)", "BBM (L)", "BBM (L/m)", "P2H", "DDR ber-TTD"], ...rigRows],
       harian: [["Tanggal", "Rig aktif", "Meter", "Kumulatif proyek"], ...dayRows],
-      lubang: [["BHID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Logging (m)", "Conto", "Status logging", "Limonit (m)", "Saprolit (m)", "Recovery %", "Status lubang"],
+      lubang: [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Logging (m)", "Conto", "Status logging", "Limonit (m)", "Saprolit (m)", "Recovery %", "Status lubang"],
         ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", +f2(h.logm) || 0, h.conto, h.lstat, h.tl == null ? "" : +f1(h.tl), h.ts == null ? "" : +f1(h.ts), h.rec == null ? "" : Math.round(h.rec), h.selesai ? "SELESAI" : "BERJALAN"])],
       standby: [["Penyebab", "Jam"], ...sbRows],
       operator: [["Operator", "Peran", "Rig", "Hari wajib", "Lengkap", "Sebagian", "Belum", "% lengkap", "Kekurangan terbanyak"], ...opRows],
@@ -1302,7 +1302,7 @@ async function laporanProgres(st) {
     <h2>2. Catatan & hal yang perlu ditindaklanjuti</h2><ul>${notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
     <h2>3. Progres per rig</h2>${tbl(T.rig)}
     <h2>4. Meter bor harian</h2>${svg}${tbl(T.harian)}
-    <h2>5. Status lubang</h2>${klien ? tbl(clientGeo() ? [["BHID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Conto", "Limonit (m)", "Saprolit (m)", "Recovery %", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.conto, h.tl == null ? "" : +f1(h.tl), h.ts == null ? "" : +f1(h.ts), h.rec == null ? "" : Math.round(h.rec), h.selesai ? "SELESAI" : "BERJALAN"])] : [["BHID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.selesai ? "SELESAI" : "BERJALAN"])]) : tbl(T.lubang, { col: 1 })}<p style="color:#555">SELESAI = tanggal selesai terisi atau kedalaman ≥ target/total depth di DDR. Kedalaman dari foto RUN aplikasi${klien ? "" : "; tebal zona dan recovery dari Form Logging yang sudah disetujui"}.</p>
+    <h2>5. Status lubang</h2>${klien ? tbl(clientGeo() ? [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Conto", "Limonit (m)", "Saprolit (m)", "Recovery %", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.conto, h.tl == null ? "" : +f1(h.tl), h.ts == null ? "" : +f1(h.ts), h.rec == null ? "" : Math.round(h.rec), h.selesai ? "SELESAI" : "BERJALAN"])] : [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.selesai ? "SELESAI" : "BERJALAN"])]) : tbl(T.lubang, { col: 1 })}<p style="color:#555">SELESAI = tanggal selesai terisi atau kedalaman ≥ target/total depth di DDR. Kedalaman dari foto RUN aplikasi${klien ? "" : "; tebal zona dan recovery dari Form Logging yang sudah disetujui"}.</p>
     <h2>6. Penyebab standby & perbaikan</h2>${sbRows.length ? tbl(T.standby) : "<p>Tidak ada standby/perbaikan tercatat.</p>"}
     ${klien ? "" : `<h2>7. Kepatuhan pengiriman operator</h2>${opRows.length ? tbl(T.operator, { col: 1 }) : "<p>Belum ada data operator.</p>"}
     <h2>8. Kelengkapan data & QC</h2>${tbl(T.qc)}`}
@@ -1382,8 +1382,8 @@ async function rilisAdmin(box) {
   (cp ?? []).filter((c) => !c.ditolak).forEach((c) => add(c.bhid, "FOTO_CORE")); (sj ?? []).forEach((s) => add(s.bhid_hint, "SCAN_LOGGING")); (fp ?? []).forEach((f) => add(f.bhid, "FORM_ARSIP"));
   const R = new Set((rl ?? []).map((r) => `${r.bhid}|${r.jenis}`)), bh = Object.keys(cnt).sort();
   box.innerHTML = `<h3>Rilis foto & scan ke client</h3><p class="muted">Foto core, scan Form Logging dan foto formulir <b>tidak terlihat</b> oleh client sampai Anda merilisnya per lubang. Setelah dicentang, client yang proyeknya mencakup lubang itu langsung bisa melihat & mengunduh di menu “Foto & scan”. Hilangkan centang untuk menarik kembali. Foto core yang ditolak dan scan yang belum disetujui tidak pernah ikut terkirim.</p>
-    <div class="row" style="flex-wrap:wrap"><input id="rf" placeholder="cari BHID" style="max-width:180px"></div>
-    <div class="tw"><table id="rt"><tr><th>BHID</th>${Object.values(RILIS).map((t) => `<th>${t}</th>`).join("")}</tr>
+    <div class="row" style="flex-wrap:wrap"><input id="rf" placeholder="cari Hole ID" style="max-width:180px"></div>
+    <div class="tw"><table id="rt"><tr><th>Hole ID</th>${Object.values(RILIS).map((t) => `<th>${t}</th>`).join("")}</tr>
     ${bh.map((b) => `<tr data-b="${esc(b)}"><td><b>${esc(b)}</b></td>${Object.keys(RILIS).map((j) => `<td>${cnt[b][j] ? `<label style="white-space:nowrap"><input type="checkbox" data-rb="${esc(b)}" data-rj="${j}" ${R.has(`${b}|${j}`) ? "checked" : ""} style="width:auto"> rilis (${cnt[b][j]})</label>` : '<span class="muted">-</span>'}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="4" class="muted">Belum ada foto core / scan.</td></tr>`}</table></div>`;
   box.querySelector("#rf").oninput = (e) => box.querySelectorAll("#rt tr[data-b]").forEach((tr) => (tr.style.display = tr.dataset.b.toUpperCase().includes(e.target.value.toUpperCase()) ? "" : "none"));
   box.querySelectorAll("[data-rb]").forEach((c) => (c.onchange = async () => {
@@ -1427,7 +1427,7 @@ async function fotoKlienBH(bhid, jenis) {
 
 // ---------- Proyek & rig, lanjutan isian, pemberitahuan penolakan ----------
 let myTugas = JSON.parse(localStorage.getItem("myTugas") || "null");
-// ---------- Pilih BHID dari titik rencana bor (agar ID di lapangan = ID di peta) ----------
+// ---------- Pilih Hole ID dari titik rencana bor (agar ID di lapangan = ID di peta) ----------
 const kunciBH = (x) => String(x ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 const rencanaLokal = () => JSON.parse(localStorage.getItem("rencanaLubang") || "[]");
 async function muatRencana() {
@@ -1635,7 +1635,7 @@ async function logLubang(box) {
   if (error) return (box.innerHTML = `<p class="err">${esc(error.message)}</p>`);
   const g = gp?.value ?? 2, col = { LENGKAP: "#C8EBD4", "MENUNGGU PERIKSA": "#FFE58A", "DALAM TENGGAT": "#E3E8E1", TERLAMBAT: "#F6C9C3" }, rows = (data ?? []).sort((a, b) => ["TERLAMBAT", "MENUNGGU PERIKSA", "DALAM TENGGAT", "LENGKAP"].indexOf(a.status) - ["TERLAMBAT", "MENUNGGU PERIKSA", "DALAM TENGGAT", "LENGKAP"].indexOf(b.status));
   box.innerHTML = `<h3>Form Logging per lubang</h3><p class="muted">Kedalaman bor (dari foto RUN) dibandingkan kedalaman yang sudah masuk database. Form Logging boleh dikirim per hari atau per lubang; baru <b>TERLAMBAT</b> bila interval yang sudah dibor belum di-logging lebih dari <b>${g} hari</b>.${me?.role === "admin" ? ` Ubah tenggat: <input id="gd" type="number" min="0" max="30" value="${g}" style="width:70px"> hari <button class="sec" id="gs" style="width:auto">Simpan</button>` : ""}</p>
-    <div class="tw"><table><tr><th>BHID</th><th>Rig</th><th>Bor (m)</th><th>Logging (m)</th><th>Belum (m)</th><th>Conto</th><th>Scan menunggu</th><th>Belum sejak</th><th>Status</th></tr>
+    <div class="tw"><table><tr><th>Hole ID</th><th>Rig</th><th>Bor (m)</th><th>Logging (m)</th><th>Belum (m)</th><th>Conto</th><th>Scan menunggu</th><th>Belum sejak</th><th>Status</th></tr>
     ${rows.map((l) => `<tr><td><b>${esc(l.bhid)}</b></td><td>${esc(l.rig ?? "")}</td><td>${l.kedalaman_bor ?? ""}</td><td>${l.kedalaman_logging}</td><td>${l.belum_logging_m}</td><td>${l.jumlah_conto}</td><td>${l.scan_menunggu}</td><td>${l.belum_sejak ? `${fmtT(l.belum_sejak).slice(0, 10)} (${l.umur_hari} hr)` : "-"}</td><td style="background:${col[l.status] ?? "#fff"}">${esc(l.status)}</td></tr>`).join("") || `<tr><td colspan="9" class="muted">Belum ada lubang dengan foto RUN.</td></tr>`}</table></div>`;
   box.querySelector("#gs")?.addEventListener("click", async () => { const { error: e } = await sb.from("qc_param").update({ value: Number(box.querySelector("#gd").value) }).eq("name", "LOGGING_GRACE_DAYS"); if (e) return alert(e.message); logLubang(box); });
 }
@@ -2237,9 +2237,10 @@ async function petaView(v) {
       <label>Simpan sebagai</label><select id="ijs"><option value="layer">Lapisan peta (titik/garis/poligon)</option>${bisaTulis && titik.length ? `<option value="rencana">Rencana titik bor</option>` : ""}</select>
       <div id="ilay"><label>Nama lapisan</label><input id="inm" value="${esc(hasil.nama.replace(/\.[^.]+$/, ""))}"><label>Warna</label><input id="iwr" type="color" value="#00b7ff" style="height:38px">
         <label>Tempat simpan</label><select id="itp">${bisaTulis ? `<option value="server">Server — terlihat semua pengguna</option>` : ""}<option value="lokal">HP ini saja</option></select></div>
-      <div id="iren" style="display:none"><label>Kolom nama titik (BHID)</label><select id="ibh">${props.map((p) => `<option ${/^(bhid|name|nama|id|hole|holeid|titik)$/i.test(p) ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>
+      <div id="iren" style="display:none"><label>Kolom nama titik (Hole ID)</label><select id="ibh">${(() => { const pilih = [/^hole[_ -]?id$/i, /^bh[_ -]?id$/i, /^hole$/i, /^(name|nama|titik)$/i, /^id$/i].map((r) => props.find((p) => r.test(p))).find(Boolean);
+          return props.map((p) => `<option ${p === pilih ? "selected" : ""}>${esc(p)}</option>`).join(""); })()}</select>
         <label>Kolom rencana kedalaman (opsional)</label><select id="ikd"><option value="">—</option>${props.map((p) => `<option ${/depth|kedalaman|target|eoh/i.test(p) ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>
-        <p class="muted">Titik dengan BHID yang sudah ada akan diperbarui posisinya. Begitu ada foto Mulai bor dengan BHID yang sama, warnanya otomatis berubah dari Rencana → Progres → EOH/STB.</p></div>
+        <p class="muted">Titik dengan Hole ID yang sudah ada akan diperbarui posisinya. Begitu ada foto Mulai bor dengan Hole ID yang sama, warnanya otomatis berubah dari Rencana → Progres → EOH/STB.</p></div>
       <div class="row" style="margin-top:10px"><button id="iok">Impor</button><button class="sec" id="icx">Batal</button></div><div id="ime" class="err"></div>`);
     m.querySelector("#ijs").onchange = (x) => { m.querySelector("#ilay").style.display = x.target.value === "layer" ? "" : "none"; m.querySelector("#iren").style.display = x.target.value === "rencana" ? "" : "none"; };
     m.querySelector("#icx").onclick = () => m.remove();
@@ -2249,7 +2250,7 @@ async function petaView(v) {
         const kb = m.querySelector("#ibh").value, kk = m.querySelector("#ikd").value, proj = myTugas?.project ?? JSON.parse(localStorage.getItem("projects") || "[]")[0]?.code ?? null;
         const rows = titik.map((f) => ({ project: proj, bhid: String(f.properties?.[kb] ?? "").trim().toUpperCase(), lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1],
           rencana_kedalaman: kk ? Number(String(f.properties?.[kk] ?? "").replace(",", ".")) || null : null, sumber_file: hasil.nama })).filter((r) => r.bhid);
-        const dup = rows.map((r) => r.bhid).filter((b2, i, a) => a.indexOf(b2) !== i); if (dup.length) { m.querySelector("#iok").disabled = false; return (m.querySelector("#ime").textContent = "BHID ganda di file: " + [...new Set(dup)].slice(0, 10).join(", ")); }
+        const dup = rows.map((r) => r.bhid).filter((b2, i, a) => a.indexOf(b2) !== i); if (dup.length) { m.querySelector("#iok").disabled = false; return (m.querySelector("#ime").textContent = "Hole ID ganda di file: " + [...new Set(dup)].slice(0, 10).join(", ")); }
         const { error } = await sb.from("rencana_lubang").upsert(rows, { onConflict: "project,bhid" }); if (error) { m.querySelector("#iok").disabled = false; return (m.querySelector("#ime").textContent = error.message); }
         m.remove(); await muatLubang(); gambarLubang(); $("#pmInfo").textContent = `${rows.length} rencana titik bor diimpor.`; return;
       }
@@ -2265,7 +2266,7 @@ async function petaView(v) {
     };
   };
   const popLubang = (f) => { const p = f.properties, c = f.geometry.coordinates, u = UTM.ke(c[0], c[1]);
-    const pop = new maplibregl.Popup({ offset: 10 }).setLngLat(c).setHTML(`<b>${esc(p.bhid)}</b> · ${esc(LABEL_STATUS[p.status] ?? p.status)}<br>${p.kd != null ? `Kedalaman ${esc(p.kd)} m` : ""}${p.rk != null ? ` · rencana ${esc(p.rk)} m` : ""}${p.rig ? `<br>${esc(p.rig)}` : ""}<br>E ${u[0].toFixed(1)} N ${u[1].toFixed(1)} <span class="muted">(${esc(p.pos)})</span>${p.dalam ? "" : `<br><b style="color:#c00">DI LUAR IUP</b>`}${isClient() ? "" : `<br><button class="sec" data-pakai="${esc(p.bhid)}" style="width:auto;padding:3px 10px;margin-top:6px">Pakai BHID ini di Progres bor</button>`}`).addTo(map);
+    const pop = new maplibregl.Popup({ offset: 10 }).setLngLat(c).setHTML(`<b>${esc(p.bhid)}</b> · ${esc(LABEL_STATUS[p.status] ?? p.status)}<br>${p.kd != null ? `Kedalaman ${esc(p.kd)} m` : ""}${p.rk != null ? ` · rencana ${esc(p.rk)} m` : ""}${p.rig ? `<br>${esc(p.rig)}` : ""}<br>E ${u[0].toFixed(1)} N ${u[1].toFixed(1)} <span class="muted">(${esc(p.pos)})</span>${p.dalam ? "" : `<br><b style="color:#c00">DI LUAR IUP</b>`}${isClient() ? "" : `<br><button class="sec" data-pakai="${esc(p.bhid)}" style="width:auto;padding:3px 10px;margin-top:6px">Pakai Hole ID ini di Progres bor</button>`}`).addTo(map);
     pop.getElement().querySelector("[data-pakai]")?.addEventListener("click", (e) => { localStorage.setItem("bhid", e.target.dataset.pakai); document.body.style.overflow = ""; tab = "prog"; localStorage.setItem("tab", tab); render(); }); };
   const gambarLubang = () => {
     LBL.lubang.forEach((mk) => mk.remove());
@@ -2365,7 +2366,7 @@ async function dbView(v) {
    <div class="row" style="flex-wrap:wrap;align-items:flex-end">
     <div><label>Tabel</label><select id="ds">${keys.map((k) => `<option value="${k}" ${st.ds === k ? "selected" : ""}>${DATASETS[k].t}</option>`).join("")}</select></div>
     ${proyekSelect()}
-    <div><label>BHID (sebagian)</label><input id="fb" value="${esc(st.bh)}" placeholder="mis. TGE00"></div>
+    <div><label>Hole ID (sebagian)</label><input id="fb" value="${esc(st.bh)}" placeholder="mis. TGE00"></div>
     <div style="flex:0;white-space:nowrap"><label><input type="checkbox" id="fbad" ${st.bad ? "checked" : ""} style="width:auto"> hanya yang bermasalah</label></div>
     <button id="go" style="flex:0">Tampilkan</button>
     <button class="sec" id="xl" style="flex:0">Unduh Excel (semua tabel)</button>
