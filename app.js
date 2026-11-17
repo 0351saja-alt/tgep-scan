@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.28";
+const APP_VERSION = "2026-11-17.29";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -983,7 +983,10 @@ async function ddrView(v) {
     <div class="row"><div><label>PROJECT</label>${rigTerkunci() ? `<input id="pj" value="${esc(myTugas.project ?? "")}" readonly title="Diatur admin">` : `<input id="pj" value="${esc(last.project ?? "")}">`}</div><div><label>LOCATION</label><input id="lc" value="${esc(last.location ?? "")}"></div></div>
     <div class="row"><div><label>HOLE ID *</label><input id="bh" data-bhid value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters"></div><div><label>RIG NO *</label>${rigField()}</div><div><label>RIG TYPE</label><input id="rt" value="${esc(last.rig_type ?? "")}"></div></div>
     <div class="row"><div><label>DATE *</label><input id="dt" type="date" value="${shiftNow.tanggal}"></div><div><label>TIME *</label><select id="sh"><option value="PAGI" ${shift === "PAGI" ? "selected" : ""}>Day (06–18)</option><option value="MALAM" ${shift === "MALAM" ? "selected" : ""}>Night (18–06)</option></select></div><div><label>Client *</label><input id="ct" value="${esc(last.contractor ?? "")}"></div></div>
-    <div class="row"><div><label>DRILLER *</label>${me?.role === "driller" ? `<input id="dn" value="${esc(me.full_name ?? "")}" readonly title="Nama akun Anda">` : `<input id="dn" value="${esc(last.driller_name ?? "")}">`}</div><div><label>ASSISTANT</label><input id="hp" value="${esc(last.helpers ?? "")}"></div><div style="flex:.5"><label>CREW *</label><input id="cc" inputmode="numeric" value="${esc(last.crew_count ?? "")}"></div></div>
+    <div class="row"><div><label>DRILLER *</label>${me?.role === "driller" ? `<input id="dn" value="${esc(me.full_name ?? "")}" readonly title="Nama akun Anda">` : `<input id="dn" value="${esc(last.driller_name ?? "")}">`}</div><div style="flex:.5"><label>CREW *</label><input id="cc" inputmode="numeric" readonly title="Dihitung otomatis: driller + assistant" value="${esc(last.crew_count ?? "")}"></div></div>
+    <label>ASSISTANT / CREW lain * <span class="muted">(minimal ${crewMin()} orang termasuk driller)</span></label>
+    <datalist id="dlCrew">${[...new Set(masterPersonil().filter((p) => p.aktif !== false).map((p) => p.nama))].map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
+    <div id="crw"></div><button class="sec" id="crwAdd" style="width:auto;margin-top:4px">+ crew</button>
     <p class="muted" id="crewInfo" style="margin:4px 0 0"></p>
 
     <h3>1. DRILLING</h3>
@@ -1022,18 +1025,29 @@ async function ddrView(v) {
     if (!ev.length) return alert("Belum ada foto RUN untuk rig dan shift ini.");
     $("#cr").innerHTML = ""; ev.forEach((e) => crRow({ from: e.depth_from, to: e.depth_to, core: e.core_length }));
   };
-  // Crew DDR diambil dari daftar personil Masuk shift (Progres bor) untuk rig + tanggal + shift yang sama
+  // Crew DDR: driller (kolom DRILLER) + daftar assistant, minimal crewMin() orang. Diisi otomatis dari Masuk shift (Progres bor) bila ada.
   let crewDDR = [];
+  const JAB_CREW = ["Helper", "Mekanik", "Driller", "Lainnya"];
+  const crwRow = (x = {}) => { $("#crw").insertAdjacentHTML("beforeend", `<div class="row" data-cw style="align-items:center;margin-top:4px"><select style="flex:0 0 104px">${JAB_CREW.map((j) => `<option ${(x.jabatan || "Helper") === j ? "selected" : ""}>${j}</option>`).join("")}</select><input value="${esc(x.nama ?? "")}" list="dlCrew" placeholder="Nama crew" autocapitalize="words"><button class="sec" data-x style="flex:0;padding:8px 12px">✕</button></div>`);
+    const r = $("#crw").lastElementChild; r.querySelector("[data-x]").onclick = () => { r.remove(); hitungCrew(); }; r.querySelector("input").oninput = hitungCrew; };
+  const ambilCrew = () => [...$("#crw").querySelectorAll("[data-cw]")].map((r) => ({ jabatan: r.querySelector("select").value, nama: r.querySelector("input").value.trim().replace(/\s+/g, " ") })).filter((x) => x.nama);
+  const hitungCrew = () => { const n = (val => val ? 1 : 0)($("#dn").value.trim()) + ambilCrew().length; $("#cc").value = n || "";
+    const el = $("#crewMin"); if (el) el.innerHTML = `Crew terisi <b style="color:${n < crewMin() ? "var(--red)" : "var(--green)"}">${n}/${crewMin()}</b>${n < crewMin() ? " — tambah nama sampai minimal " + crewMin() : ""}`; };
+  const isiDaftarCrew = (L) => { $("#crw").innerHTML = ""; L.forEach(crwRow); while ($("#crw").children.length < crewMin() - 1) crwRow(); hitungCrew(); };
+  $("#crwAdd").onclick = () => { crwRow(); hitungCrew(); };
+  $("#dn").addEventListener("input", hitungCrew);
+  isiDaftarCrew((last.crew_list ?? (last.helpers ?? "").split(",").map((n) => ({ nama: n.trim(), jabatan: "Helper" }))).filter((x) => x.nama));
   const isiCrew = async () => {
     const rg = $("#rg").value.trim().toUpperCase(), tg = $("#dt").value, sh = $("#sh").value;
     let L = JSON.parse(localStorage.getItem(kunciPersonil(rg, tg, sh)) || "null");
     if (!L && online()) { const { data } = await sb.from("v_personil_shift").select("personil").eq("rig", rg).eq("tanggal", tg).eq("shift", sh).maybeSingle(); L = data?.personil ?? null; }
     crewDDR = L ?? [];
     const info = $("#crewInfo"); if (!info) return;
-    if (!crewDDR.length) { info.innerHTML = `<span class="err">Belum ada daftar personil Masuk shift di Progres bor untuk ${esc(rg)} · ${esc(tg)} · ${sh === "PAGI" ? "Day" : "Night"}.</span>`; return; }
-    const helper = crewDDR.filter((x) => !["WSG", "Driller"].includes(x.jabatan)).map((x) => x.nama).join(", ");
-    $("#hp").value = helper; $("#cc").value = crewDDR.length;
-    info.innerHTML = `Dari Progres bor: ${crewDDR.map((x) => `${esc(x.nama)} <span class="muted">(${esc(x.jabatan)})</span>`).join(", ")}`;
+    if (!crewDDR.length) { info.innerHTML = `<span id="crewMin"></span><br><span class="muted">Belum ada daftar Masuk shift di Progres bor untuk ${esc(rg)} · ${esc(tg)} · ${sh === "PAGI" ? "Day" : "Night"} — isi nama crew manual.</span>`; hitungCrew(); return; }
+    const dr = crewDDR.find((x) => x.jabatan === "Driller"); if (dr && !$("#dn").readOnly && !$("#dn").value.trim()) $("#dn").value = dr.nama;
+    const dn = $("#dn").value.trim().toUpperCase();
+    isiDaftarCrew(crewDDR.filter((x) => x.jabatan !== "WSG" && x.nama.toUpperCase() !== dn));
+    info.innerHTML = `<span id="crewMin"></span><br><span class="muted">Diisi dari Masuk shift (Progres bor) — bisa ditambah/diubah.</span>`; hitungCrew();
   };
   ["#rg", "#dt", "#sh"].forEach((id) => $(id).addEventListener("change", isiCrew)); isiCrew();
   $("#sv").onclick = async () => {
@@ -1043,11 +1057,13 @@ async function ddrView(v) {
     const coring = rows("#cr").filter((x) => x[0] || x[1]).map(([f, t, c, rm]) => ({ from: num(f), to: num(t), core: num(c), remark: rm || null }));
     const hours = rows("#hr").filter((x) => x[0] || x[1]).map(([m, s, k, d]) => ({ mulai: m.replace(".", ":"), selesai: s.replace(".", ":"), kategori: k, ket: d || null }));
     const row = { project: val("#pj") || null, location: val("#lc") || null, rig: val("#rg").toUpperCase(), rig_type: val("#rt") || null, report_date: val("#dt"), shift: $("#sh").value,
-      bhid: bakuBH(val("#bh")) || null, contractor: val("#ct"), driller_name: val("#dn"), helpers: val("#hp") || null, crew_count: num(val("#cc")), crew: crewDDR,
+      bhid: bakuBH(val("#bh")) || null, contractor: val("#ct"), driller_name: val("#dn"), helpers: ambilCrew().map((x) => x.nama).join(", ") || null, crew_count: num(val("#cc")),
+      crew: [...(val("#dn") ? [{ nama: val("#dn"), jabatan: "Driller" }] : []), ...ambilCrew(), ...crewDDR.filter((x) => x.jabatan === "WSG")],
       hm_start: num(val("#h1")), hm_end: num(val("#h2")), weather: $("#wx").value, notes: val("#nt") || null, hole_type: $("#ht").value, rod_m: num(val("#rd")),
       target_m: num(val("#tg")), total_depth_m: num(val("#td")), open_hole, coring, hours, captured_at: new Date().toISOString() };
     const miss = ["bhid", "rig", "report_date", "contractor", "driller_name", "crew_count"].filter((k) => row[k] === null || row[k] === "");
     if (miss.length) return ($("#e").textContent = "Lengkapi kolom bertanda * (" + miss.join(", ") + ").");
+    if (row.crew_count < crewMin()) return ($("#e").textContent = `Nama crew baru ${row.crew_count} — minimal ${crewMin()} orang (driller + assistant). Tambah dengan "+ crew".`);
     if ([...open_hole, ...coring].some((x) => !(x.to > x.from))) return ($("#e").textContent = "Setiap baris open hole/coring harus To > From.");
     if (coring.some((x) => x.core === null || x.core < 0 || x.core > (x.to - x.from) * 1.05)) return ($("#e").textContent = "Core length kosong atau lebih panjang dari interval run.");
     if (hours.some((h) => durMin(h.mulai, h.selesai) === null)) return ($("#e").textContent = "Format jam di distribusi jam harus 06:30.");
@@ -1059,7 +1075,7 @@ async function ddrView(v) {
     row.consumables = cons;
     const tot = hours.reduce((s, h) => s + durMin(h.mulai, h.selesai), 0);
     if (tot > 720 && !confirm(`Total jam ${(tot / 60).toFixed(1)} > 12 jam. Tetap simpan?`)) return;
-    localStorage.setItem("ddrLast", JSON.stringify({ v: 2, contractor: row.contractor, driller_name: row.driller_name, crew_count: row.crew_count, helpers: row.helpers, project: row.project, location: row.location, rig_type: row.rig_type, target_m: row.target_m }));
+    localStorage.setItem("ddrLast", JSON.stringify({ v: 2, contractor: row.contractor, driller_name: row.driller_name, crew_count: row.crew_count, helpers: row.helpers, crew_list: ambilCrew(), project: row.project, location: row.location, rig_type: row.rig_type, target_m: row.target_m }));
     localStorage.setItem("rig", row.rig); localStorage.setItem("shift", row.shift); localStorage.setItem("bhid", row.bhid);
     const signs = [];
     for (const slot of ["DRILLER", "WELLSITE", "CLIENT"]) { const s = await signDialog(slot); if (s) signs.push(s); }
