@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.23";
+const APP_VERSION = "2026-11-17.24";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -202,7 +202,7 @@ async function fotoView(v) {
   const jenisOpt = (staff ? `<option value="SHEET">Form Logging — logging geologi + density (dibaca otomatis)</option>` : "") + Object.entries(ARSIP).map(([k, t]) => `<option value="${k}">${t} (arsip foto, tidak dibaca otomatis)</option>`).join("");
   v.innerHTML = `<div class="card"><h2>Foto / unggah formulir</h2>
    <label>Ini formulir apa? *</label><select id="jn">${jenisOpt}</select>
-   <div class="row"><div><label>BHID <span id="bhReq">*</span></label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" placeholder="mis. RJDH010" autocapitalize="characters"></div><div><label>Rig</label>${rigField()}</div></div>
+   <div class="row"><div><label>BHID <span id="bhReq">*</span></label><input id="bh" data-bhid value="${esc(localStorage.getItem("bhid") || "")}" placeholder="mis. DH-NPG 01" autocapitalize="characters"></div><div><label>Rig</label>${rigField()}</div></div>
    <div class="row" id="tglRow"><div><label>Tanggal formulir</label><input id="tg" type="date" value="${todayWIB()}"></div><div><label>Shift</label><select id="sh"><option value="">—</option><option value="PAGI">Day</option><option value="MALAM">Night</option></select></div></div>
    <label>Keterangan</label><input id="kt" placeholder="mis. DDR Rig 04 shift malam, hal. 1–2" value="">
    <p class="muted" id="tip"></p>
@@ -217,7 +217,7 @@ async function fotoView(v) {
     $("#tip").textContent = fb ? "Form Logging: letakkan di permukaan datar, cahaya merata, keempat kotak hitam di sudut harus masuk. Hasil CamScanner boleh, asal tidak terpotong dan tidak tertutup tanda air." : "Arsip: foto/scan disimpan apa adanya sebagai bukti; isinya tidak dibaca otomatis. DDR tetap wajib diisi di menu DDR."; };
   $("#jn").onchange = upd; upd();
   const meta = () => {
-    const jenis = $("#jn").value, bhid = $("#bh").value.trim().toUpperCase(), rig = $("#rg").value.trim().toUpperCase();
+    const jenis = $("#jn").value, bhid = bakuBH($("#bh").value), rig = $("#rg").value.trim().toUpperCase();
     if (jenis === "SHEET" && !bhid) { $("#e").textContent = "Isi BHID dulu."; return null; }
     if (jenis !== "SHEET" && !bhid && !rig) { $("#e").textContent = "Isi BHID atau Rig supaya arsip bisa dicari."; return null; }
     $("#e").textContent = ""; if (bhid) localStorage.setItem("bhid", bhid); if (rig) localStorage.setItem("rig", rig); localStorage.setItem("fotoLast", JSON.stringify({ jenis }));
@@ -611,7 +611,7 @@ async function progView(v) {
   const q = (await qAll()).filter((x) => x.kind === "event" || x.kind === "p2h");
   v.innerHTML = `<div class="card"><h2>Progres pemboran</h2>
    <div class="row"><div><label>Rig</label>${rigField()}</div>
-   <div><label>BHID</label><input id="pb" value="${esc(bh)}" autocapitalize="characters"></div>
+   <div><label>BHID</label><input id="pb" data-bhid value="${esc(bh)}" autocapitalize="characters"></div>
    <div style="flex:0.7"><label>Shift</label><select id="sh"><option ${shift === "PAGI" ? "selected" : ""}>PAGI</option><option ${shift === "MALAM" ? "selected" : ""}>MALAM</option></select></div></div>
    <p class="muted">Setiap tombol membuka kamera. Koordinat GPS dan jam dicatat otomatis dan dicetak di foto. GPS tetap jalan tanpa sinyal internet.</p>
    <div class="big">
@@ -626,7 +626,7 @@ async function progView(v) {
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean progres di HP (${q.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
    <ul class="list">${q.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "p2h" ? "P2H " + (x.row.layak_operasi ? "LAYAK" : "TIDAK LAYAK") : EV[x.row.event_type])} · ${esc(x.row.rig)} ${esc(x.row.bhid ?? "")}<br><span class="muted">${fmtT(x.row.captured_at)}${x.row.lat ? "" : " · tanpa GPS"}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
    <div class="card"><h3>Hari ini (terkirim)</h3><div id="today" class="muted">${navigator.onLine && !session.offline ? "Memuat…" : "Offline — tampil saat ada sinyal."}</div></div>`;
-  const keep = () => { localStorage.setItem("rig", $("#rg").value.trim().toUpperCase()); localStorage.setItem("bhid", $("#pb").value.trim().toUpperCase()); localStorage.setItem("shift", $("#sh").value); };
+  const keep = () => { localStorage.setItem("rig", $("#rg").value.trim().toUpperCase()); localStorage.setItem("bhid", bakuBH($("#pb").value)); localStorage.setItem("shift", $("#sh").value); };
   let pending = null;
   v.querySelectorAll("[data-ev]").forEach((b) => (b.onclick = () => {
     keep(); if (!localStorage.getItem("rig")) return ($("#e").textContent = "Isi nama rig dulu.");
@@ -939,7 +939,7 @@ async function ddrView(v) {
   v.innerHTML = `<div class="card"><h2>DAILY DRILLING REPORT</h2>
     <p class="muted">Urutan sama dengan formulir DDR lapangan. Kolom * wajib. Kolom <b>Client</b> diisi nama perusahaan client. Pemakaian barang wajib diisi semua (0 bila tidak dipakai).</p>
     <div class="row"><div><label>PROJECT</label>${rigTerkunci() ? `<input id="pj" value="${esc(myTugas.project ?? "")}" readonly title="Diatur admin">` : `<input id="pj" value="${esc(last.project ?? "")}">`}</div><div><label>LOCATION</label><input id="lc" value="${esc(last.location ?? "")}"></div></div>
-    <div class="row"><div><label>HOLE ID *</label><input id="bh" value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters"></div><div><label>RIG NO *</label>${rigField()}</div><div><label>RIG TYPE</label><input id="rt" value="${esc(last.rig_type ?? "")}"></div></div>
+    <div class="row"><div><label>HOLE ID *</label><input id="bh" data-bhid value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters"></div><div><label>RIG NO *</label>${rigField()}</div><div><label>RIG TYPE</label><input id="rt" value="${esc(last.rig_type ?? "")}"></div></div>
     <div class="row"><div><label>DATE *</label><input id="dt" type="date" value="${shiftNow.tanggal}"></div><div><label>TIME *</label><select id="sh"><option value="PAGI" ${shift === "PAGI" ? "selected" : ""}>Day (06–18)</option><option value="MALAM" ${shift === "MALAM" ? "selected" : ""}>Night (18–06)</option></select></div><div><label>Client *</label><input id="ct" value="${esc(last.contractor ?? "")}"></div></div>
     <div class="row"><div><label>DRILLER *</label>${me?.role === "driller" ? `<input id="dn" value="${esc(me.full_name ?? "")}" readonly title="Nama akun Anda">` : `<input id="dn" value="${esc(last.driller_name ?? "")}">`}</div><div><label>ASSISTANT</label><input id="hp" value="${esc(last.helpers ?? "")}"></div><div style="flex:.5"><label>CREW *</label><input id="cc" inputmode="numeric" value="${esc(last.crew_count ?? "")}"></div></div>
     <p class="muted" id="crewInfo" style="margin:4px 0 0"></p>
@@ -1001,7 +1001,7 @@ async function ddrView(v) {
     const coring = rows("#cr").filter((x) => x[0] || x[1]).map(([f, t, c, rm]) => ({ from: num(f), to: num(t), core: num(c), remark: rm || null }));
     const hours = rows("#hr").filter((x) => x[0] || x[1]).map(([m, s, k, d]) => ({ mulai: m.replace(".", ":"), selesai: s.replace(".", ":"), kategori: k, ket: d || null }));
     const row = { project: val("#pj") || null, location: val("#lc") || null, rig: val("#rg").toUpperCase(), rig_type: val("#rt") || null, report_date: val("#dt"), shift: $("#sh").value,
-      bhid: val("#bh").toUpperCase() || null, contractor: val("#ct"), driller_name: val("#dn"), helpers: val("#hp") || null, crew_count: num(val("#cc")), crew: crewDDR,
+      bhid: bakuBH(val("#bh")) || null, contractor: val("#ct"), driller_name: val("#dn"), helpers: val("#hp") || null, crew_count: num(val("#cc")), crew: crewDDR,
       hm_start: num(val("#h1")), hm_end: num(val("#h2")), weather: $("#wx").value, notes: val("#nt") || null, hole_type: $("#ht").value, rod_m: num(val("#rd")),
       target_m: num(val("#tg")), total_depth_m: num(val("#td")), open_hole, coring, hours, captured_at: new Date().toISOString() };
     const miss = ["bhid", "rig", "report_date", "contractor", "driller_name", "crew_count"].filter((k) => row[k] === null || row[k] === "");
@@ -1421,11 +1421,47 @@ async function fotoKlienBH(bhid, jenis) {
 
 // ---------- Proyek & rig, lanjutan isian, pemberitahuan penolakan ----------
 let myTugas = JSON.parse(localStorage.getItem("myTugas") || "null");
+// ---------- Pilih BHID dari titik rencana bor (agar ID di lapangan = ID di peta) ----------
+const kunciBH = (x) => String(x ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const rencanaLokal = () => JSON.parse(localStorage.getItem("rencanaLubang") || "[]");
+async function muatRencana() {
+  if (online()) { const { data } = await sb.from("rencana_lubang").select("bhid,lon,lat,rig,rencana_kedalaman").order("bhid"); if (data) localStorage.setItem("rencanaLubang", JSON.stringify(data)); }
+  const dl = document.getElementById("dlBH") ?? document.body.appendChild(Object.assign(document.createElement("datalist"), { id: "dlBH" }));
+  dl.innerHTML = rencanaLokal().map((r) => `<option value="${esc(r.bhid)}">`).join("");
+  return rencanaLokal();
+}
+// "DHNPG01", "dh-npg01", "DH NPG 1"? -> ejaan resmi rencana bila hurufnya sama
+const bakuBH = (x) => { const t = String(x ?? "").trim().toUpperCase(); if (!t) return ""; const r = rencanaLokal().find((z) => kunciBH(z.bhid) === kunciBH(t)); return r ? r.bhid : t; };
+const jarakM = (a, b) => { const R = 6371000, r = Math.PI / 180, dl = (b[1] - a[1]) * r, dn = (b[0] - a[0]) * r;
+  const h = Math.sin(dl / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+function pasangPilihBH(inp) {
+  if (inp.dataset.bhOk) return; inp.dataset.bhOk = "1"; inp.setAttribute("list", "dlBH");
+  if (!document.getElementById("dlBH")) { const dl = document.body.appendChild(Object.assign(document.createElement("datalist"), { id: "dlBH" })); dl.innerHTML = rencanaLokal().map((r) => `<option value="${esc(r.bhid)}">`).join(""); }
+  const st = document.createElement("div"); st.style.cssText = "font-size:12px;margin-top:3px";
+  const btn = Object.assign(document.createElement("button"), { type: "button", className: "sec", textContent: "📍 Pilih titik rencana" }); btn.style.cssText = "width:auto;padding:4px 10px;margin-top:4px;font-size:13px";
+  inp.after(st, btn);
+  const cek = () => { const t = inp.value.trim(); if (!t) return (st.textContent = ""); const R = rencanaLokal(), r = R.find((z) => kunciBH(z.bhid) === kunciBH(t));
+    if (r) { st.innerHTML = `<span style="color:#1b7a3a">✓ Terhubung ke titik rencana <b>${esc(r.bhid)}</b> di peta</span>${r.bhid !== t.toUpperCase() ? ` <span class="muted">(ejaan disamakan saat disimpan)</span>` : ""}`; }
+    else st.innerHTML = R.length ? `<span style="color:#a15c00">⚠ Tidak ada di daftar rencana — akan menjadi titik bor BARU di peta. Pastikan bukan salah ketik.</span>` : ""; };
+  inp.addEventListener("input", cek); cek();
+  btn.onclick = async () => {
+    const R = rencanaLokal(); if (!R.length) return alert("Belum ada titik rencana bor (atau belum tersimpan di HP — buka aplikasi sekali saat ada sinyal).");
+    const m = modal(`<h3>Pilih titik rencana bor</h3><p class="muted" id="plg">Mencari posisi GPS untuk mengurutkan dari yang terdekat…</p><ul class="list" id="pll"></ul><button class="sec" id="plx">Tutup</button>`);
+    m.querySelector("#plx").onclick = () => m.remove();
+    const isi = (pos) => { const rows = R.map((r) => ({ ...r, d: pos ? jarakM(pos, [r.lon, r.lat]) : null })).sort((a, b) => (pos ? a.d - b.d : a.bhid.localeCompare(b.bhid)));
+      m.querySelector("#plg").textContent = pos ? "Urut dari yang terdekat dengan posisi Anda sekarang." : "GPS tidak tersedia — diurutkan menurut nama.";
+      m.querySelector("#pll").innerHTML = rows.map((r) => `<li style="cursor:pointer" data-pl="${esc(r.bhid)}"><span style="flex:1"><b>${esc(r.bhid)}</b>${r.rig ? ` · ${esc(r.rig)}` : ""}${r.rencana_kedalaman ? ` · rencana ${esc(r.rencana_kedalaman)} m` : ""}</span><span class="muted">${r.d != null ? (r.d < 1000 ? Math.round(r.d) + " m" : (r.d / 1000).toFixed(1) + " km") : ""}</span></li>`).join("");
+      m.querySelectorAll("[data-pl]").forEach((li) => (li.onclick = () => { inp.value = li.dataset.pl; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); m.remove(); })); };
+    isi(null);
+    navigator.geolocation?.getCurrentPosition((p) => isi([p.coords.longitude, p.coords.latitude]), () => isi(null), { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+  };
+}
+new MutationObserver(() => document.querySelectorAll("input[data-bhid]:not([data-bh-ok])").forEach(pasangPilihBH)).observe(document.body, { childList: true, subtree: true });
 async function loadTugas() {
   if (!online()) return myTugas;
   const [{ data: a, error }, { data: pj }] = await Promise.all([sb.rpc("my_assignment"), sb.from("project").select("*").eq("aktif", true).order("nama")]);
   localStorage.setItem("projects", JSON.stringify(pj ?? []));
-  loadPersonil();
+  loadPersonil(); muatRencana();
   sb.from("wilayah").select("nama,nomor_sk,titik").eq("aktif", true).then(({ data }) => { if (data) localStorage.setItem("wilayah", JSON.stringify(data)); });
   sb.from("qc_param").select("value").eq("name", "CREW_MIN").maybeSingle().then(({ data }) => { if (data?.value) localStorage.setItem("crewMin", data.value); });
   if (error) return myTugas;
@@ -2224,7 +2260,8 @@ async function petaView(v) {
     };
   };
   const popLubang = (f) => { const p = f.properties, c = f.geometry.coordinates, u = UTM.ke(c[0], c[1]);
-    new maplibregl.Popup({ offset: 10 }).setLngLat(c).setHTML(`<b>${esc(p.bhid)}</b> · ${esc(LABEL_STATUS[p.status] ?? p.status)}<br>${p.kd != null ? `Kedalaman ${esc(p.kd)} m` : ""}${p.rk != null ? ` · rencana ${esc(p.rk)} m` : ""}${p.rig ? `<br>${esc(p.rig)}` : ""}<br>E ${u[0].toFixed(1)} N ${u[1].toFixed(1)} <span class="muted">(${esc(p.pos)})</span>${p.dalam ? "" : `<br><b style="color:#c00">DI LUAR IUP</b>`}`).addTo(map); };
+    const pop = new maplibregl.Popup({ offset: 10 }).setLngLat(c).setHTML(`<b>${esc(p.bhid)}</b> · ${esc(LABEL_STATUS[p.status] ?? p.status)}<br>${p.kd != null ? `Kedalaman ${esc(p.kd)} m` : ""}${p.rk != null ? ` · rencana ${esc(p.rk)} m` : ""}${p.rig ? `<br>${esc(p.rig)}` : ""}<br>E ${u[0].toFixed(1)} N ${u[1].toFixed(1)} <span class="muted">(${esc(p.pos)})</span>${p.dalam ? "" : `<br><b style="color:#c00">DI LUAR IUP</b>`}${isClient() ? "" : `<br><button class="sec" data-pakai="${esc(p.bhid)}" style="width:auto;padding:3px 10px;margin-top:6px">Pakai BHID ini di Progres bor</button>`}`).addTo(map);
+    pop.getElement().querySelector("[data-pakai]")?.addEventListener("click", (e) => { localStorage.setItem("bhid", e.target.dataset.pakai); document.body.style.overflow = ""; tab = "prog"; localStorage.setItem("tab", tab); render(); }); };
   const gambarLubang = () => {
     LBL.lubang.forEach((mk) => mk.remove());
     LBL.lubang = L.map((f) => { const p = f.properties, el = document.createElement("div"), r = p.status === "RENCANA" ? 11 : 15;
