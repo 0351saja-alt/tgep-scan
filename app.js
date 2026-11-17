@@ -75,7 +75,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-17.34";
+const APP_VERSION = "2026-11-17.35";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1213,10 +1213,11 @@ async function dashView(v) {
   const st = JSON.parse(sessionStorage.getItem("dash") || "null") ?? { from, to, rig: "" };
   v.innerHTML = `<div class="card"><h2>Dashboard progres & evaluasi</h2>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
-    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0;white-space:nowrap">Cetak layar</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button></div></div>
+    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0;white-space:nowrap">Cetak layar</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button><button id="pres" style="flex:0;white-space:nowrap;background:#12251E">🎞 Presentasi 16:9</button></div></div>
     <div id="kpi" class="card"></div><div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px"></div>`;
   $("#pr").onclick = () => print();
   $("#lap").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value });
+  $("#pres").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value, slide: true });
   $("#go").onclick = () => { sessionStorage.setItem("filterProyek", $("#fproj").value); sessionStorage.setItem("dash", JSON.stringify({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() })); dashView(v); };
   if (!online()) return ($("#kpi").textContent = "Dashboard perlu sinyal internet.");
   const pf = await proyekFilter();
@@ -1338,7 +1339,7 @@ function profilSVG(rows, o = {}) {
     g += `<text x="${x + lw / 2}" y="${y(dd) + 12}" font-size="9" text-anchor="middle">EOH ${dd.toFixed(2)} m</text>`; });
   const Z = [...new Map(rows.map((r) => [r.zona, r])).values()];
   const leg = Z.map((r, i) => `<span style="display:inline-flex;align-items:center;gap:4px;margin:0 10px 4px 0"><span style="width:14px;height:12px;background:${esc(r.warna)};border:1px solid #222;display:inline-block"></span>${esc(r.zona)} = ${esc(r.nama_zona)}${r.status_zona === "MENUNGGU" ? " (belum dikonfirmasi)" : ""}</span>`).join("");
-  return `<div style="overflow-x:auto"><svg width="${W}" height="${top + H + 24}" style="background:#fff;font-family:Arial,sans-serif">${g}</svg></div><div style="font-size:11px;margin-top:4px">${leg}</div>`;
+  return `<div style="overflow-x:auto"><svg width="${o.fit ? "100%" : W}" ${o.fit ? `style="max-height:${o.fit}px;background:#fff;font-family:Arial,sans-serif"` : `height="${top + H + 24}" style="background:#fff;font-family:Arial,sans-serif"`} viewBox="0 0 ${W} ${top + H + 24}" preserveAspectRatio="xMinYMin meet">${g}</svg></div><div style="font-size:11px;margin-top:4px">${leg}</div>`;
 }
 async function profilModal(bhid) {
   const m = modal(`<h3>Profil bor ${esc(bhid)}</h3><div id="pfx">Memuat…</div><div class="row" style="margin-top:10px"><button class="sec" id="pfc">Tutup</button></div>`);
@@ -1393,6 +1394,74 @@ async function petaSVG(L, o = {}) {
   g += `<rect x="${W - 160}" y="${H - 78}" width="152" height="70" fill="#fff" opacity=".9" stroke="#999"/>${leg}<line x1="${W - 156}" y1="${H - 16}" x2="${W - 142}" y2="${H - 16}" stroke="#d00" stroke-width="2" stroke-dasharray="5 3"/><text x="${W - 140}" y="${H - 13}" font-size="10">Batas IUP</text>`;
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="border:1px solid #333;background:#f4f1ea;max-width:100%;height:auto;font-family:Arial,sans-serif"><defs><clipPath id="cp"><rect width="${W}" height="${H}"/></clipPath></defs><g clip-path="url(#cp)">${g}</g></svg>
     <div style="font-size:10px;color:#555">Grid UTM zona 51S (WGS84) · latar elevasi DEMNAS, kontur 25 m (tebal tiap 100 m) · posisi titik: collar/GPS Mulai bor/rencana</div>`;
+}
+const fmtTgl = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "");
+// ---------- Template presentasi pemboran 16:9 (cetak / simpan PDF) ----------
+async function presentasiHTML(D) {
+  const { st, PJ, mPer, mCum, nSelesai, HR, K, dayRows, rigRows, sbRows, notes, LB, prof, klien } = D;
+  const n = (x) => Number(x) || 0, pct = (a, b) => (b ? Math.round((100 * a) / b) : null);
+  const nama = PJ?.nama ?? (st.proj || "Semua proyek"), per = `${fmtTgl(st.from)} – ${fmtTgl(st.to)}`;
+  const hit = (k) => LB.filter((x) => (k === "EOH" ? ["EOH", "STB", "SELESAI"].includes(x.status) : x.status === k)).length;
+  const peta = await petaSVG(LB, { w: 1180, h: 610 }).catch(() => "<p>Peta tidak dapat dibuat.</p>");
+  const rec = HR.filter((h) => h.rec != null), recAvg = rec.length ? Math.round(rec.reduce((s, h) => s + n(h.rec), 0) / rec.length) : null;
+  const stb = sbRows.reduce((s, r) => s + n(r[1]), 0), rigAktif = rigRows.length;
+  const tgtM = n(PJ?.target_meter), tgtL = n(PJ?.target_lubang) || LB.length;
+  const card = (v, l, sub = "", warna = "#1E9E69") => `<div class="kpi"><div class="v" style="color:${warna}">${v}</div><div class="l">${l}</div>${sub ? `<div class="s">${sub}</div>` : ""}</div>`;
+  const bar = (p, warna = "#1E9E69") => `<div class="bar"><span style="width:${Math.max(0, Math.min(100, p ?? 0))}%;background:${warna}"></span></div>`;
+  let no = 0; const slide = (judul, isi, sub = "") => `<section class="sl"><header><span class="no">${String(++no).padStart(2, "0")}</span><h2>${judul}</h2>${sub ? `<span class="sub">${sub}</span>` : ""}<span class="br">X-Terra · TGEP</span></header><div class="isi">${isi}</div><footer>${esc(nama)} · ${per}<span>${no}</span></footer></section>`;
+  // grafik meter harian
+  const mx = Math.max(1, ...dayRows.map((r) => r[2])), W = 1120, H = 330, bw = dayRows.length ? Math.max(4, Math.min(46, Math.floor((W - 60) / dayRows.length) - 4)) : 20;
+  const cum = dayRows.length ? Math.max(...dayRows.map((r) => r[3])) : 1, cMin = dayRows.length ? Math.min(...dayRows.map((r) => r[3] - r[2])) : 0;
+  const gx = (i) => 50 + i * (bw + 4), gyB = (v) => H - 30 - ((H - 70) * v) / mx, gyC = (v) => H - 30 - ((H - 70) * (v - cMin)) / Math.max(1, cum - cMin);
+  const grafik = dayRows.length ? `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:330px">
+    ${[0, 0.5, 1].map((f) => `<line x1="44" x2="${W}" y1="${gyB(mx * f)}" y2="${gyB(mx * f)}" stroke="#e3e8e1"/><text x="38" y="${gyB(mx * f) + 4}" font-size="12" text-anchor="end" fill="#6b7a72">${(mx * f).toFixed(0)}</text>`).join("")}
+    ${dayRows.map((r, i) => `<rect x="${gx(i)}" y="${gyB(r[2])}" width="${bw}" height="${H - 30 - gyB(r[2])}" rx="3" fill="#1E9E69"><title>${r[0]}: ${r[2]} m</title></rect>`).join("")}
+    <polyline points="${dayRows.map((r, i) => `${gx(i) + bw / 2},${gyC(r[3])}`).join(" ")}" fill="none" stroke="#E0A100" stroke-width="3"/>
+    ${dayRows.filter((_, i) => i % Math.ceil(dayRows.length / 10) === 0).map((r) => `<text x="${gx(dayRows.indexOf(r)) + bw / 2}" y="${H - 10}" font-size="11" text-anchor="middle" fill="#6b7a72">${r[0].slice(5)}</text>`).join("")}
+    <text x="${W}" y="16" font-size="12" text-anchor="end" fill="#E0A100">— kumulatif proyek ${cum.toFixed(0)} m</text><text x="50" y="16" font-size="12" fill="#1E9E69">■ meter / hari</text></svg>` : `<p class="kosong">Belum ada meter bor pada periode ini.</p>`;
+  // status titik bor
+  const bar2 = LB.map((x) => { const p = x.rencana_kedalaman ? pct(n(x.kedalaman), n(x.rencana_kedalaman)) : ["EOH", "STB", "SELESAI"].includes(x.status) ? 100 : x.kedalaman ? 50 : 0;
+    const c = WARNA_STATUS[x.status] === "#ffffff" ? "#cfd8d3" : WARNA_STATUS[x.status];
+    return `<tr><td><b>${esc(x.bhid)}</b></td><td><span class="dot" style="background:${WARNA_STATUS[x.status] ?? "#999"}"></span>${esc((LABEL_STATUS[x.status] ?? x.status).replace(" (continue)", ""))}</td><td class="r">${x.kedalaman != null ? (+x.kedalaman).toFixed(1) : "–"}</td><td class="r">${x.rencana_kedalaman ?? "–"}</td><td>${bar(p, c)}</td><td class="r">${x.dip ?? -90}° / ${x.azimuth ?? 0}°</td></tr>`; });
+  const half = Math.ceil(bar2.length / 2), tTitik = (rows) => `<table class="t st"><tr><th>Hole ID</th><th>Status</th><th>Kedalaman (m)</th><th>Rencana (m)</th><th style="width:22%">Capaian</th><th>Dip / Az</th></tr>${rows.join("")}</table>`;
+  // ketebalan zona rata-rata
+  const Z = {}; for (const r of prof ?? []) { (Z[r.zona] ??= { nama: r.nama_zona, warna: r.warna, tebal: 0, bh: new Set() }); Z[r.zona].tebal += n(r.tebal_m); Z[r.zona].bh.add(r.bhid); }
+  const zonaRows = Object.entries(Z).map(([k, z]) => `<tr><td><span class="sw" style="background:${esc(z.warna)}"></span>${esc(z.nama)} (${esc(k)})</td><td class="r">${(z.tebal / z.bh.size).toFixed(1)} m</td><td class="r">${z.bh.size}</td></tr>`).join("");
+  const S = [];
+  S.push(`<section class="sl cover"><div class="cv-l"><div class="tag">LAPORAN PROGRES PEMBORAN</div><h1>${esc(nama)}</h1><div class="per">${per}${st.rig ? ` · ${esc(st.rig)}` : ""}</div>
+    <div class="cv-k">${card(mPer.toFixed(1) + " m", "meter bor periode", "", "#7CE0B0")}${card(`${nSelesai}/${tgtL}`, "lubang selesai", "", "#7CE0B0")}${card(mCum.toFixed(0) + " m", "kumulatif proyek", tgtM ? `${pct(mCum, tgtM)}% dari target ${tgtM} m` : "", "#7CE0B0")}</div>
+    <div class="by">PT Terra Grapindo Eco Prima · eksplorasi nikel laterit<br>Disusun ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })} · ${esc(me?.full_name ?? "")}</div></div>
+    <div class="cv-r">${peta}</div></section>`);
+  S.push(slide("Ringkasan kinerja", `<div class="grid4">
+    ${card(mPer.toFixed(1) + " m", "Meter bor periode")}${card(tgtM ? pct(mCum, tgtM) + "%" : mCum.toFixed(0) + " m", tgtM ? "Capaian target meter" : "Meter kumulatif", tgtM ? `${mCum.toFixed(0)} / ${tgtM} m` : "")}
+    ${card(`${nSelesai} / ${tgtL}`, "Lubang selesai (EOH/STB)", bar(pct(nSelesai, tgtL)))}${card(rigAktif, "Rig aktif")}
+    ${card(recAvg != null ? recAvg + "%" : "–", "Recovery core rata-rata", "", recAvg != null && recAvg < 90 ? "#D62828" : "#1E9E69")}${card(stb.toFixed(1) + " jam", "Standby + perbaikan", "", stb > 0 ? "#E0A100" : "#1E9E69")}
+    ${card(hit("PROGRES"), "Lubang sedang dibor", "", "#E0A100")}${card(hit("RENCANA"), "Titik rencana tersisa", "", "#6b7a72")}</div>
+    <div class="cat"><h3>Catatan utama</h3><ul>${notes.slice(0, 5).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`));
+  S.push(slide("Peta pemboran", `<div class="peta">${peta}</div><div class="leg3"><span><i style="background:#fff"></i>Rencana <b>${hit("RENCANA")}</b></span><span><i style="background:${WARNA_STATUS.PROGRES}"></i>Progres <b>${hit("PROGRES")}</b></span><span><i style="background:${WARNA_STATUS.EOH}"></i>EOH / STB <b>${hit("EOH")}</b></span><span><i style="background:none;border:2px dashed #d00"></i>Batas IUP</span></div>`, `${LB.length} titik`));
+  S.push(slide("Status titik bor", `<div class="dua">${tTitik(bar2.slice(0, half))}${tTitik(bar2.slice(half))}</div>`, "kedalaman aktual vs rencana"));
+  S.push(slide("Produktivitas pemboran", `${grafik}${rigRows.length ? `<table class="t" style="margin-top:10px"><tr><th>Rig</th><th>Hari aktif</th><th>Meter</th><th>Run</th><th>m/jam</th><th>m/hari aktif</th><th>Standby (jam)</th></tr>${rigRows.map((r) => `<tr><td><b>${esc(r[0])}</b></td>${[1, 2, 3, 4, 5, 6].map((i) => `<td class="r">${esc(r[i])}</td>`).join("")}</tr>`).join("")}</table>` : ""}`, "meter per hari & per rig"));
+  S.push(slide("Profil bor & ketebalan zona", (prof ?? []).length ? `<div class="pf"><div>${profilSVG(prof, { h: 330, fit: 420 })}</div><div><table class="t"><tr><th>Zona</th><th>Tebal rata-rata</th><th>Lubang</th></tr>${zonaRows}</table><p class="ket">Tebal rata-rata = jumlah tebal zona ÷ jumlah lubang yang menembus zona itu. Hanya lubang dengan Form Logging yang sudah disetujui.</p></div></div>` : `<p class="kosong">Profil bor tampil otomatis setelah Form Logging lubang disetujui verifier.</p>`, "dari Form Logging terverifikasi"));
+  S.push(slide("Kendala & tindak lanjut", `<div class="dua"><div><h3>Penyebab standby / perbaikan</h3>${sbRows.length ? `<table class="t"><tr><th>Penyebab</th><th>Jam</th></tr>${sbRows.map((r) => `<tr><td>${esc(r[0])}</td><td class="r">${r[1]}</td></tr>`).join("")}</table>` : `<p class="kosong">Tidak ada standby/perbaikan tercatat.</p>`}</div>
+    <div><h3>Perlu tindak lanjut</h3><ul class="tl">${notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div></div>`));
+  const css = `@page{size:338.67mm 190.5mm;margin:0}*{box-sizing:border-box}body{margin:0;background:#3a4741;font-family:"Segoe UI",Arial,sans-serif;color:#12251E}
+  .bar0{position:sticky;top:0;z-index:5;display:flex;gap:8px;justify-content:center;padding:8px;background:#12251E}.bar0 button{font:600 14px Arial;padding:8px 14px;border:0;border-radius:8px;background:#1E9E69;color:#fff;cursor:pointer}
+  .sl{width:338.67mm;height:190.5mm;margin:14px auto;background:#fff;position:relative;overflow:hidden;page-break-after:always;break-after:page;display:flex;flex-direction:column;box-shadow:0 4px 18px rgba(0,0,0,.35)}
+  .sl>header{display:flex;align-items:center;gap:14px;padding:16px 34px 10px;border-bottom:3px solid #1E9E69}.sl>header .no{font:700 26px Arial;color:#1E9E69}.sl>header h2{margin:0;font-size:28px}.sl>header .sub{color:#6b7a72;font-size:15px}.sl>header .br{margin-left:auto;font:700 13px Arial;color:#12251E;opacity:.55;letter-spacing:.06em}
+  .isi{flex:1;padding:16px 34px;overflow:hidden}.sl>footer{display:flex;justify-content:space-between;padding:6px 34px;font-size:12px;color:#6b7a72;border-top:1px solid #e3e8e1}
+  .cover{flex-direction:row;background:linear-gradient(135deg,#0d1f18,#12251E 55%,#1b4a37);color:#fff}.cv-l{flex:0 0 42%;padding:46px 40px;display:flex;flex-direction:column}.cv-r{flex:1;padding:22px 22px 22px 0;display:flex;align-items:center}.cv-r svg{width:100%;height:auto;border-radius:10px;border:0!important}.cv-r div{display:none}
+  .tag{font:700 14px Arial;letter-spacing:.18em;color:#7CE0B0}.cover h1{font-size:46px;line-height:1.08;margin:14px 0 8px}.per{font-size:19px;opacity:.85}.cv-k{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:34px 0 auto}.cover .kpi{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15)}.cover .kpi .l,.cover .kpi .s{color:#cfe3d9}.by{font-size:13px;opacity:.7;line-height:1.6}
+  .kpi{border:1px solid #e3e8e1;border-radius:14px;padding:14px 16px;background:#f7faf8}.kpi .v{font:800 34px Arial;line-height:1.1}.kpi .l{font-size:14px;color:#3d4f46;margin-top:4px}.kpi .s{font-size:12px;color:#6b7a72;margin-top:4px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.cat{margin-top:16px;background:#12251E;color:#fff;border-radius:14px;padding:12px 20px}.cat h3{margin:0 0 6px;color:#7CE0B0;font-size:16px}.cat ul{margin:0;padding-left:20px;font-size:15px;line-height:1.5}
+  .bar{height:10px;background:#e3e8e1;border-radius:6px;overflow:hidden;margin-top:6px}.bar span{display:block;height:100%;border-radius:6px}
+  .peta{display:flex;justify-content:center}.peta svg{height:118mm;width:auto;max-width:100%;border-radius:8px}.peta>div:last-child{display:none}.leg3{display:flex;gap:26px;justify-content:center;font-size:15px;margin-top:6px}.leg3 i{display:inline-block;width:14px;height:14px;border-radius:50%;border:1.5px solid #111;margin-right:6px;vertical-align:-2px}
+  .t{width:100%;border-collapse:collapse;font-size:13.5px}.t th{background:#12251E;color:#fff;text-align:left;padding:6px 8px;font-weight:600}.t td{padding:5px 8px;border-bottom:1px solid #e3e8e1}.t th,.t.st td:nth-child(-n+2){white-space:nowrap}.t tr:nth-child(even) td{background:#f7faf8}.r{text-align:right}
+  .dot{display:inline-block;width:11px;height:11px;border-radius:50%;border:1px solid #111;margin-right:6px;vertical-align:-1px}.sw{display:inline-block;width:16px;height:12px;border:1px solid #222;margin-right:8px;vertical-align:-1px}
+  .dua{display:grid;grid-template-columns:1fr 1fr;gap:22px}.dua h3{margin:0 0 8px;font-size:17px}.tl{margin:0;padding-left:20px;font-size:15px;line-height:1.55}
+  .pf{display:grid;grid-template-columns:1.7fr 1fr;gap:22px;align-items:start}.ket{font-size:12px;color:#6b7a72}.kosong{font-size:18px;color:#6b7a72;text-align:center;margin-top:60px}
+  @media print{body{background:#fff}.bar0{display:none}.sl{margin:0;box-shadow:none}}`;
+  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Presentasi Pemboran ${esc(nama)} ${st.from}–${st.to}</title><style>${css}</style></head><body>
+    <div class="bar0"><button onclick="print()">Simpan PDF / cetak (16:9)</button><button onclick="try{opener._lapDL()}catch(e){alert('Buka ulang dari Dashboard untuk mengunduh Excel.')}">Unduh Excel data</button></div>${S.join("")}</body></html>`;
 }
 async function laporanProgres(st) {
   if (!online()) return alert("Laporan perlu sinyal internet.");
@@ -1496,6 +1565,7 @@ async function laporanProgres(st) {
     const tbl = (a, opt = {}) => `<table>${a.map((r, i) => `<tr>${r.map((c) => (i === 0 ? `<th>${esc(String(c))}</th>` : `<td${opt.col && /TERLAMBAT|BELUM\b/.test(String(c)) ? ' style="background:#F6C9C3"' : ""}>${esc(String(c ?? ""))}</td>`)).join("")}</tr>`).join("")}</table>`;
     const mx = Math.max(1, ...dayRows.map((r) => r[2])), bw = dayRows.length ? Math.min(40, Math.max(4, Math.floor(680 / dayRows.length) - 2)) : 10;
     const svg = dayRows.length ? `<svg width="720" height="170" style="border:1px solid #ddd;background:#fff">${dayRows.map((r, i) => { const h = (130 * r[2]) / mx; return `<rect x="${30 + i * (bw + 2)}" y="${145 - h}" width="${bw}" height="${h}" fill="#1E9E69"><title>${r[0]}: ${r[2]} m</title></rect>`; }).join("")}<text x="4" y="14" font-size="10">${mx.toFixed(0)} m</text><text x="30" y="162" font-size="10">${dayRows[0][0]}</text><text x="600" y="162" font-size="10">${dayRows.at(-1)[0]}</text></svg>` : "<p>Tidak ada data bor pada periode ini.</p>";
+    if (st.slide) { w.document.open(); w.document.write(await presentasiHTML({ st, PJ, mPer, mCum, nSelesai, HR, K, dayRows, rigRows, sbRows, notes, LB, prof, klien })); w.document.close(); return; }
     w.document.open(); w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Laporan Progres ${esc(PJ?.nama ?? "TGEP")} ${st.from}–${st.to}</title>
     <style>body{font-family:Arial,sans-serif;font-size:11px;margin:18px;color:#111;max-width:1000px} h1{font-size:18px;margin:0} h2{font-size:13px;margin:14px 0 4px;color:#12251E;border-bottom:2px solid #1E9E69} table{border-collapse:collapse;width:100%;margin:4px 0} td,th{border:1px solid #999;padding:3px 5px;text-align:left} th{background:#e6efe9} ul{margin:4px 0 4px 18px} .bar{display:flex;gap:8px;margin-bottom:10px} .bar a,.bar button{padding:6px 10px;border:1px solid #1E9E69;border-radius:6px;background:#fff;color:#12251E;text-decoration:none;font:inherit;cursor:pointer} @media print{.bar{display:none} h2{break-after:avoid} tr{break-inside:avoid}}</style></head><body>
     <div class="bar"><button onclick="print()">Cetak / simpan PDF</button><button onclick="try{opener._lapDL()}catch(e){alert('Buka ulang laporan dari menu Dashboard untuk mengunduh Excel.')}">Unduh Excel laporan</button></div>
