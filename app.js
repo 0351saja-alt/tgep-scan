@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.24";
+const APP_VERSION = "2026-11-17.26";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -127,6 +127,12 @@ async function render() {
   const navs = R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
     ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ...(R !== "driller" ? [["peta", "Peta"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
+  // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
+  const PANDUAN = { driller: "driller", geologist: "geologist", verifier: "verifier", admin: "admin", client: "client" };
+  let pandu = document.getElementById("pandu");
+  if (PANDUAN[R]) { if (!pandu) { pandu = Object.assign(document.createElement("a"), { id: "pandu", target: "_blank", rel: "noopener", textContent: "📖 Panduan", title: "Panduan penggunaan untuk peran Anda" });
+      pandu.style.cssText = "color:#fff;text-decoration:none;font-size:13px;margin-right:10px;white-space:nowrap"; document.getElementById("net")?.before(pandu); }
+    pandu.href = `dokumen/panduan/Panduan_X-Terra_${PANDUAN[R]}.pdf`; } else pandu?.remove();
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
   beat();
   if (location.hash.startsWith("#buka=")) { const [b, ...p] = decodeURIComponent(location.hash.slice(6)).split(":"); return bukaLinkView(b, p.join(":")); }
@@ -413,7 +419,7 @@ async function coreView(v) {
   const bh = localStorage.getItem("bhid") || "", lastType = localStorage.getItem("coreType") || "UTUH";
   const qd = (await qAll()).filter((x) => x.kind === "core");
   v.innerHTML = `<div class="card"><h2>Foto core</h2>
-   <div class="row"><div><label>BHID</label><input id="cb" value="${esc(bh)}" autocapitalize="characters"></div><div><label>Jenis foto</label><select id="cty"><option value="UTUH" ${lastType === "UTUH" ? "selected" : ""}>Core UTUH</option><option value="BELAH" ${lastType === "BELAH" ? "selected" : ""}>Core BELAH</option></select></div></div>
+   <div class="row"><div><label>BHID</label><input id="cb" data-bhid value="${esc(bh)}" autocapitalize="characters"></div><div><label>Jenis foto</label><select id="cty"><option value="UTUH" ${lastType === "UTUH" ? "selected" : ""}>Core UTUH</option><option value="BELAH" ${lastType === "BELAH" ? "selected" : ""}>Core BELAH</option></select></div></div>
    <p id="cl" class="muted"></p>
    <div class="row"><div><label>Kotak ke-</label><input id="cx" inputmode="numeric"></div><div><label>FROM (m)</label><input id="cf" inputmode="decimal"></div><div><label>TO (m)</label><input id="ct" inputmode="decimal"></div></div>
    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="crt" style="width:auto"> Foto ulang kotak yang sudah pernah dikirim (mis. karena ditolak)</label>
@@ -426,7 +432,7 @@ async function coreView(v) {
   const num = (s) => Number(String(s).replace(",", "."));
   let nx = { lastBox: 0, lastTo: 0, box: 1, from: 0 };
   const isi = async () => {
-    const bhid = $("#cb").value.trim().toUpperCase(), type = $("#cty").value; if (!bhid) { $("#cl").textContent = ""; return; }
+    const bhid = bakuBH($("#cb").value), type = $("#cty").value; if (!bhid) { $("#cl").textContent = ""; return; }
     nx = await nextCore(bhid, type);
     $("#cl").innerHTML = nx.lastBox ? `Terakhir dikirim: <b>kotak ${nx.lastBox}</b> sampai <b>${fmtD(nx.lastTo)} m</b> (${type}). Lanjut kotak ${nx.box} dari ${fmtD(nx.from)} m.` : `Belum ada foto ${type} untuk ${esc(bhid)} — mulai kotak 1 dari 0,00 m.`;
     if (!$("#crt").checked) { $("#cx").value = nx.box; $("#cf").value = fmtD(nx.from); $("#ct").value = ""; }
@@ -449,7 +455,7 @@ async function coreView(v) {
   $("#cfile").onchange = async (ev) => {
     const file = ev.target.files[0]; if (!file) return; ev.target.value = "";
     const bmp = await createImageBitmap(file); const lc = await localCheck(bmp);
-    const bhid = $("#cb").value.trim().toUpperCase(), type = $("#cty").value, f = num($("#cf").value), to = num($("#ct").value), box = parseInt($("#cx").value) || null;
+    const bhid = bakuBH($("#cb").value), type = $("#cty").value, f = num($("#cf").value), to = num($("#ct").value), box = parseInt($("#cx").value) || null;
     if (lc.sharpness < 25 || lc.brightness < 45) return ($("#e").textContent = `Ditolak sebelum dikirim: ${lc.sharpness < 25 ? "foto terlalu buram" : "foto terlalu gelap"}. Ambil ulang di tempat teduh yang terang dan HP tidak bergoyang.`);
     const save = async () => {
       const fn = `${bhid}_K${box}_${fmtD(f)}-${fmtD(to)}_${type}.jpg`;
@@ -2098,7 +2104,6 @@ const lapisanLokal = () => JSON.parse(localStorage.getItem("petaLokal") || "[]")
 async function petaView(v) {
   const bisaTulis = ["verifier", "admin"].includes(me?.role);
   v.innerHTML = `<div class="card" id="pmCard" style="padding:8px"><div class="row" style="flex-wrap:wrap;align-items:center;gap:6px">
-      <button id="pmFull" style="flex:0;white-space:nowrap" title="Tampilan penuh layar HP">⛶ Layar penuh</button>
       <select id="pmB" style="flex:0 0 140px"><option value="sat">Citra satelit</option><option value="osm">Peta jalan (OSM)</option><option value="none">Tanpa latar</option></select>
       <button class="sec" id="pm3" style="flex:0">3D</button><label style="flex:0;white-space:nowrap;margin:0">Tinggi <input id="pmX" type="range" min="1" max="4" step="0.5" value="1.5" style="width:80px;vertical-align:middle"> <span id="pmXv">1,5×</span></label>
       <button class="sec" id="pmL" style="flex:0">Lapisan ▾</button><button class="sec" id="pmF" style="flex:0">Impor file</button><input type="file" id="pmFi" multiple accept=".zip,.shp,.dbf,.prj,.shx,.cpg,.kml,.kmz,.geojson,.json,.csv,.txt" style="display:none">
@@ -2312,21 +2317,33 @@ async function petaView(v) {
   $("#pm3").onclick = () => { const p = map.getPitch() > 5 ? 0 : 65; map.easeTo({ pitch: p, bearing: p ? -20 : 0, duration: 800 }); $("#pm3").textContent = p ? "2D" : "3D"; };
   $("#pmX").oninput = () => { $("#pmXv").textContent = String(eks()).replace(".", ",") + "×"; if (map.getTerrain()) map.setTerrain({ source: "dem", exaggeration: eks() }); };
   $("#pmL").onclick = () => { const p = $("#pmPanel"); p.style.display = p.style.display === "none" ? "" : "none"; };
-  // Layar penuh: kartu peta menutup seluruh layar (berlaku juga di iPhone); di Android bilah browser ikut disembunyikan
-  const kartu = $("#pmCard"), pm = $("#pmap"), gayaAsal = kartu.getAttribute("style");
+  // Layar penuh: tombol ⛶ di dalam peta (pojok kanan atas, seperti aplikasi peta lain). Saat penuh, hanya peta yang tampil;
+  // tombol ☰ membuka panel lapisan di atas peta, info koordinat tampil di bawah. Android menyembunyikan bilah browser; iPhone cukup penuh halaman.
+  const kartu = $("#pmCard"), pm = $("#pmap"), simpanGaya = new Map();
+  const gaya = (el, css) => { if (!el) return; if (!simpanGaya.has(el)) simpanGaya.set(el, el.getAttribute("style") ?? ""); el.setAttribute("style", css); };
   const aturPenuh = (on) => {
     kartu.dataset.penuh = on ? "1" : "";
-    kartu.setAttribute("style", on ? "position:fixed;inset:0;z-index:60;margin:0;border-radius:0;padding:6px;overflow:auto;background:#fff" : gayaAsal);
-    pm.style.height = on ? "calc(100dvh - 120px)" : "70vh"; pm.style.minHeight = on ? "60vh" : "";
+    if (on) {
+      gaya(kartu, "position:fixed;inset:0;z-index:60;margin:0;border-radius:0;padding:0;overflow:hidden;background:#000");
+      gaya(kartu.firstElementChild, "display:none");
+      gaya(pm, "height:100dvh;margin:0;border-radius:0;overflow:hidden;background:#dfe5df");
+      gaya($("#pmPanel"), `position:absolute;top:8px;left:8px;right:52px;z-index:6;max-height:72dvh;overflow:auto;margin:0;padding:8px;background:rgba(246,247,242,.97);display:${$("#pmPanel").style.display === "none" ? "none" : ""}`);
+      gaya($("#pmInfo"), "position:absolute;left:8px;right:52px;bottom:30px;z-index:5;margin:0;padding:3px 8px;border-radius:8px;background:rgba(255,255,255,.88);font-size:12px;min-height:0");
+      gaya(kartu.lastElementChild, "display:none");
+    } else { for (const [el, css] of simpanGaya) { const tampilPanel = el.id === "pmPanel" ? el.style.display : null; el.setAttribute("style", css); if (tampilPanel !== null) el.style.display = tampilPanel; } simpanGaya.clear(); }
     document.body.style.overflow = on ? "hidden" : "";
-    $("#pmFull").textContent = on ? "✕ Keluar layar penuh" : "⛶ Layar penuh";
+    const b = kartu.querySelector("[data-penuh]"); if (b) { b.textContent = on ? "✕" : "⛶"; b.title = on ? "Keluar layar penuh" : "Layar penuh"; }
     setTimeout(() => map.resize(), 60);
   };
-  $("#pmFull").onclick = async () => {
+  const togglePenuh = async () => {
     const on = !kartu.dataset.penuh; aturPenuh(on);
     try { if (on && document.documentElement.requestFullscreen && !document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: "hide" });
           else if (!on && document.fullscreenElement) await document.exitFullscreen(); } catch { /* iPhone: cukup tampilan penuh halaman */ }
   };
+  map.addControl({ onAdd: () => { const d = document.createElement("div"); d.className = "maplibregl-ctrl maplibregl-ctrl-group";
+      d.innerHTML = `<button type="button" data-penuh title="Layar penuh" style="font-size:17px;line-height:1">⛶</button><button type="button" data-lapis title="Lapisan" style="font-size:16px;line-height:1">☰</button>`;
+      d.querySelector("[data-penuh]").onclick = togglePenuh; d.querySelector("[data-lapis]").onclick = () => $("#pmL").click(); return d; },
+    onRemove: () => {} }, "top-right");
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && kartu.isConnected && kartu.dataset.penuh) aturPenuh(false); });
   $("#pmI").onclick = () => map.fitBounds([[121.7387, -1.726], [121.7784, -1.6327]], { padding: 30, duration: 800 });
   // Simpan relief + pustaka peta ke HP agar peta bisa dibuka tanpa sinyal (citra satelit tidak ikut — perlu sinyal)
