@@ -75,7 +75,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-17.38";
+const APP_VERSION = "2026-11-17.41";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1454,13 +1454,133 @@ function histSVG(vals, o = {}) {
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:230px;font-family:Arial,sans-serif">${B.map((c, i) => `<rect x="${44 + i * cw + 2}" y="${H - 34 - ((H - 60) * c) / top}" width="${cw - 4}" height="${((H - 60) * c) / top}" rx="3" fill="#1E9E69"/><text x="${44 + i * cw + cw / 2}" y="${H - 38 - ((H - 60) * c) / top}" font-size="11" text-anchor="middle">${c || ""}</text><text x="${44 + i * cw + cw / 2}" y="${H - 18}" font-size="10.5" text-anchor="middle" fill="#6b7a72">${(mn + i * bw).toFixed(1)}–${(mn + (i + 1) * bw).toFixed(1)}</text>`).join("")}
     <text x="${W / 2}" y="${H - 2}" font-size="11" text-anchor="middle" fill="#6b7a72">${esc(o.label ?? "")}</text><text x="10" y="14" font-size="11" fill="#6b7a72">jumlah hari</text></svg>`;
 }
+// lereng tanah (derajat) di satu titik dari DEMNAS, beda tinggi ±10 m
+async function lerengTitik(lon, lat) { const d = 10 / 111320, dx = d / Math.cos((lat * Math.PI) / 180);
+  const [e, w, n, s2] = await Promise.all([tinggiDi(lon + dx, lat), tinggiDi(lon - dx, lat), tinggiDi(lon, lat + d), tinggiDi(lon, lat - d)].map((p) => p.catch(() => null)));
+  if ([e, w, n, s2].some((x) => x == null)) return null; return (Math.atan(Math.hypot((e - w) / 20, (n - s2) / 20)) * 180) / Math.PI; }
+const WARNA_RIG = ["#1E9E69", "#E0A100", "#2563EB", "#D62828", "#7C3AED", "#0891B2"];
+// grafik batang bertumpuk meter harian per rig
+function rigHarianSVG(days, rigs, o = {}) {
+  const tg = [...new Set(days.map((d) => d.tanggal))].sort(); if (!tg.length) return `<p class="kosong">Belum ada data harian.</p>`;
+  const M = (t, r) => days.filter((d) => d.tanggal === t && d.rig === r).reduce((s, d) => s + (+d.meter_bor || 0), 0);
+  const tot = tg.map((t) => rigs.reduce((s, r) => s + M(t, r), 0)), mx = Math.max(1, ...tot), W = o.w ?? 1120, H = o.h ?? 250, bw = Math.max(4, Math.min(46, (W - 70) / tg.length - 4)), Y = (v) => H - 28 - ((H - 50) * v) / mx;
+  let g = [0, 0.5, 1].map((f) => `<line x1="44" x2="${W}" y1="${Y(mx * f)}" y2="${Y(mx * f)}" stroke="#e3e8e1"/><text x="38" y="${Y(mx * f) + 4}" font-size="12" text-anchor="end" fill="#6b7a72">${(mx * f).toFixed(0)}</text>`).join("");
+  tg.forEach((t, i) => { let b = 0; const x = 50 + i * (bw + 4); rigs.forEach((r, k) => { const m = M(t, r); if (!m) return; g += `<rect x="${x}" y="${Y(b + m)}" width="${bw}" height="${Y(b) - Y(b + m)}" fill="${WARNA_RIG[k % WARNA_RIG.length]}"><title>${t} ${esc(r)}: ${m.toFixed(1)} m</title></rect>`; b += m; });
+    if (i % Math.ceil(tg.length / 12) === 0) g += `<text x="${x + bw / 2}" y="${H - 10}" font-size="11" text-anchor="middle" fill="#6b7a72">${t.slice(5)}</text>`; });
+  g += rigs.map((r, k) => `<rect x="${60 + k * 110}" y="4" width="12" height="12" fill="${WARNA_RIG[k % WARNA_RIG.length]}"/><text x="${77 + k * 110}" y="14" font-size="12">${esc(r)}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:${o.maxH ?? 250}px;font-family:Arial,sans-serif">${g}</svg>`;
+}
+// histogram kecil satu layer
+function histKecil(vals, warna, judul) {
+  const v = vals.filter((x) => x > 0); const W = 200, H = 128; if (!v.length) return "";
+  const mn = Math.floor(Math.min(...v)), mx = Math.ceil(Math.max(...v)), nb = Math.min(6, Math.max(2, Math.ceil(Math.sqrt(v.length)) + 1)), bw = Math.max(0.5, (mx - mn) / nb), B = Array(nb).fill(0);
+  v.forEach((x) => B[Math.min(nb - 1, Math.floor((x - mn) / bw))]++); const top = Math.max(...B), cw = (W - 30) / nb;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="font-family:Arial,sans-serif"><text x="4" y="12" font-size="11.5" font-weight="700">${esc(judul)}</text><text x="${W - 4}" y="12" font-size="10" text-anchor="end" fill="#6b7a72">n=${v.length}</text>
+    ${B.map((c, i) => `<rect x="${20 + i * cw + 1}" y="${H - 28 - ((H - 58) * c) / top}" width="${cw - 2}" height="${((H - 58) * c) / top}" fill="${esc(warna)}" stroke="#222" stroke-width=".4"/>${c ? `<text x="${20 + i * cw + cw / 2}" y="${H - 31 - ((H - 58) * c) / top}" font-size="10" text-anchor="middle">${c}</text>` : ""}<text x="${20 + i * cw + cw / 2}" y="${H - 14}" font-size="9" text-anchor="middle" fill="#6b7a72">${(mn + i * bw).toFixed(1)}</text>`).join("")}
+    <text x="${W - 4}" y="${H - 2}" font-size="9" text-anchor="end" fill="#6b7a72">tebal (m)</text></svg>`;
+}
+// sebaran kedalaman atas–bawah rata-rata tiap layer
+function kedalamanLayerSVG(zona) {
+  const W = 560, rh = 30, H = zona.length * rh + 40, mx = Math.max(1, ...zona.map((z) => z.bawahMax)) * 1.05, X = (v) => 110 + ((W - 140) * v) / mx;
+  let g = ""; for (let t = 0; t <= mx; t += [1, 2, 5, 10].find((s) => mx / s <= 8) ?? 20) g += `<line x1="${X(t)}" x2="${X(t)}" y1="8" y2="${H - 22}" stroke="#e3e8e1"/><text x="${X(t)}" y="${H - 8}" font-size="11" text-anchor="middle" fill="#6b7a72">${t}</text>`;
+  zona.forEach((z, i) => { const y = 14 + i * rh; g += `<text x="104" y="${y + 12}" font-size="12" text-anchor="end">${esc(z.nama)}</text>
+    <line x1="${X(z.atasMin)}" x2="${X(z.bawahMax)}" y1="${y + 8}" y2="${y + 8}" stroke="#999" stroke-dasharray="3 2"/><rect x="${X(z.atas)}" y="${y}" width="${Math.max(2, X(z.bawah) - X(z.atas))}" height="16" fill="${esc(z.warna)}" stroke="#222" stroke-width=".5"/>
+    <text x="${X(z.bawahMax) + 6}" y="${y + 12}" font-size="10.5" fill="#333">${z.atas.toFixed(1)}–${z.bawah.toFixed(1)} m</text>`; });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:${zona.length > 5 ? 250 : 220}px;font-family:Arial,sans-serif">${g}<text x="${W - 4}" y="10" font-size="11" text-anchor="end" fill="#6b7a72">kedalaman (m)</text></svg>
+    <div style="font-size:11px;color:#6b7a72">Kotak = kedalaman atas rata-rata s.d. bawah rata-rata; garis putus = paling dangkal s.d. paling dalam.</div>`;
+}
+// diagram pencar + garis regresi linear, r dan n
+function pencarSVG(P, o) {
+  const W = 360, H = 230, ok = P.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  const head = `<text x="4" y="13" font-size="12" font-weight="700">${esc(o.judul)}</text>`;
+  if (ok.length < 2) return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="font-family:Arial,sans-serif">${head}<text x="${W / 2}" y="${H / 2}" font-size="12" text-anchor="middle" fill="#6b7a72">data belum cukup (n=${ok.length})</text></svg>`;
+  const xs = ok.map((p) => p.x), ys = ok.map((p) => p.y), x0 = Math.min(0, ...xs), x1 = Math.max(...xs) * 1.1 || 1, y0 = Math.min(0, ...ys), y1 = Math.max(...ys) * 1.1 || 1;
+  const X = (v) => 40 + ((W - 55) * (v - x0)) / (x1 - x0), Y = (v) => H - 34 - ((H - 60) * (v - y0)) / (y1 - y0), n = ok.length;
+  const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n, sxy = ok.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0), sxx = xs.reduce((s, x) => s + (x - mx) ** 2, 0), syy = ys.reduce((s, y) => s + (y - my) ** 2, 0);
+  const b = sxx ? sxy / sxx : 0, a = my - b * mx, r = sxx && syy ? sxy / Math.sqrt(sxx * syy) : 0, kuat = Math.abs(r) >= 0.7 ? "kuat" : Math.abs(r) >= 0.4 ? "sedang" : "lemah";
+  let g = head; for (const t of [0, 0.5, 1]) { const vx = x0 + (x1 - x0) * t, vy = y0 + (y1 - y0) * t; g += `<text x="${X(vx)}" y="${H - 20}" font-size="10" text-anchor="middle" fill="#6b7a72">${vx.toFixed(0)}</text><text x="34" y="${Y(vy) + 3}" font-size="10" text-anchor="end" fill="#6b7a72">${vy.toFixed(0)}</text><line x1="40" x2="${W - 15}" y1="${Y(vy)}" y2="${Y(vy)}" stroke="#eef2ef"/>`; }
+  g += `<line x1="40" x2="${W - 15}" y1="${H - 34}" y2="${H - 34}" stroke="#999"/><line x1="40" x2="40" y1="22" y2="${H - 34}" stroke="#999"/>`;
+  if (sxx && n >= 3) g += `<line x1="${X(x0)}" y1="${Y(a + b * x0)}" x2="${X(x1)}" y2="${Y(a + b * x1)}" stroke="#D62828" stroke-width="1.5" stroke-dasharray="5 3"/>`;
+  g += ok.map((p) => `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="5" fill="${esc(p.c ?? "#1E9E69")}" stroke="#111" stroke-width=".8"><title>${esc(p.t ?? "")}: ${p.x.toFixed(1)}, ${p.y.toFixed(1)}</title></circle>`).join("");
+  g += `<text x="${(W + 40) / 2}" y="${H - 4}" font-size="11" text-anchor="middle">${esc(o.sx)}</text><text x="10" y="${H / 2}" font-size="11" text-anchor="middle" transform="rotate(-90 10 ${H / 2})">${esc(o.sy)}</text>
+    <text x="${W - 15}" y="30" font-size="11" text-anchor="end" fill="${n >= 3 ? "#D62828" : "#6b7a72"}">${n >= 3 ? `r = ${r.toFixed(2)} (${kuat}) · n = ${n}${n < 5 ? " · belum stabil" : ""}` : `n = ${n} — korelasi belum bisa dihitung`}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="font-family:Arial,sans-serif;background:#fbfcfb;border:1px solid #e3e8e1;border-radius:8px;max-height:${o.maxH ?? 999}px">${g}</svg>`;
+}
+// data analisis layer, per rig, dan hubungan
+async function analisisData(LB, prof, days) {
+  const PR = prof ?? [], bh = [...new Set(PR.map((r) => r.bhid))], RIG = Object.fromEntries(LB.map((x) => [x.bhid, x.rig || "-"]));
+  const Z = {}; for (const r of PR) { const z = (Z[r.zona] ??= { k: r.zona, nama: r.nama_zona, warna: r.warna, per: {}, atasL: {}, bawahL: {} }); z.per[r.bhid] = (z.per[r.bhid] ?? 0) + +r.tebal_m;
+    z.atasL[r.bhid] = Math.min(z.atasL[r.bhid] ?? 1e9, +r.dari_m); z.bawahL[r.bhid] = Math.max(z.bawahL[r.bhid] ?? -1, +r.sampai_m); }
+  const zona = Object.values(Z).map((z) => { const at = Object.values(z.atasL), bw = Object.values(z.bawahL); return { ...z, tebal: Object.values(z.per), atas: at.reduce((a, b) => a + b, 0) / at.length, bawah: bw.reduce((a, b) => a + b, 0) / bw.length, atasMin: Math.min(...at), bawahMax: Math.max(...bw) }; }).sort((a, b) => a.atas - b.atas);
+  const eoh = (b) => Math.max(...PR.filter((r) => r.bhid === b).map((r) => +r.sampai_m)), tb = (b, k) => PR.filter((r) => r.bhid === b && r.zona === k).reduce((s, r) => s + +r.tebal_m, 0);
+  const lereng = {}; for (const x of LB.filter((x) => bh.includes(x.bhid) || +x.kedalaman > 0)) if (Number.isFinite(+x.lon)) lereng[x.bhid] = await lerengTitik(+x.lon, +x.lat).catch(() => null);
+  const dalam = (b) => (bh.includes(b) ? eoh(b) : +LB.find((x) => x.bhid === b)?.kedalaman || null);
+  const titik = (fx, fy, bs, c) => bs.map((b) => ({ x: fx(b), y: fy(b), t: b, c })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  const hub = {
+    eohL: titik(eoh, (b) => tb(b, "L"), bh.filter((b) => tb(b, "L") > 0), "#D62828"),
+    eohS: titik(eoh, (b) => tb(b, "S"), bh.filter((b) => tb(b, "S") > 0), "#9AAE3A"),
+    lerEoh: titik((b) => lereng[b], dalam, Object.keys(lereng), "#1E9E69"),
+    lerL: titik((b) => lereng[b], (b) => tb(b, "L"), bh.filter((b) => tb(b, "L") > 0), "#D62828"),
+  };
+  // per rig
+  const rigs = [...new Set([...days.map((d) => d.rig), ...LB.filter((x) => x.rig && x.status !== "RENCANA").map((x) => x.rig)])].filter(Boolean).sort();
+  const perRig = rigs.map((r) => { const dd = days.filter((d) => d.rig === r), akt = dd.filter((d) => +d.meter_bor > 0), sm = stat(akt.map((d) => +d.meter_bor)), lb = LB.filter((x) => x.rig === r && x.status !== "RENCANA");
+    const bR = bh.filter((b) => RIG[b] === r), tz = (k) => stat(bR.map((b) => tb(b, k)).filter((x) => x > 0));
+    return { r, hari: akt.length, meter: sm.sum ?? 0, sm, lubang: lb.length, selesai: lb.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)).length, totDalam: lb.reduce((s, x) => s + (+x.kedalaman || 0), 0),
+      jam: dd.reduce((s, d) => s + (+d.jam_kerja_bor || 0), 0), L: tz("L"), S: tz("S"), OB: stat(bR.map((b) => tb(b, "TP") + tb(b, "SED")).filter((x) => x > 0)), nLog: bR.length }; });
+  return { zona, hub, perRig, rigs, lereng };
+}
+// ---------- Kesimpulan prospek (saringan awal, ambang bisa disesuaikan) ----------
+const KRITERIA = { niS: [1.5, 1.2], niL: [1.2, 0.8], tebal: [6, 3], kontinu: [70, 40], ob: [0.5, 1], lereng: [20, 30], nMin: 5 };
+function kesimpulanProspek({ A, T, AS, prof, LB }) {
+  const K = KRITERIA, f = (x, d = 1) => (x == null || !Number.isFinite(+x) ? "–" : (+x).toFixed(d));
+  const bh = [...new Set(prof.map((r) => r.bhid))], tb = (b, ks) => prof.filter((r) => r.bhid === b && ks.includes(r.zona)).reduce((s, r) => s + +r.tebal_m, 0);
+  // kadar per layer: tiap interval assay diberi layer dari Form Logging (titik tengah interval)
+  const Z = {}; for (const a of AS) { const mid = (+a.from + +a.to) / 2, L = +a.to - +a.from; const r = prof.find((x) => x.bhid === a.holeid && mid >= +x.dari_m && mid < +x.sampai_m); if (!r || !(L > 0)) continue;
+    const z = (Z[r.zona] ??= { nama: r.nama_zona, warna: r.warna, L: 0, ni: 0, fe: 0, mgo: 0, sio2: 0, n: 0 }); z.L += L; z.n++; for (const k of ["ni", "fe", "mgo", "sio2"]) if (a[k] != null) z[k] += +a[k] * L; }
+  const kad = (k, el) => (Z[k]?.L ? Z[k][el] / Z[k].L : null), niL = kad("L", "ni"), niS = kad("S", "ni");
+  const kadarTabel = Object.keys(Z).length ? `<table class="t kc"><tr><th>Layer</th>${["Ni %", "Fe %", "MgO %", "SiO₂/MgO", "Panjang (m)"].map((h) => `<th class="r">${h}</th>`).join("")}</tr>${Object.entries(Z).map(([k, z]) => `<tr><td><span class="sw" style="background:${esc(z.warna)}"></span>${esc(z.nama)}</td><td class="r"><b>${f(z.ni / z.L, 2)}</b></td><td class="r">${f(z.fe / z.L, 1)}</td><td class="r">${f(z.mgo / z.L, 1)}</td><td class="r">${z.mgo ? f(z.sio2 / z.mgo, 2) : "–"}</td><td class="r">${f(z.L)}</td></tr>`).join("")}</table>`
+    : `<div class="kosong" style="margin-top:20px;font-size:15px">Belum ada hasil assay laboratorium di database.<br><b>Kesimpulan prospek tidak bisa final tanpa kadar Ni.</b></div>`;
+  const nilai = (v, [ok, warn], naik = true) => (v == null || !Number.isFinite(v) ? "na" : naik ? (v >= ok ? "ok" : v >= warn ? "warn" : "bad") : v <= ok ? "ok" : v <= warn ? "warn" : "bad");
+  const bijih = bh.map((b) => tb(b, ["L", "S"])), tebalBijih = bijih.length ? bijih.reduce((a, b) => a + b, 0) / bijih.length : null;
+  const kontinu = bh.length ? (100 * bijih.filter((x) => x >= 3).length) / bh.length : null, obR = tebalBijih ? T.sOB.mean / tebalBijih : null;
+  const ler = Object.values(A.lereng).filter((x) => x != null), lerAvg = ler.length ? ler.reduce((a, b) => a + b, 0) / ler.length : null;
+  const baris = [
+    { k: "Kadar Ni saprolit (tertimbang)", v: niS != null ? f(niS, 2) + "%" : "–", amb: `≥ ${K.niS[0]}% / ≥ ${K.niS[1]}%`, s: nilai(niS, K.niS), grade: true },
+    { k: "Kadar Ni limonit (tertimbang)", v: niL != null ? f(niL, 2) + "%" : "–", amb: `≥ ${K.niL[0]}% / ≥ ${K.niL[1]}%`, s: nilai(niL, K.niL), grade: true },
+    { k: "Tebal zona laterit (limonit + saprolit) rata-rata", v: tebalBijih != null ? f(tebalBijih) + " m" : "–", amb: `≥ ${K.tebal[0]} m / ≥ ${K.tebal[1]} m`, s: nilai(tebalBijih, K.tebal) },
+    { k: "Kontinuitas: lubang dengan zona laterit ≥ 3 m", v: kontinu != null ? f(kontinu, 0) + "%" : "–", amb: `≥ ${K.kontinu[0]}% / ≥ ${K.kontinu[1]}%`, s: nilai(kontinu, K.kontinu) },
+    { k: "Rasio overburden : zona laterit", v: obR != null ? f(obR, 2) : "–", amb: `≤ ${K.ob[0]} / ≤ ${K.ob[1]}`, s: nilai(obR, K.ob, false) },
+    { k: "Lereng rata-rata di titik bor", v: lerAvg != null ? f(lerAvg) + "°" : "–", amb: `≤ ${K.lereng[0]}° / ≤ ${K.lereng[1]}°`, s: nilai(lerAvg, K.lereng, false) },
+    { k: "Kecukupan data (lubang berdata logging)", v: `${bh.length} lubang`, amb: `≥ ${K.nMin} lubang`, s: bh.length >= K.nMin ? "ok" : bh.length ? "warn" : "na" },
+  ];
+  const geo = baris.filter((r) => !r.grade && r.k !== "Kecukupan data (lubang berdata logging)"), adaKadar = niL != null || niS != null, cukup = bh.length >= K.nMin;
+  const buruk = baris.filter((r) => r.s === "bad").length, baik = baris.filter((r) => r.s === "ok").length, gBad = geo.filter((r) => r.s === "bad").length, gOk = geo.filter((r) => r.s === "ok").length;
+  let vonis, warna, alasan;
+  if (!bh.length) { vonis = "BELUM ADA DATA"; warna = "#6b7a72"; alasan = "Belum ada Form Logging yang disetujui, jadi ketebalan dan kadar belum bisa dinilai."; }
+  else if (!adaKadar || !cukup) { const ind = gBad === 0 && gOk >= 2 ? "positif" : gBad >= 2 ? "negatif" : "netral";
+    vonis = "BELUM DAPAT DISIMPULKAN"; warna = "#E0A100"; alasan = `Indikasi awal dari geologi saja: ${ind} (${gOk} kriteria memenuhi, ${gBad} tidak). ${!adaKadar ? "Hasil assay Ni belum ada" : ""}${!adaKadar && !cukup ? " dan " : ""}${!cukup ? `baru ${bh.length} lubang berdata (minimal ${K.nMin})` : ""}.`; }
+  else if (baris.filter((r) => r.grade).some((r) => r.s === "bad") || buruk >= 3) { vonis = "KURANG PROSPEK"; warna = "#D62828"; alasan = `${buruk} kriteria tidak terpenuhi, termasuk kadar dan/atau ketebalan.`; }
+  else if (baris.every((r) => r.s === "ok" || r.s === "na")) { vonis = "PROSPEK"; warna = "#1E9E69"; alasan = `Semua kriteria saringan terpenuhi (${baik} dari ${baris.length}).`; }
+  else { vonis = "PROSPEK BERSYARAT"; warna = "#1E9E69"; alasan = `${baik} kriteria memenuhi, ${baris.filter((r) => r.s === "warn").length} di ambang sedang, ${buruk} tidak.`; }
+  const rekom = [];
+  if (!adaKadar) rekom.push("Kirim conto ke laboratorium dan masukkan hasil assay (Ni, Fe, MgO, SiO₂, Co) — penentu utama kesimpulan.");
+  if (!cukup) rekom.push(`Selesaikan logging minimal ${K.nMin} lubang (sekarang ${bh.length}) agar statistik representatif.`);
+  if (kontinu != null && kontinu < K.kontinu[0]) rekom.push("Zona laterit belum menerus: evaluasi spasi bor dan pertimbangkan bor isian di sekitar lubang yang tebal.");
+  if (obR != null && obR > K.ob[0]) rekom.push("Overburden relatif tebal terhadap zona laterit — perhitungkan dampak pengupasan.");
+  if (lerAvg != null && lerAvg > K.lereng[0]) rekom.push("Lereng curam di titik bor — laterit cenderung tipis/tererosi; prioritaskan punggungan landai.");
+  if (T.sRec.n && T.sRec.min < 90) rekom.push("Recovery core < 90% di sebagian lubang — perbaiki teknik bor agar kadar dan tebal tidak bias.");
+  if (vonis.startsWith("PROSPEK")) rekom.push("Lanjutkan ke bor isian (infill) untuk estimasi sumber daya sesuai KCMI.");
+  if (!rekom.length) rekom.push("Lanjutkan program sesuai rencana.");
+  const ringkas = vonis === "BELUM DAPAT DISIMPULKAN" ? alasan.split(".")[0] + "." : alasan;
+  return { vonis, warna, alasan, ringkas, baris, rekom, kadarTabel };
+}
 // ---------- Template presentasi pemboran 16:9 (cetak / simpan PDF) ----------
 async function presentasiHTML(D) {
-  const { st, PJ, mPer, mCum, nSelesai, HR, K, dayRows, rigRows, sbRows, notes, LB, prof, klien } = D;
+  const { st, PJ, mPer, mCum, nSelesai, HR, K, dayRows, rigRows, sbRows, notes, LB, prof, klien } = D, days = D.days ?? [];
   const n = (x) => Number(x) || 0, pct = (a, b) => (b ? Math.round((100 * a) / b) : null);
   const nama = PJ?.nama ?? (st.proj || "Semua proyek"), per = `${fmtTgl(st.from)} – ${fmtTgl(st.to)}`;
   const hit = (k) => LB.filter((x) => (k === "EOH" ? ["EOH", "STB", "SELESAI"].includes(x.status) : x.status === k)).length;
-  const peta = await petaSVG(LB, { w: 1180, h: 610 }).catch(() => "<p>Peta tidak dapat dibuat.</p>");
   const rec = HR.filter((h) => h.rec != null), recAvg = rec.length ? Math.round(rec.reduce((s, h) => s + n(h.rec), 0) / rec.length) : null;
   const stb = sbRows.reduce((s, r) => s + n(r[1]), 0), rigAktif = rigRows.length;
   const tgtM = n(PJ?.target_meter), tgtL = n(PJ?.target_lubang) || LB.length;
@@ -1486,59 +1606,70 @@ async function presentasiHTML(D) {
   const Z = {}; for (const r of prof ?? []) { (Z[r.zona] ??= { nama: r.nama_zona, warna: r.warna, tebal: 0, bh: new Set() }); Z[r.zona].tebal += n(r.tebal_m); Z[r.zona].bh.add(r.bhid); }
   const zonaRows = Object.entries(Z).map(([k, z]) => `<tr><td><span class="sw" style="background:${esc(z.warna)}"></span>${esc(z.nama)} (${esc(k)})</td><td class="r">${(z.tebal / z.bh.size).toFixed(1)} m</td><td class="r">${z.bh.size}</td></tr>`).join("");
   const S = [];
+  // ===== data tambahan =====
+  const REC = Object.fromEntries(HR.map((h) => [h.b, h.rec]));
+  const T = statistikData({ dayRows, HR, LB, prof, st, PJ, mCum }), f = T.f;
+  const A = await analisisData(LB, prof, days);
+  let AS = []; try { const bhs = [...new Set((prof ?? []).map((r) => r.bhid))]; if (bhs.length && typeof sb !== "undefined") { const { data } = await sb.from("v_dh_assay").select("holeid,from,to,ni,fe,mgo,sio2,co").in("holeid", bhs); AS = data ?? []; } } catch {}
+  const KS = kesimpulanProspek({ A, T, AS, prof: prof ?? [], LB });
+  const petaGraf = await petaSVG(LB.map((x) => ({ ...x, rec: REC[x.bhid] })), { w: 1200, h: 600, grafik: prof ?? [], gh: 74 }).catch(() => "<p>Peta tidak dapat dibuat.</p>");
+  const tiga = await blok3D(LB, prof, { w: 900, h: 560 }).catch(() => "");
+  const kecil = (s) => (s.n && s.n < 5 ? `<span class="nk">n=${s.n}</span>` : "");
+  // ===== 1. Sampul =====
   S.push(`<section class="sl cover"><div class="cv-l"><div class="tag">LAPORAN PROGRES PEMBORAN</div><h1>${esc(nama)}</h1><div class="per">${per}${st.rig ? ` · ${esc(st.rig)}` : ""}</div>
     <div class="cv-k">${card(mPer.toFixed(1) + " m", "meter bor periode", "", "#7CE0B0")}${card(`${nSelesai}/${tgtL}`, "lubang selesai", "", "#7CE0B0")}${card(mCum.toFixed(0) + " m", "kumulatif proyek", tgtM ? `${pct(mCum, tgtM)}% dari target ${tgtM} m` : "", "#7CE0B0")}</div>
-    <div class="by">PT Terra Grapindo Eco Prima · eksplorasi nikel laterit<br>Disusun ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })} · ${esc(me?.full_name ?? "")}</div></div>
-    <div class="cv-r">${peta}</div></section>`);
-  S.push(slide("Ringkasan kinerja", `<div class="grid4">
-    ${card(mPer.toFixed(1) + " m", "Meter bor periode")}${card(tgtM ? pct(mCum, tgtM) + "%" : mCum.toFixed(0) + " m", tgtM ? "Capaian target meter" : "Meter kumulatif", tgtM ? `${mCum.toFixed(0)} / ${tgtM} m` : "")}
-    ${card(`${nSelesai} / ${tgtL}`, "Lubang selesai (EOH/STB)", bar(pct(nSelesai, tgtL)))}${card(rigAktif, "Rig aktif")}
-    ${card(recAvg != null ? recAvg + "%" : "–", "Recovery core rata-rata", "", recAvg != null && recAvg < 90 ? "#D62828" : "#1E9E69")}${card(stb.toFixed(1) + " jam", "Standby + perbaikan", "", stb > 0 ? "#E0A100" : "#1E9E69")}
-    ${card(hit("PROGRES"), "Lubang sedang dibor", "", "#E0A100")}${card(hit("RENCANA"), "Titik rencana tersisa", "", "#6b7a72")}</div>
-    <div class="cat"><h3>Catatan utama</h3><ul>${notes.slice(0, 5).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`));
-  S.push(slide("Peta pemboran", `<div class="peta">${peta}</div><div class="leg3"><span><i style="background:#fff"></i>Rencana <b>${hit("RENCANA")}</b></span><span><i style="background:${WARNA_STATUS.PROGRES}"></i>Progres <b>${hit("PROGRES")}</b></span><span><i style="background:${WARNA_STATUS.EOH}"></i>EOH / STB <b>${hit("EOH")}</b></span><span><i style="background:none;border:2px dashed #d00"></i>Batas IUP</span></div>`, `${LB.length} titik`));
-  const REC = Object.fromEntries(HR.map((h) => [h.b, h.rec]));
-  const petaGraf = await petaSVG(LB.map((x) => ({ ...x, rec: REC[x.bhid] })), { w: 1180, h: 610, grafik: prof ?? [], gh: 74 }).catch(() => "");
-  const T = statistikData({ dayRows, HR, LB, prof, st, PJ, mCum }), f = T.f, kecil = (s) => (s.n && s.n < 5 ? `<span class="nk">n=${s.n}, belum representatif</span>` : "");
-  const tiga = await blok3D(LB, prof, { w: 1180, h: 560, fit: 520 }).catch((e) => `<p class="kosong">Tampilan 3D gagal: ${esc(e.message)}</p>`);
-  S.push(slide("Peta & grafik per lubang", `<div class="peta">${petaGraf}</div>`, "kolom zona / kedalaman vs rencana di lokasi tiap lubang"));
-  S.push(slide("Tampilan 3D pemboran", `<div class="tiga">${tiga}</div>`, "topografi DEMNAS dilihat dari samping"));
-  S.push(slide("Status titik bor", `<div class="dua">${tTitik(bar2.slice(0, half))}${tTitik(bar2.slice(half))}</div>`, "kedalaman aktual vs rencana"));
-  S.push(slide("Produktivitas pemboran", `${grafik}${rigRows.length ? `<table class="t" style="margin-top:10px"><tr><th>Rig</th>${["Hari aktif", "Meter", "Run", "m/jam", "m/hari aktif", "Standby (jam)"].map((h) => `<th class="r">${h}</th>`).join("")}</tr>${rigRows.map((r) => `<tr><td><b>${esc(r[0])}</b></td>${[1, 2, 3, 4, 5, 6].map((i) => `<td class="r">${esc(r[i])}</td>`).join("")}</tr>`).join("")}</table>` : ""}`, "meter per hari & per rig"));
-  S.push(slide("Statistik pemboran", `<div class="grid4">
-    ${card(f(T.sH.mean) + " m", "Rata-rata meter / hari aktif", `median ${f(T.sH.med)} · SD ${f(T.sH.sd)} m`)}${card(T.best ? f(T.best[2]) + " m" : "–", "Hari terbaik", T.best ? fmtTgl(T.best[0]) : "")}
-    ${card(`${T.aktif.length}/${T.kal}`, "Hari aktif / hari kalender", bar(pct(T.aktif.length, T.kal)) + `${pct(T.aktif.length, T.kal)}% utilisasi`)}${card(f(T.laju) + " m", "Laju rata-rata / hari kalender", "termasuk hari tidak mengebor")}
-    ${card(T.sEOH.n ? f(T.sEOH.mean) + " m" : "–", "Kedalaman akhir rata-rata", T.sEOH.n ? `min ${f(T.sEOH.min)} · maks ${f(T.sEOH.max)} m ${kecil(T.sEOH)}` : "belum ada lubang selesai")}
-    ${card(T.sRec.n ? f(T.sRec.mean, 0) + "%" : "–", "Recovery core rata-rata", T.sRec.n ? `${T.recOk}/${T.sRec.n} lubang ≥ 90% · min ${f(T.sRec.min, 0)}%` : "", T.sRec.n && T.sRec.min < 90 ? "#D62828" : "#1E9E69")}
-    ${card(f(T.sisa, 0) + " m", "Sisa meter ke target", `target ${f(T.tgtM, 0)} m`, "#E0A100")}${card(T.eta ?? "–", "Perkiraan selesai", T.hariLagi ? `±${T.hariLagi} hari lagi pada laju sekarang` : "laju belum cukup untuk proyeksi", "#12251E")}</div>
-    <div class="dua" style="margin-top:12px"><div><h3>Sebaran meter bor per hari aktif</h3>${histSVG(T.aktif.map((r) => r[2]), { label: "meter per hari" })}</div>
-    <div><h3>Sebaran meter / hari & kedalaman akhir</h3>${boxSVG([{ label: "Meter / hari", warna: "#1E9E69", s: T.sH }, { label: "Kedalaman akhir", warna: "#22c55e", s: T.sEOH }], { unit: "m", maxH: 150 })}
-    <p class="ket">Perkiraan selesai = sisa meter ÷ laju rata-rata per hari kalender periode ini; asumsi laju, jumlah rig dan cuaca tetap.</p></div></div>`, "laju, utilisasi, sebaran"));
-  S.push(slide("Profil bor & ketebalan zona", (prof ?? []).length ? `<div class="pf"><div>${profilSVG(prof, { h: 330, fit: 420 })}</div><div><table class="t"><tr><th>Zona</th><th class="r">Tebal rata-rata</th><th class="r">Lubang</th></tr>${zonaRows}</table><p class="ket">Tebal rata-rata = jumlah tebal zona ÷ jumlah lubang yang menembus zona itu. Hanya lubang dengan Form Logging yang sudah disetujui.</p></div></div>` : `<p class="kosong">Profil bor tampil otomatis setelah Form Logging lubang disetujui verifier.</p>`, "dari Form Logging terverifikasi"));
-  if (T.zona.length) S.push(slide("Statistik geologi", `<div class="grid4">
-    ${card(f(T.sOB.mean) + " m", "Overburden (TP + sedimen)", `min ${f(T.sOB.min)} · maks ${f(T.sOB.max)} m`, "#8B3A1F")}${card(f(T.sL.mean) + " m", "Tebal limonit rata-rata", `median ${f(T.sL.med)} · SD ${f(T.sL.sd)} m · n=${T.sL.n}`, "#D62828")}
-    ${card(f(T.sS.mean) + " m", "Tebal saprolit rata-rata", `median ${f(T.sS.med)} · SD ${f(T.sS.sd)} m · n=${T.sS.n}`, "#6f8a1f")}${card(T.sBR.n ? f(T.sBR.mean) + " m" : "–", "Kedalaman ke bluezone/bedrock", T.sBR.n ? `min ${f(T.sBR.min)} · maks ${f(T.sBR.max)} m` : "belum tertembus", "#1D4ED8")}</div>
-    <div class="dua" style="margin-top:12px"><div><table class="t"><tr><th>Zona</th>${["Lubang", "Min", "Rata-rata", "Median", "Maks", "SD"].map((h) => `<th class="r">${h}</th>`).join("")}</tr>
-    ${T.zona.map((z) => `<tr><td><span class="sw" style="background:${esc(z.warna)}"></span>${esc(z.nama)}</td><td class="r">${z.s.n}</td><td class="r">${f(z.s.min)}</td><td class="r"><b>${f(z.s.mean)}</b></td><td class="r">${f(z.s.med)}</td><td class="r">${f(z.s.max)}</td><td class="r">${f(z.s.sd)}</td></tr>`).join("")}</table>
-    <p class="ket">Tebal per lubang (m), hanya lubang yang menembus zona itu. Rasio limonit : saprolit = ${T.sS.mean ? f(T.sL.mean / T.sS.mean, 2) : "–"} : 1. ${T.bh.length < 5 ? `<b>Baru ${T.bh.length} lubang berdata logging — statistik belum representatif.</b>` : ""}</p></div>
-    <div>${boxSVG(T.zona.map((z) => ({ label: z.nama, warna: z.warna, s: z.s })), { unit: "tebal (m)", maxH: 290 })}</div></div>`, `${T.bh.length} lubang berdata logging`));
-  S.push(slide("Kendala & tindak lanjut", `<div class="dua"><div><h3>Penyebab standby / perbaikan</h3>${sbRows.length ? `<table class="t"><tr><th>Penyebab</th><th>Jam</th></tr>${sbRows.map((r) => `<tr><td>${esc(r[0])}</td><td class="r">${r[1]}</td></tr>`).join("")}</table>` : `<p class="kosong">Tidak ada standby/perbaikan tercatat.</p>`}</div>
-    <div><h3>Perlu tindak lanjut</h3><ul class="tl">${notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div></div>`));
+    <div class="vonis" style="border-color:${KS.warna}"><div class="vl">KESIMPULAN</div><div class="vv" style="color:${KS.warna}">${esc(KS.vonis)}</div><div class="vs">${esc(KS.ringkas)}</div></div>
+    <div class="by">PT Terra Grapindo Eco Prima · eksplorasi nikel laterit · disusun ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })} · ${esc(me?.full_name ?? "")}</div></div>
+    <div class="cv-r3">${tiga}</div></section>`);
+  // ===== 2. Progres & produktivitas per rig =====
+  S.push(slide("Progres & produktivitas", `<div class="grid8">
+    ${card(f(T.sH.mean) + " m", "Rata-rata m / hari aktif", `median ${f(T.sH.med)} · maks ${f(T.sH.max)} m`)}${card(`${T.aktif.length}/${T.kal}`, "Hari aktif / kalender", `${pct(T.aktif.length, T.kal)}% utilisasi`)}
+    ${card(T.sEOH.n ? f(T.sEOH.mean) + " m" : "–", "Kedalaman akhir rata-rata", T.sEOH.n ? `${f(T.sEOH.min)}–${f(T.sEOH.max)} m ${kecil(T.sEOH)}` : "belum ada")}${card(T.sRec.n ? f(T.sRec.mean, 0) + "%" : "–", "Recovery core", T.sRec.n ? `${T.recOk}/${T.sRec.n} lubang ≥ 90%` : "", T.sRec.n && T.sRec.min < 90 ? "#D62828" : "#1E9E69")}
+    ${card(f(T.sisa, 0) + " m", "Sisa ke target", `target ${f(T.tgtM, 0)} m`, "#E0A100")}${card(T.eta ?? "–", "Perkiraan selesai", T.hariLagi ? `±${T.hariLagi} hari, laju sekarang` : "", "#12251E")}
+    ${card(f(stb, 1) + " jam", "Standby + perbaikan", sbRows[0] ? esc(String(sbRows[0][0]).slice(0, 34)) : "", stb > 0 ? "#E0A100" : "#1E9E69")}${card(`${hit("PROGRES")} · ${hit("RENCANA")}`, "Sedang dibor · rencana", "")}</div>
+    <div class="dua" style="grid-template-columns:1.15fr 1fr;margin-top:10px"><div><h3 style="margin:0 0 4px">Meter bor harian per rig</h3>${A.rigs.length ? rigHarianSVG(days, A.rigs, { w: 640, h: 330, maxH: 420 }) : grafik}</div>
+    <div><table class="t kc"><tr><th>Rig</th>${["Hari", "Meter", "m/hari", "Maks", "m/jam", "Lubang", "Σ kedalaman", "Limonit", "Saprolit"].map((h) => `<th class="r">${h}</th>`).join("")}</tr>
+    ${A.perRig.map((x, k) => `<tr><td><span class="sw" style="background:${WARNA_RIG[k % WARNA_RIG.length]}"></span><b>${esc(x.r)}</b></td><td class="r">${x.hari}</td><td class="r"><b>${f(x.meter)}</b></td><td class="r">${f(x.sm.mean)}</td><td class="r">${f(x.sm.max)}</td><td class="r">${x.jam ? f(x.meter / x.jam, 2) : "–"}</td><td class="r">${x.lubang} (${x.selesai})</td><td class="r">${f(x.totDalam)}</td><td class="r">${x.L.n ? f(x.L.mean) : "–"}</td><td class="r">${x.S.n ? f(x.S.mean) : "–"}</td></tr>`).join("")}</table>
+    <h3 style="margin:8px 0 2px">Kendala utama</h3><ul class="tl" style="font-size:13px">${sbRows.slice(0, 3).map((r) => `<li>${esc(r[0])} — ${r[1]} jam</li>`).join("") || "<li>Tidak ada standby/perbaikan tercatat.</li>"}</ul></div></div>`, "statistik harian per rig"));
+  // ===== 3. Peta pemboran + grafik per lubang =====
+  S.push(slide("Peta pemboran & grafik per lubang", `<div class="peta">${petaGraf}</div>`, `${LB.length} titik · kotak = kolom zona / kedalaman vs rencana · Rec = recovery`));
+  // ===== 4. Geologi =====
+  S.push(slide("Profil & ketebalan layer", (prof ?? []).length ? `<div class="pf" style="grid-template-columns:1fr 1.15fr"><div>${profilSVG(prof, { h: 300, fit: 400 })}</div>
+    <div><div class="grid4" style="gap:8px">${card(f(T.sOB.mean) + " m", "Overburden", `TP + sedimen`, "#8B3A1F")}${card(f(T.sL.mean) + " m", "Limonit", `n=${T.sL.n}`, "#D62828")}${card(f(T.sS.mean) + " m", "Saprolit", `n=${T.sS.n}`, "#6f8a1f")}${card(T.sBR.n ? f(T.sBR.mean) + " m" : "–", "Ke bedrock", "kedalaman", "#1D4ED8")}</div>
+    ${kedalamanLayerSVG(A.zona)}
+    <table class="t kc"><tr><th>Layer</th>${["n", "Atas", "Bawah", "Min", "Rata-rata", "Median", "Maks", "SD"].map((h) => `<th class="r">${h}</th>`).join("")}</tr>${A.zona.map((z) => { const s2 = stat(z.tebal); return `<tr><td><span class="sw" style="background:${esc(z.warna)}"></span>${esc(z.nama)}</td><td class="r">${s2.n}</td><td class="r">${f(z.atas)}</td><td class="r">${f(z.bawah)}</td><td class="r">${f(s2.min)}</td><td class="r"><b>${f(s2.mean)}</b></td><td class="r">${f(s2.med)}</td><td class="r">${f(s2.max)}</td><td class="r">${f(s2.sd)}</td></tr>`; }).join("")}</table>
+    <p class="ket">Tebal (m) per lubang yang menembus layer. Rasio limonit : saprolit = ${T.sS.mean ? f(T.sL.mean / T.sS.mean, 2) : "–"} : 1.</p></div></div>` : `<p class="kosong">Profil tampil setelah Form Logging disetujui verifier.</p>`, `${T.bh.length} lubang berdata logging`));
+  // ===== 5. Hubungan & kadar =====
+  S.push(slide("Hubungan & kadar", `<div class="dua" style="grid-template-columns:1.35fr 1fr"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    ${pencarSVG(A.hub.eohL, { judul: "Kedalaman vs tebal limonit", sx: "kedalaman akhir (m)", sy: "limonit (m)", maxH: 190 })}${pencarSVG(A.hub.eohS, { judul: "Kedalaman vs tebal saprolit", sx: "kedalaman akhir (m)", sy: "saprolit (m)", maxH: 190 })}
+    ${pencarSVG(A.hub.lerEoh, { judul: "Lereng vs kedalaman", sx: "lereng collar (°)", sy: "kedalaman (m)", maxH: 190 })}${pencarSVG(A.hub.lerL, { judul: "Lereng vs tebal limonit", sx: "lereng collar (°)", sy: "limonit (m)", maxH: 190 })}</div>
+    <div><h3 style="margin:0 0 6px">Kadar rata-rata tertimbang per layer</h3>${KS.kadarTabel}
+    <p class="ket">r = korelasi Pearson; n &lt; 3 tidak dihitung, n &lt; 5 belum stabil. Lereng dari DEMNAS di collar. Kadar ditimbang panjang interval assay; layer ditentukan dari Form Logging.</p></div></div>`, "kedalaman · ketebalan · lereng · Ni"));
+  // ===== 6. Kesimpulan prospek =====
+  S.push(slide("Kesimpulan: prospek atau tidak?", `<div class="dua" style="grid-template-columns:1fr 1.5fr;align-items:start">
+    <div class="vonis2" style="border-color:${KS.warna}"><div class="vl">STATUS</div><div class="vv" style="color:${KS.warna}">${esc(KS.vonis)}</div><p>${esc(KS.alasan)}</p>
+      <h3>Rekomendasi</h3><ul class="tl">${KS.rekom.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>
+    <div><table class="t"><tr><th>Kriteria</th><th class="r">Nilai</th><th>Ambang (✓ / !)</th><th>Status</th></tr>${KS.baris.map((r) => `<tr><td>${esc(r.k)}</td><td class="r"><b>${esc(r.v)}</b></td><td>${esc(r.amb)}</td><td><span class="stt s${r.s}">${{ ok: "✓ memenuhi", warn: "! sedang", bad: "✗ tidak", na: "? belum ada data" }[r.s]}</span></td></tr>`).join("")}</table>
+    <p class="ket">Ambang adalah saringan awal eksplorasi nikel laterit (bukan klasifikasi sumber daya KCMI/JORC) dan bisa disesuaikan dengan cut-off proyek. Kesimpulan otomatis ini perlu ditinjau geologis yang berkompeten.</p></div></div>`, "penyaringan awal berbasis data"));
   const css = `@page{size:338.67mm 190.5mm;margin:0}*{box-sizing:border-box}body{margin:0;background:#3a4741;font-family:"Segoe UI",Arial,sans-serif;color:#12251E}
   .bar0{position:sticky;top:0;z-index:5;display:flex;gap:8px;justify-content:center;padding:8px;background:#12251E}.bar0 button{font:600 14px Arial;padding:8px 14px;border:0;border-radius:8px;background:#1E9E69;color:#fff;cursor:pointer}
   .sl{width:338.67mm;height:190.5mm;margin:14px auto;background:#fff;position:relative;overflow:hidden;page-break-after:always;break-after:page;display:flex;flex-direction:column;box-shadow:0 4px 18px rgba(0,0,0,.35)}
-  .sl>header{display:flex;align-items:center;gap:14px;padding:16px 34px 10px;border-bottom:3px solid #1E9E69}.sl>header .no{font:700 26px Arial;color:#1E9E69}.sl>header h2{margin:0;font-size:28px}.sl>header .sub{color:#6b7a72;font-size:15px}.sl>header .br{margin-left:auto;font:700 13px Arial;color:#12251E;opacity:.55;letter-spacing:.06em}
+  .sl>header{display:flex;align-items:center;gap:14px;padding:16px 34px 10px;border-bottom:3px solid #1E9E69}.sl>header .no{font:700 26px Arial;color:#1E9E69}.sl>header h2{margin:0;font-size:28px;white-space:nowrap}.sl>header .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.sl>header .sub{color:#6b7a72;font-size:15px}.sl>header .br{margin-left:auto;font:700 13px Arial;color:#12251E;opacity:.55;letter-spacing:.06em}
   .isi{flex:1;padding:16px 34px;overflow:hidden}.sl>footer{display:flex;justify-content:space-between;padding:6px 34px;font-size:12px;color:#6b7a72;border-top:1px solid #e3e8e1}
   .cover{flex-direction:row;background:linear-gradient(135deg,#0d1f18,#12251E 55%,#1b4a37);color:#fff}.cv-l{flex:0 0 42%;padding:46px 40px;display:flex;flex-direction:column}.cv-r{flex:1;padding:22px 22px 22px 0;display:flex;align-items:center}.cv-r svg{width:100%;height:auto;border-radius:10px;border:0!important}.cv-r div{display:none}
   .tag{font:700 14px Arial;letter-spacing:.18em;color:#7CE0B0}.cover h1{font-size:46px;line-height:1.08;margin:14px 0 8px}.per{font-size:19px;opacity:.85}.cv-k{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:34px 0 auto}.cover .kpi{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15)}.cover .kpi .l,.cover .kpi .s{color:#cfe3d9}.by{font-size:13px;opacity:.7;line-height:1.6}
-  .kpi{border:1px solid #e3e8e1;border-radius:14px;padding:14px 16px;background:#f7faf8}.kpi .v{font:800 34px Arial;line-height:1.1}.kpi .l{font-size:14px;color:#3d4f46;margin-top:4px}.kpi .s{font-size:12px;color:#6b7a72;margin-top:4px}
+  .kpi{border:1px solid #e3e8e1;border-radius:14px;padding:14px 16px;background:#f7faf8}.grid8{display:grid;grid-template-columns:repeat(8,1fr);gap:8px}.grid8 .kpi{padding:8px 10px;border-radius:10px}.grid8 .kpi .v{font-size:22px}.grid8 .kpi .l{font-size:12px}.grid8 .kpi .s{font-size:10.5px}
+  .t.kc{font-size:12px}.t.kc th,.t.kc td{padding:3px 6px}.t.kc td:first-child{white-space:nowrap}.cv-r3{flex:1;padding:18px 18px 18px 0;display:flex;flex-direction:column;justify-content:center}.cv-r3 svg{width:100%;height:auto;border-radius:12px}.cv-r3>div{color:#cfe3d9!important;font-size:10px!important}
+  .vonis{margin:18px 0 auto;border:2px solid;border-radius:14px;padding:10px 16px;background:rgba(255,255,255,.06)}.vonis .vl,.vonis2 .vl{font:700 12px Arial;letter-spacing:.14em;opacity:.7}.vonis .vv{font:800 26px Arial}.vonis .vs{font-size:13px;opacity:.85}
+  .vonis2{border:3px solid;border-radius:16px;padding:16px 20px;background:#f7faf8}.vonis2 .vv{font:800 30px Arial;margin:2px 0 6px}.vonis2 p{margin:0 0 8px;font-size:14px}.vonis2 h3{margin:8px 0 4px;font-size:15px}
+  .stt{display:inline-block;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700}.sok{background:#DCEFE4;color:#14653f}.swarn{background:#FFF1C2;color:#7a5b00}.sbad{background:#F6C9C3;color:#8a1c12}.sna{background:#eceff0;color:#555}.kpi .v{font:800 34px Arial;line-height:1.1}.kpi .l{font-size:14px;color:#3d4f46;margin-top:4px}.kpi .s{font-size:12px;color:#6b7a72;margin-top:4px}
   .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.cat{margin-top:16px;background:#12251E;color:#fff;border-radius:14px;padding:12px 20px}.cat h3{margin:0 0 6px;color:#7CE0B0;font-size:16px}.cat ul{margin:0;padding-left:20px;font-size:15px;line-height:1.5}
   .bar{height:10px;background:#e3e8e1;border-radius:6px;overflow:hidden;margin-top:6px}.bar span{display:block;height:100%;border-radius:6px}
-  .tiga svg{display:block;margin:0 auto;border-radius:8px}.peta{display:flex;justify-content:center}.peta svg{height:118mm;width:auto;max-width:100%;border-radius:8px}.peta>div:last-child{display:none}.leg3{display:flex;gap:26px;justify-content:center;font-size:15px;margin-top:6px}.leg3 i{display:inline-block;width:14px;height:14px;border-radius:50%;border:1.5px solid #111;margin-right:6px;vertical-align:-2px}
+  .tiga svg{display:block;margin:0 auto;border-radius:8px}.peta{display:flex;justify-content:center}.peta svg{height:116mm;width:auto;max-width:100%;border-radius:8px}.peta>div:last-child{display:none}.leg3{display:flex;gap:26px;justify-content:center;font-size:15px;margin-top:6px}.leg3 i{display:inline-block;width:14px;height:14px;border-radius:50%;border:1.5px solid #111;margin-right:6px;vertical-align:-2px}
   .t{width:100%;border-collapse:collapse;font-size:13.5px}.t th{background:#12251E;color:#fff;text-align:left;padding:6px 8px;font-weight:600}.t th.r{text-align:right}.t td{padding:5px 8px;border-bottom:1px solid #e3e8e1}.t th,.t.st td:nth-child(-n+2){white-space:nowrap}.t tr:nth-child(even) td{background:#f7faf8}.r{text-align:right}
   .dot{display:inline-block;width:11px;height:11px;border-radius:50%;border:1px solid #111;margin-right:6px;vertical-align:-1px}.sw{display:inline-block;width:16px;height:12px;border:1px solid #222;margin-right:8px;vertical-align:-1px}
   .dua{display:grid;grid-template-columns:1fr 1fr;gap:22px}.dua h3{margin:0 0 8px;font-size:17px}.tl{margin:0;padding-left:20px;font-size:15px;line-height:1.55}
-  .pf{display:grid;grid-template-columns:1.7fr 1fr;gap:22px;align-items:start}.ket{font-size:12px;color:#6b7a72}.nk{display:inline-block;margin-left:4px;padding:0 6px;border-radius:8px;background:#FFE58A;color:#5a4a00;font-size:11px}.kosong{font-size:18px;color:#6b7a72;text-align:center;margin-top:60px}
+  .pf{display:grid;grid-template-columns:1.7fr 1fr;gap:22px;align-items:start}.ket{font-size:12px;color:#6b7a72;margin:6px 0 0}.nk{display:inline-block;margin-left:4px;padding:0 6px;border-radius:8px;background:#FFE58A;color:#5a4a00;font-size:11px}.kosong{font-size:18px;color:#6b7a72;text-align:center;margin-top:60px}
   @media print{body{background:#fff}.bar0{display:none}.sl{margin:0;box-shadow:none}}`;
   return `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Presentasi Pemboran ${esc(nama)} ${st.from}–${st.to}</title><style>${css}</style></head><body>
     <div class="bar0"><button onclick="print()">Simpan PDF / cetak (16:9)</button><button onclick="try{opener._lapDL()}catch(e){alert('Buka ulang dari Dashboard untuk mengunduh Excel.')}">Unduh Excel data</button></div>${S.join("")}</body></html>`;
@@ -1627,8 +1758,7 @@ async function laporanProgres(st) {
     const LB = ((await ambilLubangPeta()).data ?? []).filter((x) => !pf || pf.bhids.includes(x.bhid) || x.status === "RENCANA").sort((a, b) => String(a.bhid).localeCompare(String(b.bhid), "id", { numeric: true }));
     await muatZona();
     const { data: prof } = await sb.from("v_profil_bor").select("*").in("bhid", LB.map((x) => x.bhid).length ? LB.map((x) => x.bhid) : ["-"]).order("bhid").order("dari_m");
-    const petaGbr = await petaSVG(LB, { w: 960, h: 600 }).catch((e) => `<p>Peta gagal dibuat: ${esc(e.message)}</p>`);
-    const petaGrafik = await petaSVG(LB, { w: 960, h: 600, grafik: prof ?? [] }).catch(() => "");
+    const petaGrafik = await petaSVG(LB.map((x) => ({ ...x, rec: HR.find((h) => h.b === x.bhid)?.rec })), { w: 960, h: 600, grafik: prof ?? [] }).catch((e) => `<p>Peta gagal dibuat: ${esc(e.message)}</p>`);
     const gbr3D = await blok3D(LB, prof, { w: 960, h: 500 }).catch((e) => `<p>Tampilan 3D gagal: ${esc(e.message)}</p>`);
     const titikRows = LB.map((x) => [x.bhid, LABEL_STATUS[x.status] ?? x.status, x.rig ?? "", x.kedalaman ?? "", x.rencana_kedalaman ?? "", x.dip ?? "", x.azimuth ?? "", x.di_dalam_iup === false ? "DI LUAR IUP" : "dalam IUP"]);
     const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p.project]));
@@ -1705,19 +1835,18 @@ async function laporanProgres(st) {
     const tbl = (a, opt = {}) => `<table>${a.map((r, i) => `<tr>${r.map((c) => (i === 0 ? `<th>${esc(String(c))}</th>` : `<td${opt.col && /TERLAMBAT|BELUM\b/.test(String(c)) ? ' style="background:#F6C9C3"' : ""}>${esc(String(c ?? ""))}</td>`)).join("")}</tr>`).join("")}</table>`;
     const mx = Math.max(1, ...dayRows.map((r) => r[2])), bw = dayRows.length ? Math.min(40, Math.max(4, Math.floor(680 / dayRows.length) - 2)) : 10;
     const svg = dayRows.length ? `<svg width="720" height="170" style="border:1px solid #ddd;background:#fff">${dayRows.map((r, i) => { const h = (130 * r[2]) / mx; return `<rect x="${30 + i * (bw + 2)}" y="${145 - h}" width="${bw}" height="${h}" fill="#1E9E69"><title>${r[0]}: ${r[2]} m</title></rect>`; }).join("")}<text x="4" y="14" font-size="10">${mx.toFixed(0)} m</text><text x="30" y="162" font-size="10">${dayRows[0][0]}</text><text x="600" y="162" font-size="10">${dayRows.at(-1)[0]}</text></svg>` : "<p>Tidak ada data bor pada periode ini.</p>";
-    if (st.slide) { w.document.open(); w.document.write(await presentasiHTML({ st, PJ, mPer, mCum, nSelesai, HR, K, dayRows, rigRows, sbRows, notes, LB, prof, klien })); w.document.close(); return; }
+    if (st.slide) { w.document.open(); w.document.write(await presentasiHTML({ st, PJ, mPer, mCum, nSelesai, HR, K, dayRows, rigRows, sbRows, notes, LB, prof, klien, days })); w.document.close(); return; }
     w.document.open(); w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Laporan Progres ${esc(PJ?.nama ?? "TGEP")} ${st.from}–${st.to}</title>
     <style>body{font-family:Arial,sans-serif;font-size:11px;margin:18px;color:#111;max-width:1000px} h1{font-size:18px;margin:0} h2{font-size:13px;margin:14px 0 4px;color:#12251E;border-bottom:2px solid #1E9E69} table{border-collapse:collapse;width:100%;margin:4px 0} td,th{border:1px solid #999;padding:3px 5px;text-align:left} th{background:#e6efe9} ul{margin:4px 0 4px 18px} .bar{display:flex;gap:8px;margin-bottom:10px} .bar a,.bar button{padding:6px 10px;border:1px solid #1E9E69;border-radius:6px;background:#fff;color:#12251E;text-decoration:none;font:inherit;cursor:pointer} @media print{.bar{display:none} h2{break-after:avoid} tr{break-inside:avoid}}</style></head><body>
     <div class="bar"><button onclick="print()">Cetak / simpan PDF</button><button onclick="try{opener._lapDL()}catch(e){alert('Buka ulang laporan dari menu Dashboard untuk mengunduh Excel.')}">Unduh Excel laporan</button></div>
     <h1>LAPORAN PROGRES PEMBORAN & DATA EKSPLORASI</h1><div>PT Terra Grapindo Eco Prima · ${esc(PJ?.nama ?? "Semua proyek")} · periode <b>${st.from} s/d ${st.to}</b>${st.rig ? " · rig " + esc(st.rig) : ""}</div>
     <h2>1. Ringkasan</h2>${tbl(T.ringkasan)}
-    <h2>Peta pemboran</h2>${petaGbr}
+    <h2>Peta pemboran & grafik per lubang</h2>${petaGrafik}
     <h3 style="font-size:12px;margin:8px 0 2px">Titik bor (rencana, progres, EOH/STB)</h3>${tbl(T.titik)}
     <h2>2. Catatan & hal yang perlu ditindaklanjuti</h2><ul>${notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
     <h2>3. Progres per rig</h2>${tbl(T.rig)}
     <h2>4. Meter bor harian</h2>${svg}${tbl(T.harian)}
     <h2>5. Status lubang</h2>${klien ? tbl(clientGeo() ? [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Conto", "Limonit (m)", "Saprolit (m)", "Recovery %", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.conto, h.tl == null ? "" : +f1(h.tl), h.ts == null ? "" : +f1(h.ts), h.rec == null ? "" : Math.round(h.rec), h.selesai ? "SELESAI" : "BERJALAN"])] : [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.selesai ? "SELESAI" : "BERJALAN"])]) : tbl(T.lubang, { col: 1 })}<p style="color:#555">SELESAI = tanggal selesai terisi atau kedalaman ≥ target/total depth di DDR. Kedalaman dari foto RUN aplikasi${klien ? "" : "; tebal zona dan recovery dari Form Logging yang sudah disetujui"}.</p>
-    <h2>Peta & grafik per lubang</h2>${petaGrafik}
     ${(() => { const T2 = statistikData({ dayRows, HR, LB, prof, st, PJ, mCum }), f = T2.f; return `<h2>Statistik pemboran & geologi</h2><table><tr><th>Indikator</th><th>Nilai</th><th>Indikator</th><th>Nilai</th></tr>
       <tr><td>Rata-rata meter / hari aktif</td><td>${f(T2.sH.mean)} m (median ${f(T2.sH.med)}, SD ${f(T2.sH.sd)})</td><td>Overburden (TP + sedimen)</td><td>${f(T2.sOB.mean)} m (${f(T2.sOB.min)}–${f(T2.sOB.max)})</td></tr>
       <tr><td>Hari aktif / kalender</td><td>${T2.aktif.length}/${T2.kal}</td><td>Tebal limonit rata-rata</td><td>${f(T2.sL.mean)} m (median ${f(T2.sL.med)})</td></tr>
@@ -1726,7 +1855,19 @@ async function laporanProgres(st) {
       <tr><td>Sisa meter ke target</td><td>${f(T2.sisa, 0)} m dari ${f(T2.tgtM, 0)} m</td><td>Perkiraan selesai (laju sekarang)</td><td>${T2.eta ?? "–"}</td></tr></table>
       ${T2.zona.length ? boxSVG(T2.zona.map((z) => ({ label: z.nama, warna: z.warna, s: z.s })), { unit: "tebal (m)", w: 760 }) : ""}${T2.bh.length && T2.bh.length < 5 ? `<p><i>Baru ${T2.bh.length} lubang berdata logging — statistik belum representatif.</i></p>` : ""}`; })()}
     <h2>Tampilan 3D pemboran</h2>${gbr3D}
+    ${await (async () => { const A = await analisisData(LB, prof, days), f = (x, d = 1) => (x == null || !Number.isFinite(+x) ? "–" : (+x).toFixed(d));
+      return `<h2>Statistik per rig</h2>${A.rigs.length ? rigHarianSVG(days, A.rigs) + `<table><tr><th>Rig</th><th>Hari aktif</th><th>Total meter</th><th>Rata-rata m/hari</th><th>Maks/hari</th><th>Lubang (selesai)</th><th>Jumlah kedalaman</th><th>Overburden</th><th>Limonit</th><th>Saprolit</th></tr>${A.perRig.map((x) => `<tr><td>${esc(x.r)}</td><td>${x.hari}</td><td>${f(x.meter)}</td><td>${f(x.sm.mean)}</td><td>${f(x.sm.max)}</td><td>${x.lubang} (${x.selesai})</td><td>${f(x.totDalam)} m</td><td>${x.OB.n ? f(x.OB.mean) + " m" : "–"}</td><td>${x.L.n ? f(x.L.mean) + " m" : "–"}</td><td>${x.S.n ? f(x.S.mean) + " m" : "–"}</td></tr>`).join("")}</table>` : "<p>Belum ada data rig.</p>"}
+      ${A.zona.length ? `<h2>Sebaran layer</h2><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">${A.zona.map((z) => histKecil(z.tebal, z.warna, z.nama)).join("")}</div>${kedalamanLayerSVG(A.zona)}` : ""}
+      <h2>Hubungan kedalaman, ketebalan & lereng</h2><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${pencarSVG(A.hub.eohL, { judul: "Kedalaman akhir vs tebal limonit", sx: "kedalaman akhir (m)", sy: "tebal limonit (m)" })}${pencarSVG(A.hub.eohS, { judul: "Kedalaman akhir vs tebal saprolit", sx: "kedalaman akhir (m)", sy: "tebal saprolit (m)" })}${pencarSVG(A.hub.lerEoh, { judul: "Lereng vs kedalaman", sx: "lereng (°)", sy: "kedalaman (m)" })}${pencarSVG(A.hub.lerL, { judul: "Lereng vs tebal limonit", sx: "lereng (°)", sy: "tebal limonit (m)" })}</div>
+      <p><small>r = korelasi Pearson; dengan jumlah lubang kecil nilainya belum stabil. Lereng dari DEMNAS di posisi collar.</small></p>`; })()}
     <h2>Profil bor (ketebalan zona)</h2>${(prof ?? []).length ? profilSVG(prof) : "<p>Belum ada data logging yang masuk database untuk lubang-lubang ini.</p>"}
+    ${await (async () => { const A = await analisisData(LB, prof, days), T2 = statistikData({ dayRows, HR, LB, prof, st, PJ, mCum }); let AS = [];
+      try { const bhs = [...new Set((prof ?? []).map((r) => r.bhid))]; if (bhs.length) AS = (await sb.from("v_dh_assay").select("holeid,from,to,ni,fe,mgo,sio2,co").in("holeid", bhs)).data ?? []; } catch {}
+      const KS = kesimpulanProspek({ A, T: T2, AS, prof: prof ?? [], LB });
+      return `<h2>Kesimpulan: prospek atau tidak?</h2><div style="border:3px solid ${KS.warna};border-radius:10px;padding:8px 12px;margin:6px 0"><b style="font-size:16px;color:${KS.warna}">${esc(KS.vonis)}</b><br>${esc(KS.alasan)}</div>
+        <table><tr><th>Kriteria</th><th>Nilai</th><th>Ambang (✓ / !)</th><th>Status</th></tr>${KS.baris.map((r) => `<tr><td>${esc(r.k)}</td><td>${esc(r.v)}</td><td>${esc(r.amb)}</td><td>${{ ok: "✓ memenuhi", warn: "! sedang", bad: "✗ tidak", na: "? belum ada data" }[r.s]}</td></tr>`).join("")}</table>
+        <h3 style="font-size:12px;margin:8px 0 2px">Kadar rata-rata tertimbang per layer</h3>${KS.kadarTabel}<p><b>Rekomendasi:</b></p><ul>${KS.rekom.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+        <p><small>Ambang = saringan awal eksplorasi nikel laterit (bukan klasifikasi sumber daya KCMI/JORC) dan perlu ditinjau geologis yang berkompeten.</small></p>`; })()}
     <h2>6. Penyebab standby & perbaikan</h2>${sbRows.length ? tbl(T.standby) : "<p>Tidak ada standby/perbaikan tercatat.</p>"}
     ${klien ? "" : `<h2>7. Kepatuhan pengiriman operator</h2>${opRows.length ? tbl(T.operator, { col: 1 }) : "<p>Belum ada data operator.</p>"}
     <h2>8. Kelengkapan data & QC</h2>${tbl(T.qc)}`}
