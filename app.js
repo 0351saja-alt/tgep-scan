@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.18";
+const APP_VERSION = "2026-11-17.19";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1535,7 +1535,7 @@ async function rekapView(v) {
   const tgl = sessionStorage.getItem("rekapTgl") || todayWIB();
   v.innerHTML = `<div class="card"><h2>Rekap & pelacakan operator</h2>
     <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div>${proyekSelect()}<button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button></div>
-    <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. Form Logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.${me?.role === "admin" ? " <b>Menghapus data:</b> tekan <b>Folder</b> pada operator, lalu <b>Hapus</b> per kiriman (atau centang beberapa lalu <b>Hapus terpilih</b>). Data masuk arsip dan bisa dipulihkan." : ""}</p></div>
+    <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. Form Logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.${me?.role === "admin" ? " <b>Mengeluarkan operator</b> (mis. akun uji coba atau bukan petugas): tekan <b>Keluarkan</b> di ujung kanan barisnya (geser tabel ke kanan). <b>Menghapus kiriman:</b> tekan <b>Folder</b> pada operator, lalu <b>Hapus</b> per kiriman (atau centang beberapa lalu <b>Hapus terpilih</b>). Data masuk arsip dan bisa dipulihkan." : ""}</p></div>
     <div id="rs" class="card">Memuat…</div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rab" class="card"></div><div id="rmp" class="card"></div><div id="rp" class="card"></div><div id="rpj" class="card"></div>` : ""}`;
   $("#rgo").onclick = () => { sessionStorage.setItem("rekapTgl", $("#rt").value); sessionStorage.setItem("filterProyek", $("#fproj").value); rekapView(v); };
   if (!online()) return ($("#rs").textContent = "Rekap perlu sinyal internet.");
@@ -1552,7 +1552,7 @@ async function rekapView(v) {
       <td style="background:${ST_COL[r.status] ?? "#fff"}">${esc(r.status)}</td><td>${esc((r.kurang ?? []).join(", "))}</td>
       <td>${r.p2h}</td><td>${r.progres}</td><td>${r.ddr_ttd}</td><td>${r.fbor}</td><td>${r.foto_core}</td><td>${r.arsip}</td><td style="${r.peran === "geologist" && r.lubang_logging_terlambat ? "background:#F6C9C3" : ""}">${r.peran === "geologist" ? (r.lubang_logging_terlambat ? r.lubang_logging_terlambat + " lubang" : "0") : "-"}</td><td>${r.terakhir ? fmtT(r.terakhir).slice(-8) : "-"}</td>
       <td style="${r.antrean > 0 ? "background:#F6C9C3" : ""}">${r.antrean ? `<b>${r.antrean} antre</b> sejak ${ago(r.antrean_tertua)}<br>` : ""}online ${ago(r.last_seen)}${r.app_version && r.app_version !== APP_VERSION ? `<br><span class="err">versi lama ${esc(r.app_version)}</span>` : ""}</td>
-      <td><button class="sec" data-fd="${r.user_id}" data-nm="${esc(r.nama ?? "")}" style="flex:0">Folder</button></td></tr>`).join("") || `<tr><td colspan="14" class="muted">Belum ada operator (driller/geologist) yang disetujui.</td></tr>`}</table></div>`;
+      <td style="white-space:nowrap"><button class="sec" data-fd="${r.user_id}" data-nm="${esc(r.nama ?? "")}" style="flex:0">Folder</button>${me?.role === "admin" && r.user_id !== session?.user?.id ? ` <button class="sec" data-kl="${r.user_id}" data-nm="${esc(r.nama ?? "")}" style="flex:0;color:#B3261E;border-color:#B3261E" title="Keluarkan operator dari rekap">Keluarkan</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="14" class="muted">Belum ada operator (driller/geologist) yang disetujui.</td></tr>`}</table></div>`;
   logLubang($("#rl"));
   const dates = [...Array(14)].map((_, i) => new Date(Date.parse(tgl) - (13 - i) * 864e5).toISOString().slice(0, 10)), ops = [...new Map((all ?? []).map((r) => [r.user_id, r])).values()];
   const sym = { LENGKAP: "✓", SEBAGIAN: "½", BELUM: "✗", "RIG TIDAK BEROPERASI": "–", "TANPA PENUGASAN": "?", "ADA KIRIMAN (TANPA PENUGASAN)": "+", "TIDAK WAJIB": "–" };
@@ -1560,6 +1560,7 @@ async function rekapView(v) {
     ${ops.map((o) => { const rs = dates.map((d) => (all ?? []).find((r) => r.user_id === o.user_id && r.tanggal === d)); const wajib = rs.filter((r) => r && ["LENGKAP", "SEBAGIAN", "BELUM"].includes(r.status)); const ok = wajib.filter((r) => r.status === "LENGKAP").length;
       return `<tr><td>${esc(o.nama ?? "-")} <span class="muted">${esc(o.rig ?? "")}</span></td>${rs.map((r) => `<td style="text-align:center;background:${ST_COL[r?.status] ?? "#fff"}" title="${esc(r?.status ?? "")}${r?.kurang?.length ? " — " + esc(r.kurang.join(", ")) : ""}">${sym[r?.status] ?? ""}</td>`).join("")}<td><b>${wajib.length ? Math.round((100 * ok) / wajib.length) + "%" : "-"}</b></td></tr>`; }).join("")}</table></div>`;
   v.querySelectorAll("[data-fd]").forEach((b) => (b.onclick = () => folderView(v, b.dataset.fd, b.dataset.nm)));
+  v.querySelectorAll("[data-kl]").forEach((b) => (b.onclick = async () => { if (await keluarkanOperator(b.dataset.kl, b.dataset.nm)) rekapView(v); }));
   $("#rcsv").onclick = () => { const cols = ["tanggal", "nama", "perusahaan", "peran", "rig", "status", "kurang", "p2h", "progres", "ddr_ttd", "fbor", "foto_core", "arsip", "lubang_logging_terlambat", "total_kiriman", "terakhir", "antrean", "last_seen", "app_version"];
     const csv = [cols.join(","), ...(all ?? []).map((r) => cols.map((c) => `"${String(Array.isArray(r[c]) ? r[c].join("; ") : r[c] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })); a.download = `TGEP_Rekap_Operator_${from14}_${tgl}.csv`; a.click(); };
@@ -1693,6 +1694,30 @@ async function personilAdmin(box) {
   box.querySelectorAll("[data-gt]").forEach((s) => (s.onchange = async () => { if (!s.value) return; const ke = s.options[s.selectedIndex].text;
     if (!confirm(`Gabungkan "${us.find((p) => p.id === s.dataset.gt)?.nama}" ke ${ke}? Semua shift dengan ejaan itu dihitung untuk ${ke}.`)) return (s.value = "");
     const { error } = await sb.rpc("admin_gabung_personil", { p_dari: s.dataset.gt, p_ke: s.value }); if (error) return alert(error.message); ulang(); }));
+}
+// Keluarkan operator dari rekap (admin): hapus akun permanen bila belum pernah mengirim data; bila sudah, nonaktifkan.
+function keluarkanOperator(uid, nama) {
+  return new Promise(async (selesai) => {
+    const { error: cek } = await sb.rpc("admin_hapus_pengguna", { p_user: uid, p_konfirmasi: false });
+    const bisaHapus = !cek;
+    const m = modal(`<h3 style="color:#B3261E">Keluarkan ${esc(nama || "operator")} dari rekap?</h3>
+      ${bisaHapus ? `<p><b>Apakah Anda yakin ingin menghapus akun ini?</b> Akun ini belum pernah mengirim data, jadi bisa <b>dihapus permanen</b>: akun, pendaftaran dan penugasannya hilang dan <b>tidak bisa dipulihkan</b>. Bila orang ini perlu masuk lagi, ia harus mendaftar ulang.</p>`
+        : `<p>Akun ini <b>tidak bisa dihapus permanen</b> karena sudah mengirim data:<br><span class="muted">${esc(cek.message)}</span></p><p><b>Apakah Anda yakin ingin menonaktifkannya?</b> Ia tidak bisa masuk lagi dan hilang dari rekap harian, tetapi semua data yang pernah dikirim tetap tersimpan. Bisa diaktifkan kembali di menu <b>Pengguna</b>.</p>`}
+      <label>Alasan (wajib)</label><textarea id="kla" rows="2" placeholder="mis. bukan petugas TGEP / akun uji coba / sudah tidak bertugas"></textarea>
+      <p class="err" id="kle"></p>
+      <div class="row"><button class="sec" id="klb">Batal</button><button id="klo" style="background:#B3261E">${bisaHapus ? "Ya, hapus akun" : "Ya, nonaktifkan"}</button></div>`);
+    const tutup = (x) => { m.remove(); selesai(x); };
+    m.querySelector("#klb").onclick = () => tutup(false);
+    m.querySelector("#klo").onclick = async () => {
+      const alasan = m.querySelector("#kla").value.trim();
+      if (!alasan) return (m.querySelector("#kle").textContent = "Alasan wajib diisi.");
+      m.querySelector("#klo").disabled = true;
+      const { error } = bisaHapus ? await sb.rpc("admin_hapus_pengguna", { p_user: uid, p_konfirmasi: true })
+        : await sb.rpc("admin_set_user", { p_user: uid, p_role: null, p_note: alasan });
+      if (error) { m.querySelector("#kle").textContent = error.message; m.querySelector("#klo").disabled = false; return; }
+      tutup(true);
+    };
+  });
 }
 // Hapus kiriman (admin) dari Folder operator: data dipindah ke arsip (deleted_record) dan bisa dipulihkan.
 const hapusJenis = (j) => ({ PROGRES: ["h", "drill_event"], P2H: ["h", "p2h_check"], DDR: ["h", "ddr"], "FORM LOGGING": ["d", "scan_job"], "FOTO CORE": ["d", "core_photo"] })[j] ?? (j?.startsWith("ARSIP ") ? ["h", "form_photo"] : null);
