@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.05";
+const APP_VERSION = "2026-11-18.06";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1384,11 +1384,12 @@ async function dashView(v) {
     <div style="flex:1"><div style="font:700 11px Arial;letter-spacing:.16em;color:#7CE0B0">PT TERRA GRAPINDO ECO PRIMA</div><div style="font:800 21px Arial">Dashboard eksplorasi nikel laterit</div><div style="font-size:12px;opacity:.75">X-Terra · data dari lapangan, terverifikasi</div></div></div>
     <div class="card"><h2>Dashboard progres & evaluasi</h2>
     <style>.dfil>div{flex:1 1 140px;min-width:140px}.dfil>div select,.dfil>div input{width:100%}@media(max-width:520px){.dfil>button{flex:1 1 45%!important}}</style><div class="row dfil" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
-    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button><button id="pres" style="flex:0;white-space:nowrap;background:#12251E">🎞 Presentasi 16:9</button></div></div>
+    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><div><label>Topografi 3D</label><select id="topo3d">${[["redup", "Redup (bor menonjol)"], ["sedang", "Sedang"], ["asli", "Asli (tajam)"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button><button id="pres" style="flex:0;white-space:nowrap;background:#12251E">🎞 Presentasi 16:9</button></div></div>
     <div id="dSlide" style="background:#3a4741;border-radius:14px;padding:6px 3px;margin-bottom:12px"><p style="color:#fff;font-family:Arial;padding:16px;margin:0">Menyusun tampilan presentasi…</p></div>
     <details class="card" id="rinci" open><summary style="font-weight:700;cursor:pointer">Indikator & grafik dashboard</summary><div id="kpi" style="margin-top:8px"></div>
     <div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-top:10px"></div></details>`;
   if (online()) laporanProgres({ from: st.from, to: st.to, rig: st.rig, proj: sessionStorage.getItem("filterProyek") || "", slide: true, wadah: wadahDi($("#dSlide"), "16:9") }).catch((e) => { if ($("#dSlide")) $("#dSlide").innerHTML = `<p style="color:#fff;padding:16px">Tampilan presentasi gagal: ${esc(e.message)}</p>`; });
+  $("#topo3d").onchange = (e) => { localStorage.setItem("topo3d", e.target.value); $("#go").onclick(); };
   $("#lap").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value });
   $("#pres").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value, slide: true });
   $("#go").onclick = () => { sessionStorage.setItem("filterProyek", $("#fproj").value); sessionStorage.setItem("dash", JSON.stringify({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() })); dashView(v); };
@@ -2009,24 +2010,28 @@ async function blok3D(L, prof, o = {}) {
     if (mid[2] > ctr[2]) continue; // sisi belakang tidak digambar
     const atas = [], bawah = []; for (let t = 0; t <= nn; t++) { const [i, j] = f(t); atas.push(S(gm(i, j, fill(Z[j][i])))); bawah.unshift(S(gm(i, j, zBase))); }
     walls += `<polygon points="${[...atas, ...bawah].map((p) => p.join(",")).join(" ")}" fill="url(#tanah)" stroke="#5b4636" stroke-width=".6"/>`; }
-  let g = walls + quads.map((q) => `<polygon points="${q.pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}" fill="${q.col}" stroke="${q.col}" stroke-width=".4"/>`).join("");
+  // topografi diredupkan (blur + kontras/saturasi rendah) agar lubang bor menonjol; tingkat diatur dari Dashboard
+  const TOPO = { redup: { blur: 1.6, sat: 0.3, k: 0.5, b: 0.42 }, sedang: { blur: 0.8, sat: 0.6, k: 0.75, b: 0.2 }, asli: { blur: 0, sat: 1, k: 1, b: 0 } }[o.topo ?? (localStorage.getItem("topo3d") || "redup")] ?? { blur: 1.6, sat: 0.3, k: 0.5, b: 0.42 };
+  const fid = "tf" + Math.random().toString(36).slice(2, 8);
+  const filt = `<filter id="${fid}" x="-2%" y="-2%" width="104%" height="104%">${TOPO.blur ? `<feGaussianBlur stdDeviation="${TOPO.blur}"/>` : ""}<feColorMatrix type="saturate" values="${TOPO.sat}"/><feComponentTransfer>${["R", "G", "B"].map((c) => `<feFunc${c} type="linear" slope="${TOPO.k}" intercept="${TOPO.b}"/>`).join("")}</feComponentTransfer></filter>`;
+  let g = `<g filter="url(#${fid})">` + walls + quads.map((q) => `<polygon points="${q.pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}" fill="${q.col}" stroke="${q.col}" stroke-width=".4"/>`).join("") + "</g>";
   // lubang bor
   const hz = async (p) => fill(await tinggiDi(p.ll[0], p.ll[1]).catch(() => null)), PRF = prof ?? [];
   const lub = []; for (const p of pts) { const mx = (p.ll[0] - x0) * kx, my = (p.ll[1] - y0) * ky, z = await hz(p); lub.push({ p, mx, my, z, d: P3(mx, my, z)[2] }); }
   lub.sort((a, b) => b.d - a.d);
   for (const h of lub) { const top = S(P3(h.mx, h.my, h.z)), R = PRF.filter((r) => r.bhid === h.p.bhid), seg = (a, b) => [S(P3(h.mx, h.my, h.z - a * HE / VE)), S(P3(h.mx, h.my, h.z - b * HE / VE))];
-    if (R.length) for (const r of R) { const [a, b] = seg(+r.dari_m, +r.sampai_m); g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${esc(r.warna)}" stroke-width="10" stroke-linecap="butt"><title>${esc(h.p.bhid)} ${esc(r.nama_zona)} ${r.dari_m}–${r.sampai_m} m</title></line>`; }
-    else if (+h.p.kedalaman) { const [a, b] = seg(0, +h.p.kedalaman); g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${WARNA_STATUS[h.p.status] ?? "#999"}" stroke-width="9"/>`; }
-    if (+h.p.rencana_kedalaman && h.p.status !== "EOH" && h.p.status !== "STB") { const [a, b] = seg(0, +h.p.rencana_kedalaman); g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#111" stroke-width="1" stroke-dasharray="3 3" opacity=".6"/>`; }
+    if (R.length) { const [a0, b0] = seg(0, Math.max(...R.map((r) => +r.sampai_m))); g += `<line x1="${a0[0]}" y1="${a0[1]}" x2="${b0[0]}" y2="${b0[1]}" stroke="#111" stroke-width="14" stroke-linecap="square"/>`; for (const r of R) { const [a, b] = seg(+r.dari_m, +r.sampai_m); g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${esc(r.warna)}" stroke-width="11" stroke-linecap="butt"><title>${esc(h.p.bhid)} ${esc(r.nama_zona)} ${r.dari_m}–${r.sampai_m} m</title></line>`; } }
+    else if (+h.p.kedalaman) { const [a, b] = seg(0, +h.p.kedalaman); g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#111" stroke-width="13"/><line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${WARNA_STATUS[h.p.status] ?? "#999"}" stroke-width="10"/>`; }
+    if (+h.p.rencana_kedalaman && h.p.status !== "EOH" && h.p.status !== "STB") { const [a, b] = seg(0, +h.p.rencana_kedalaman); g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#111" stroke-width="1.6" stroke-dasharray="4 3" opacity=".85"/>`; }
     const tiang = S(P3(h.mx, h.my, h.z + ((zMax - zMin) * (0.07 + 0.06 * (lub.indexOf(h) % 3))) / VE));   // tiang label berselang tinggi agar tidak bertumpuk
-    g += `<line x1="${top[0]}" y1="${top[1]}" x2="${tiang[0]}" y2="${tiang[1]}" stroke="#111" stroke-width=".8"/><circle cx="${top[0]}" cy="${top[1]}" r="4" fill="${WARNA_STATUS[h.p.status] ?? "#999"}" stroke="#111" stroke-width="1.2"/>
-      <text x="${tiang[0]}" y="${tiang[1] - 3}" font-size="10" font-weight="700" text-anchor="middle" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(h.p.bhid)}</text>`; }
+    g += `<line x1="${top[0]}" y1="${top[1]}" x2="${tiang[0]}" y2="${tiang[1]}" stroke="#111" stroke-width=".8"/><circle cx="${top[0]}" cy="${top[1]}" r="5.5" fill="${WARNA_STATUS[h.p.status] ?? "#999"}" stroke="#111" stroke-width="1.2"/>
+      <text x="${tiang[0]}" y="${tiang[1] - 3}" font-size="11" font-weight="800" text-anchor="middle" stroke="#fff" stroke-width="3.5" paint-order="stroke">${esc(h.p.bhid)}</text>`; }
   // panah utara (proyeksi arah utara di permukaan)
   const u0 = S(P3(cx, cy, zMin)), u1 = S(P3(cx, cy + 1, zMin)), ang = Math.atan2(u1[1] - u0[1], u1[0] - u0[0]);
   g += `<g transform="translate(${W - 46},48) rotate(${(ang * 180) / Math.PI + 90})"><polygon points="0,-20 7,6 0,0 -7,6" fill="#111"/></g><text x="${W - 46}" y="84" font-size="12" font-weight="700" text-anchor="middle">U</text>`;
   const Zs = [...new Map(PRF.map((r) => [r.zona, r])).values()];
   const leg = `<div style="font-size:11px;color:#333;margin-top:4px">Topografi DEMNAS, tinggi ${zMin.toFixed(0)}–${zMax.toFixed(0)} m, perbesaran vertikal ${VE}× · <b>panjang lubang bor diperbesar ${HE}×</b> agar terlihat · garis putus = kedalaman rencana · dilihat dari arah ${["utara", "timur laut", "timur", "tenggara", "selatan", "barat daya", "barat", "barat laut"][Math.round((((o.az ?? 62) + 180) % 360) / 45) % 8]} · ${Zs.map((r) => `<span style="display:inline-block;width:12px;height:10px;background:${esc(r.warna)};border:1px solid #222;vertical-align:-1px"></span> ${esc(r.nama_zona)}`).join(" ")}</div>`;
-  return `<svg width="${o.fit ? "100%" : W}" viewBox="0 0 ${W} ${H}" style="background:linear-gradient(#eaf2f7,#fff);font-family:Arial,sans-serif;${o.fit ? `max-height:${o.fit}px;` : ""}"><defs><linearGradient id="tanah" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b98b62"/><stop offset=".55" stop-color="#8b5e3c"/><stop offset="1" stop-color="#5b4636"/></linearGradient></defs>${g}</svg>${leg}`;
+  return `<svg width="${o.fit ? "100%" : W}" viewBox="0 0 ${W} ${H}" style="background:linear-gradient(#eaf2f7,#fff);font-family:Arial,sans-serif;${o.fit ? `max-height:${o.fit}px;` : ""}"><defs>${filt}<linearGradient id="tanah" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b98b62"/><stop offset=".55" stop-color="#8b5e3c"/><stop offset="1" stop-color="#5b4636"/></linearGradient></defs>${g}</svg>${leg}`;
 }
 async function laporanProgres(st) {
   if (!online()) return alert("Laporan perlu sinyal internet.");
