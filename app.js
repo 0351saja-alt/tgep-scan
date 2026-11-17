@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.6";
+const APP_VERSION = "2026-11-17.7";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -548,6 +548,11 @@ async function loadPersonil() {
   return masterPersonil();
 }
 const resmiDi = (rig) => masterPersonil().filter((p) => p.status === "RESMI" && p.aktif && (!myTugas?.project || p.project === myTugas.project) && (!rig || !(p.rigs ?? []).length || p.rigs.includes(rig)));
+// Cek titik GPS terhadap batas IUP (poligon lon/lat dari tabel wilayah; tersimpan di HP agar jalan tanpa sinyal)
+const diDalam = (lon, lat, T) => { let c = false; for (let i = 0, j = T.length - 1; i < T.length; j = i++) { const a = T[i], b = T[j];
+  if ((a.lat > lat) !== (b.lat > lat) && lon < ((b.lon - a.lon) * (lat - a.lat)) / (b.lat - a.lat) + a.lon) c = !c; } return c; };
+const cekIUP = (lon, lat) => { const W = JSON.parse(localStorage.getItem("wilayah") || "[]"); if (!W.length) return null;
+  const masuk = W.find((w) => diDalam(lon, lat, w.titik ?? [])); return masuk ? { dalam: true, nama: masuk.nama } : { dalam: false, nama: W.map((w) => w.nama).join(", ") }; };
 const crewMin = () => Number(localStorage.getItem("crewMin")) || 4;   // qc_param CREW_MIN: driller + helper/mekanik, tanpa WSG
 const jabatanSaya = () => (me?.role === "geologist" ? "WSG" : me?.role === "driller" ? "Driller" : "Lainnya");
 function personilAwal(rig, t, capturedAt) {
@@ -637,7 +642,8 @@ async function progView(v) {
         m.querySelector("#psnT").textContent = t === "MASUK" ? "Personil hadir (WSG, driller, crew)" : "Personil yang keluar shift";
         m.querySelector("#psnTip").textContent = t === "MASUK" ? "Tulis semua yang ada di foto. Terisi dari shift terakhir rig ini — hapus yang tidak hadir, tambah yang baru." : "Hapus nama yang sudah pulang lebih dulu."; } };
     m.querySelectorAll('input[name="et"]').forEach((x) => (x.onchange = upd)); upd();
-    let pos = null; posP.then((p) => { pos = p; m.querySelector("#gps").textContent = p ? `GPS: ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} (±${p.acc} m)` : "GPS tidak didapat — aktifkan Lokasi di HP. Foto tetap disimpan dan ditandai."; });
+    let pos = null; posP.then((p) => { pos = p; m.querySelector("#gps").textContent = p ? `GPS: ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} (±${p.acc} m)` : "GPS tidak didapat — aktifkan Lokasi di HP. Foto tetap disimpan dan ditandai.";
+      const k = p && cekIUP(p.lon, p.lat); if (k && !k.dalam) m.querySelector("#gps").insertAdjacentHTML("afterend", `<p class="err" style="font-weight:600">⚠ Titik GPS ini berada DI LUAR batas IUP (${esc(k.nama)}). Pastikan lokasi bor benar sebelum mengebor; hubungi WSG/admin.</p>`); });
     m.querySelector("#cx").onclick = () => m.remove();
     m.querySelector("#ok").onclick = async () => {
       const t = tp(), num = (s) => (String(s).trim() === "" ? null : Number(String(s).replace(",", ".")));
@@ -1387,6 +1393,7 @@ async function loadTugas() {
   const [{ data: a, error }, { data: pj }] = await Promise.all([sb.rpc("my_assignment"), sb.from("project").select("*").eq("aktif", true).order("nama")]);
   localStorage.setItem("projects", JSON.stringify(pj ?? []));
   loadPersonil();
+  sb.from("wilayah").select("nama,nomor_sk,titik").eq("aktif", true).then(({ data }) => { if (data) localStorage.setItem("wilayah", JSON.stringify(data)); });
   sb.from("qc_param").select("value").eq("name", "CREW_MIN").maybeSingle().then(({ data }) => { if (data?.value) localStorage.setItem("crewMin", data.value); });
   if (error) return myTugas;
   const rigs = a?.rigs ?? [], simpan = localStorage.getItem("rig");
