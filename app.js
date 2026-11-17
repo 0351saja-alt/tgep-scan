@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.06";
+const APP_VERSION = "2026-11-18.07";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2976,13 +2976,13 @@ async function petaView(v) {
   const bisaTulis = ["verifier", "admin"].includes(me?.role);
   v.innerHTML = `<div class="card" id="pmCard" style="padding:8px"><div class="row" style="flex-wrap:wrap;align-items:center;gap:6px">
       <select id="pmB" style="flex:0 0 140px"><option value="sat">Citra satelit</option><option value="osm">Peta jalan (OSM)</option><option value="none">Tanpa latar</option></select>
-      <button class="sec" id="pm3" style="flex:0">3D</button><label style="flex:0;white-space:nowrap;margin:0">Tinggi <input id="pmX" type="range" min="1" max="4" step="0.5" value="1.5" style="width:80px;vertical-align:middle"> <span id="pmXv">1,5×</span></label>
+      <button class="sec" id="pm3" style="flex:0">3D</button><label id="pmKl" style="flex:0;white-space:nowrap;margin:0;display:none">Kolom bor <input id="pmK" type="range" min="0.5" max="3" step="0.25" value="${localStorage.getItem("kolom3d") || 1}" style="width:80px;vertical-align:middle"></label><select id="pmTopo" title="Tampilan topografi saat 3D" style="flex:0 0 150px">${[["redup", "Topo redup (bor jelas)"], ["sedang", "Topo sedang"], ["asli", "Topo asli"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select><label style="flex:0;white-space:nowrap;margin:0">Tinggi <input id="pmX" type="range" min="1" max="4" step="0.5" value="1.5" style="width:80px;vertical-align:middle"> <span id="pmXv">1,5×</span></label>
       <button class="sec" id="pmL" style="flex:0">Lapisan ▾</button><button class="sec" id="pmF" style="flex:0">Impor file</button><input type="file" id="pmFi" multiple accept=".zip,.shp,.dbf,.prj,.shx,.cpg,.kml,.kmz,.geojson,.json,.csv,.txt" style="display:none">
       <button class="sec" id="pmT" style="flex:0">● Lacak</button><button class="sec" id="pmI" style="flex:0">Ke IUP</button><button class="sec" id="pmO" style="flex:0">Simpan offline</button></div>
     <div id="pmPanel" class="card" style="display:none;margin:8px 0 0;padding:8px;background:#f6f7f2"></div>
     <div style="position:relative"><div id="pmap" style="height:70vh;margin-top:8px;border-radius:10px;overflow:hidden;background:#dfe5df"></div>
       <div id="pmLeg" style="position:absolute;left:8px;top:16px;background:rgba(255,255,255,.88);border-radius:8px;padding:6px 8px;font-size:12px;line-height:1.6">${[["RENCANA", "Rencana"], ["PROGRES", "Progres (continue)"], ["EOH", "EOH / STB (selesai bor)"]].map(([k, t]) => `<div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${WARNA_STATUS[k]};border:1.5px solid #111;vertical-align:-1px"></span> ${t}</div>`).join("")}<div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;border:2.5px solid #e00;vertical-align:-1px"></span> di luar IUP</div></div></div>
-    <div class="muted" id="pmInfo" style="margin-top:6px;min-height:1.2em">Memuat peta…</div>
+    <div class="muted" id="pmInfo" style="margin-top:6px;min-height:1.2em">Memuat peta…</div><div id="pm3info" style="font-size:12px;color:#12251E;margin-top:2px"></div>
     <p class="muted" style="margin:4px 0 0">Relief: DEMNAS (BIG) ±8 m sampai pantai; di hutan bisa mengikuti puncak pohon. Citra: Esri World Imagery (perlu sinyal). GPS, relief, IUP, lubang & lapisan tetap jalan offline setelah “Simpan offline”.</p></div>`;
   try { if (!window.maplibregl) { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "vendor/maplibre-gl.css"; document.head.appendChild(l); await muatJS("vendor/maplibre-gl.js", () => window.maplibregl); } }
   catch (e) { return ($("#pmInfo").textContent = e.message); }
@@ -3123,7 +3123,7 @@ async function petaView(v) {
           rencana_kedalaman: kk ? Number(String(f.properties?.[kk] ?? "").replace(",", ".")) || null : null, sumber_file: hasil.nama })).filter((r) => r.bhid);
         const dup = rows.map((r) => r.bhid).filter((b2, i, a) => a.indexOf(b2) !== i); if (dup.length) { m.querySelector("#iok").disabled = false; return (m.querySelector("#ime").textContent = "Hole ID ganda di file: " + [...new Set(dup)].slice(0, 10).join(", ")); }
         const { error } = await sb.from("rencana_lubang").upsert(rows, { onConflict: "project,bhid" }); if (error) { m.querySelector("#iok").disabled = false; return (m.querySelector("#ime").textContent = error.message); }
-        m.remove(); await muatLubang(); gambarLubang(); $("#pmInfo").textContent = `${rows.length} rencana titik bor diimpor.`; return;
+        m.remove(); await muatLubang(); gambarLubang(); gambarKolom3D(); $("#pmInfo").textContent = `${rows.length} rencana titik bor diimpor.`; return;
       }
       const ly = { id: crypto.randomUUID(), nama: m.querySelector("#inm").value.trim() || hasil.nama, warna: m.querySelector("#iwr").value, geojson: fc };
       if (m.querySelector("#itp").value === "server") {
@@ -3141,6 +3141,37 @@ async function petaView(v) {
     pop.getElement().insertAdjacentHTML("beforeend", `<button class="sec" data-prof style="margin-top:4px;width:auto;padding:6px 10px">📊 Profil bor</button>`);
     pop.getElement().querySelector("[data-prof]").addEventListener("click", () => profilModal(p.bhid));
     pop.getElement().querySelector("[data-pakai]")?.addEventListener("click", (e) => { localStorage.setItem("bhid", e.target.dataset.pakai); document.body.style.overflow = ""; tab = "prog"; localStorage.setItem("tab", tab); render(); }); };
+  // ---- 3D: kolom log tiap lubang (warna layer) + topografi diredupkan agar lubang terlihat ----
+  let PRF = JSON.parse(localStorage.getItem("petaProfil") || "[]");
+  const muatProfil = async () => { if (!online() || !L.length) return; const { data } = await sb.from("v_profil_bor").select("bhid,dari_m,sampai_m,zona,nama_zona,warna").in("bhid", L.map((f) => f.properties.bhid)).order("bhid").order("dari_m");
+    if (data) { PRF = data; try { localStorage.setItem("petaProfil", JSON.stringify(data)); } catch {} } };
+  let HE3 = 1, N3 = 0;
+  const gambarKolom3D = () => {
+    const fs = [], dalam = (b, f) => Math.max(+f.properties.kd || 0, ...PRF.filter((r) => r.bhid === b).map((r) => +r.sampai_m));
+    const maxD = Math.max(5, ...L.map((f) => dalam(f.properties.bhid, f)));
+    // ukuran kolom mengikuti sebaran titik bor agar terlihat dari tampilan menyeluruh; panjang dapat diatur
+    const cs = L.map((f) => f.geometry.coordinates), la = cs.length ? cs.reduce((t, c) => t + c[1], 0) / cs.length : 0, kx = 111320 * Math.cos((la * Math.PI) / 180);
+    const span = cs.length > 1 ? Math.max((Math.max(...cs.map((c) => c[0])) - Math.min(...cs.map((c) => c[0]))) * kx, (Math.max(...cs.map((c) => c[1])) - Math.min(...cs.map((c) => c[1]))) * 110574) : 500;
+    const kali = Number(localStorage.getItem("kolom3d") || 1), hw = Math.max(8, Math.min(60, span * 0.006));
+    HE3 = Math.max(1, Math.round((Math.max(150, span * 0.09) * kali) / maxD));
+    for (const f of L) { const b = f.properties.bhid, [lon, lat] = f.geometry.coordinates, D = dalam(b, f); if (!(D > 0)) continue;
+      const dx = hw / (111320 * Math.cos((lat * Math.PI) / 180)), dy = hw / 110574, kotak = [[[lon - dx, lat - dy], [lon + dx, lat - dy], [lon + dx, lat + dy], [lon - dx, lat + dy], [lon - dx, lat - dy]]];
+      const R = PRF.filter((r) => r.bhid === b), iv = R.length ? R.map((r) => [+r.dari_m, +r.sampai_m, r.warna, r.nama_zona]) : [[0, D, f.properties.warna, LABEL_STATUS[f.properties.status] ?? ""]];
+      for (const [a0, b0, w, nm] of iv) fs.push({ type: "Feature", properties: { bhid: b, nm, base: (D - b0) * HE3, top: (D - a0) * HE3, warna: w || "#999" }, geometry: { type: "Polygon", coordinates: kotak } }); }
+    const fc = { type: "FeatureCollection", features: fs }; N3 = new Set(fs.map((x) => x.properties.bhid)).size;
+    if (map.getSource("lb3d")) map.getSource("lb3d").setData(fc);
+    else { map.addSource("lb3d", { type: "geojson", data: fc });
+      map.addLayer({ id: "lb3d", type: "fill-extrusion", source: "lb3d", layout: { visibility: map.getPitch() > 5 ? "visible" : "none" },
+        paint: { "fill-extrusion-color": ["get", "warna"], "fill-extrusion-base": ["get", "base"], "fill-extrusion-height": ["get", "top"], "fill-extrusion-opacity": 0.95, "fill-extrusion-vertical-gradient": false } }); }
+  };
+  const TOPO3 = { redup: { sat: -0.75, kon: -0.45, bmin: 0.38, op: 0.75, hs: 0.12 }, sedang: { sat: -0.4, kon: -0.2, bmin: 0.18, op: 0.9, hs: 0.25 }, asli: { sat: 0, kon: 0, bmin: 0, op: 1, hs: 0.35 } };
+  const terapkanTopo = () => { const is3 = map.getPitch() > 5, t = TOPO3[is3 ? localStorage.getItem("topo3d") || "redup" : "asli"] ?? TOPO3.redup;
+    for (const id of ["sat", "osm"]) if (map.getLayer(id)) { map.setPaintProperty(id, "raster-saturation", t.sat); map.setPaintProperty(id, "raster-contrast", t.kon); map.setPaintProperty(id, "raster-brightness-min", t.bmin); map.setPaintProperty(id, "raster-opacity", t.op); }
+    if (map.getLayer("hs")) map.setPaintProperty("hs", "hillshade-exaggeration", t.hs);
+    if (map.getLayer("lb3d")) map.setLayoutProperty("lb3d", "visibility", is3 ? "visible" : "none");
+    $("#pmTopo").style.display = is3 ? "" : "none"; $("#pmKl").style.display = is3 ? "" : "none";
+    const n3 = N3;
+    $("#pm3info").textContent = is3 ? `3D: ${n3} kolom lubang bor berdiri di atas collar, panjang diperbesar ${HE3}× · urutan seperti log (atas kolom = permukaan, dasar kolom = akhir lubang) · warna = layer dari Form Logging (lubang tanpa logging = warna status).` : ""; };
   const gambarLubang = () => {
     LBL.lubang.forEach((mk) => mk.remove());
     LBL.lubang = L.map((f) => { const p = f.properties, el = document.createElement("div"), r = p.status === "RENCANA" ? 11 : 15;
@@ -3173,7 +3204,7 @@ async function petaView(v) {
     map.addLayer({ id: "trkSimpan", type: "line", source: "trkSimpan", paint: { "line-color": "#ff00d4", "line-width": 3 } });
     map.addLayer({ id: "trk", type: "line", source: "trk", paint: { "line-color": "#00e5ff", "line-width": 3.5, "line-dasharray": [2, 1] } });
 
-    await Promise.all([muatLubang(), muatLapisan()]); gambarLubang(); gambarLapisan(); gambarTrack(); terapkanVis(); panel();
+    await Promise.all([muatLubang(), muatLapisan()]); await muatProfil().catch(() => {}); gambarLubang(); gambarKolom3D(); terapkanTopo(); gambarLapisan(); gambarTrack(); terapkanVis(); panel();
     if (trk) mulaiLacak();
     const hit = (st) => L.filter((f) => f.properties.status === st).length;
     $("#pmInfo").textContent = `${L.length} lubang (rencana ${hit("RENCANA")}, progres ${hit("PROGRES")}, EOH ${hit("EOH")}, STB ${hit("STB")}) · ${LAY.length} lapisan tambahan · ketuk peta untuk koordinat & elevasi${online() ? "" : " · OFFLINE: data terakhir yang tersimpan"}`;
@@ -3188,7 +3219,12 @@ async function petaView(v) {
   map.on("click", (e) => info(e.lngLat));
   geo.on("geolocate", (p) => { if (watch === null) info({ lng: p.coords.longitude, lat: p.coords.latitude }); });
   $("#pmB").onchange = (e) => { ["sat", "osm"].forEach((k) => map.setLayoutProperty(k, "visibility", e.target.value === k ? "visible" : "none")); };
-  $("#pm3").onclick = () => { const p = map.getPitch() > 5 ? 0 : 65; map.easeTo({ pitch: p, bearing: p ? -20 : 0, duration: 800 }); $("#pm3").textContent = p ? "2D" : "3D"; };
+  $("#pm3").onclick = () => { const p = map.getPitch() > 5 ? 0 : 65, cs = L.filter((f) => +f.properties.kd > 0 || PRF.some((r) => r.bhid === f.properties.bhid)).map((f) => f.geometry.coordinates);
+    if (p && cs.length) { const bb = new maplibregl.LngLatBounds(); cs.forEach((c) => bb.extend(c)); map.fitBounds(bb, { pitch: p, bearing: -20, padding: { top: 140, bottom: 60, left: 60, right: 60 }, maxZoom: 16.5, duration: 1000 }); }
+    else map.easeTo({ pitch: p, bearing: p ? -20 : 0, duration: 800 }); $("#pm3").textContent = p ? "2D" : "3D"; };
+  $("#pmK").oninput = (e) => { localStorage.setItem("kolom3d", e.target.value); gambarKolom3D(); terapkanTopo(); };
+  map.on("pitchend", () => { $("#pm3").textContent = map.getPitch() > 5 ? "2D" : "3D"; terapkanTopo(); });
+  $("#pmTopo").onchange = (e) => { localStorage.setItem("topo3d", e.target.value); terapkanTopo(); };
   $("#pmX").oninput = () => { $("#pmXv").textContent = String(eks()).replace(".", ",") + "×"; if (map.getTerrain()) map.setTerrain({ source: "dem", exaggeration: eks() }); };
   $("#pmL").onclick = () => { const p = $("#pmPanel"); p.style.display = p.style.display === "none" ? "" : "none"; };
   // Layar penuh: tombol ⛶ di dalam peta (pojok kanan atas, seperti aplikasi peta lain). Saat penuh, hanya peta yang tampil;
