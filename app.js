@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.16";
+const APP_VERSION = "2026-11-17.17";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2282,7 +2282,7 @@ async function dbView(v) {
       aoa.push([], ["Tebal zona per lubang", "Limonit (m)", "Saprolit (m)", "Conto", "Recovery %"]);
       for (const h of got.lubang.filter((h) => h.jumlah_conto > 0)) aoa.push([h.bhid, h.tebal_limonit, h.tebal_saprolit, h.jumlah_conto, h.recovery_pct]);
       X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Dashboard");
-      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = isClient() ? "Excel diunduh (sheet terakhir = Dashboard)." : "Excel diunduh (18 sheet termasuk Rekap operator & Status Form Logging; sheet terakhir = Dashboard). Grafik lengkap ada di menu Dashboard dan di ekspor harian Google Drive.";
+      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = isClient() ? "Excel diunduh (sheet terakhir = Dashboard)." : "Excel diunduh (18 sheet termasuk Rekap operator & Status Form Logging; sheet terakhir = Dashboard). Grafik lengkap ada di menu Dashboard.";
     } catch (e) { $("#info").textContent = e.message; }
   };
   show(st.page || 0);
