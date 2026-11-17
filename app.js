@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.27";
+const APP_VERSION = "2026-11-17.28";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -82,6 +82,8 @@ async function sync() {
       if (it.kind === "event" || it.kind === "p2h") { await syncProg(it); continue; }
       if (it.kind === "ddr") { await syncDDR(it); continue; }
       if (it.kind === "arsip") { await syncArsip(it); continue; }
+      if (it.kind === "marking") { const r = await sb.from("marking").upsert(it.row, { onConflict: "client_uuid", ignoreDuplicates: true });
+        if (r.error) { it.error = r.error.message; await qPut(it); } else await qDel(it.client_uuid); continue; }
       const path = `${session.user.id}/${it.client_uuid}.jpg`;
       const up = await sb.storage.from("scan-photos").upload(path, it.blob, { contentType: "image/jpeg", upsert: false });
       if (up.error && !/exists|Duplicate/i.test(up.error.message)) { it.error = up.error.message; await qPut(it); continue; }
@@ -614,7 +616,7 @@ function simpanPersonilLokal(rig, capturedAt, t, L) {
 }
 async function progView(v) {
   const rig = localStorage.getItem("rig") || "", bh = localStorage.getItem("bhid") || "", shift = localStorage.getItem("shift") || "PAGI";
-  const q = (await qAll()).filter((x) => x.kind === "event" || x.kind === "p2h");
+  const q = (await qAll()).filter((x) => x.kind === "event" || x.kind === "p2h" || x.kind === "marking");
   v.innerHTML = `<div class="card"><h2>Progres pemboran</h2>
    <div class="row"><div><label>Rig</label>${rigField()}</div>
    <div><label>Hole ID</label><input id="pb" data-bhid value="${esc(bh)}" autocapitalize="characters"></div>
@@ -627,10 +629,11 @@ async function progView(v) {
     <button data-ev="ACT">Foto aktivitas<small>angkat run · ganti mata bor · tambah stang · standby · lainnya</small></button>
     <button data-ev="SELESAI_BOR">Selesai bor / stop<small>foto akhir</small></button>
     <button data-ev="KELUAR" class="sec">Keluar shift</button>
+    ${isStaff() ? `<button data-mk="1" class="sec">📍 Marking titik<small>koordinat GPS + akurasi · boleh berkali-kali</small></button>` : ""}
    </div>
    <input id="pf" type="file" accept="image/*" capture="environment" class="hide"><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean progres di HP (${q.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
-   <ul class="list">${q.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "p2h" ? "P2H " + (x.row.layak_operasi ? "LAYAK" : "TIDAK LAYAK") : EV[x.row.event_type])} · ${esc(x.row.rig)} ${esc(x.row.bhid ?? "")}<br><span class="muted">${fmtT(x.row.captured_at)}${x.row.lat ? "" : " · tanpa GPS"}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
+   <ul class="list">${q.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "p2h" ? "P2H " + (x.row.layak_operasi ? "LAYAK" : "TIDAK LAYAK") : x.kind === "marking" ? `Marking ±${x.row.akurasi_m} m` : EV[x.row.event_type])} · ${esc(x.row.rig)} ${esc(x.row.bhid ?? "")}<br><span class="muted">${fmtT(x.row.captured_at)}${x.row.lat ? "" : " · tanpa GPS"}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
    <div class="card"><h3>Hari ini (terkirim)</h3><div id="today" class="muted">${navigator.onLine && !session.offline ? "Memuat…" : "Offline — tampil saat ada sinyal."}</div></div>`;
   const keep = () => { localStorage.setItem("rig", $("#rg").value.trim().toUpperCase()); localStorage.setItem("bhid", bakuBH($("#pb").value)); localStorage.setItem("shift", $("#sh").value); };
   let pending = null;
@@ -639,6 +642,7 @@ async function progView(v) {
     if (b.dataset.ev !== "MASUK" && b.dataset.ev !== "KELUAR" && !localStorage.getItem("bhid")) return ($("#e").textContent = "Isi Hole ID dulu.");
     $("#e").textContent = ""; pending = b.dataset.ev; $("#pf").click();
   }));
+  v.querySelector("[data-mk]")?.addEventListener("click", () => { keep(); markingForm(); });
   v.querySelector("[data-p2h]").onclick = () => { keep(); if (!localStorage.getItem("rig")) return ($("#e").textContent = "Isi nama rig dulu."); p2hForm(); };
   $("#pf").onchange = async (ev) => {
     const file = ev.target.files[0]; ev.target.value = ""; if (!file) return;
@@ -722,6 +726,38 @@ async function progView(v) {
       if (data?.signedUrl) return ($("#phv").innerHTML = `<img src="${data.signedUrl}" alt="Foto aktivitas bor" style="width:100%;border-radius:8px">`);
       const dv = await linkDrive("progress-photos", b.dataset.ph); $("#phv").innerHTML = dv ? `<p>Foto sudah dipindah ke Google Drive. <a href="${esc(dv)}" target="_blank" rel="noopener">Buka di Drive</a></p>` : `<p class="err">Foto tidak ditemukan.</p>`; }));
   }
+}
+// ---------- Marking titik: setiap pembacaan GPS = satu baris di database (akurasi ikut tersimpan) ----------
+function markingForm() {
+  const m = modal(`<h3>📍 Marking titik bor</h3>
+    <label>Hole ID *</label><input id="mkb" data-bhid value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters">
+    <div id="mkg" style="margin:10px 0;padding:10px;border-radius:10px;background:#f1f3ef;font-size:14px">Menunggu GPS… aktifkan Lokasi HP.</div>
+    <label>Catatan (opsional)</label><input id="mkc" placeholder="mis. patok kayu baru, di bahu bukit">
+    <p class="muted">Setiap tekan <b>Simpan pembacaan</b> tersimpan sebagai satu baris sendiri lengkap dengan akurasinya — ambil 2–3 kali bila perlu. Tunggu angka ± turun (idealnya ≤ 5 m) sebelum menyimpan.</p>
+    <div class="row"><button id="mks">Simpan pembacaan</button><button class="sec" id="mkx">Selesai</button></div>
+    <div id="mke" class="err"></div><ul class="list" id="mkl"></ul>`);
+  let c = null, ct = null, ke = 0;
+  const tampil = () => { if (!c) return; const acc = c.accuracy, warna = acc <= 5 ? "#C8EBD4" : acc <= 15 ? "#FFE58A" : "#F6C9C3", u = UTM.ke(c.longitude, c.latitude);
+    const r = rencanaLokal().find((z) => kunciBH(z.bhid) === kunciBH(m.querySelector("#mkb").value)), d = r ? jarakM([c.longitude, c.latitude], [r.lon, r.lat]) : null;
+    const g = m.querySelector("#mkg"); g.style.background = warna;
+    g.innerHTML = `<b>±${acc.toFixed(1)} m</b> ${acc <= 5 ? "akurasi baik" : acc <= 15 ? "cukup — tunggu sebentar" : "kurang — tunggu GPS terkunci"}<br>${c.latitude.toFixed(7)}, ${c.longitude.toFixed(7)} · UTM 51S E ${u[0].toFixed(1)} N ${u[1].toFixed(1)}${c.altitude != null ? `<br>Tinggi GPS ${c.altitude.toFixed(1)} m${c.altitudeAccuracy != null ? ` ±${c.altitudeAccuracy.toFixed(1)} m` : ""}` : ""}${d != null ? `<br>Jarak ke titik rencana ${esc(r.bhid)}: <b>${d < 1000 ? d.toFixed(1) + " m" : (d / 1000).toFixed(2) + " km"}</b>` : ""}`; };
+  const wid = navigator.geolocation?.watchPosition((p) => { c = p.coords; ct = p.timestamp; tampil(); },
+    () => (m.querySelector("#mkg").textContent = "GPS tidak didapat — aktifkan Lokasi HP dan izinkan untuk aplikasi."), { enableHighAccuracy: true, maximumAge: 0, timeout: 60000 });
+  m.querySelector("#mkb").addEventListener("input", tampil);
+  m.querySelector("#mkx").onclick = () => { if (wid != null) navigator.geolocation.clearWatch(wid); m.remove(); render(); };
+  m.querySelector("#mks").onclick = async () => {
+    const bhid = bakuBH(m.querySelector("#mkb").value), e = m.querySelector("#mke"); e.textContent = "";
+    if (!bhid) return (e.textContent = "Isi Hole ID.");
+    if (!c) return (e.textContent = "GPS belum didapat.");
+    if (c.accuracy > 15 && !confirm(`Akurasi baru ±${c.accuracy.toFixed(0)} m. Tetap simpan pembacaan ini?`)) return;
+    const u = UTM.ke(c.longitude, c.latitude), z = await tinggiDi(c.longitude, c.latitude).catch(() => null), id = crypto.randomUUID();
+    const row = { client_uuid: id, bhid, lat: c.latitude, lon: c.longitude, x_utm: +u[0].toFixed(3), y_utm: +u[1].toFixed(3), akurasi_m: +c.accuracy.toFixed(1),
+      z_gps: c.altitude != null ? +c.altitude.toFixed(2) : null, akurasi_z_m: c.altitudeAccuracy != null ? +c.altitudeAccuracy.toFixed(1) : null, z_dem: z != null ? +z.toFixed(1) : null,
+      instrument: "GPS HP", catatan: m.querySelector("#mkc").value.trim() || null, rig: localStorage.getItem("rig") || null, project: myTugas?.project ?? null, captured_at: new Date(ct || Date.now()).toISOString() };
+    await qPut({ kind: "marking", client_uuid: id, row }); localStorage.setItem("bhid", bhid); ke++;
+    m.querySelector("#mkl").insertAdjacentHTML("afterbegin", `<li><span class="pill ANTRE">antre</span><span>Pembacaan ${ke} · ${esc(bhid)} · ${fmtT(row.captured_at).slice(-8)} · ±${row.akurasi_m} m</span></li>`);
+    sync();
+  };
 }
 async function p2hForm() {
   let items = JSON.parse(localStorage.getItem("p2hItems") || "null") ?? P2H_DEFAULT;
@@ -1935,6 +1971,7 @@ const DATASETS = {
   kepatuhan: { t: "Rekap operator harian", v: "v_kepatuhan_harian", order: ["tanggal", "nama"], bh: null },
   logging: { t: "Status Form Logging per lubang", v: "v_logging_lubang", order: ["bhid"], bh: "bhid" },
   koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
+  marking: { t: "Marking koordinat (semua pembacaan + akurasi)", v: "v_survey_marking", order: ["tanggal", "bhid", "ke"], bh: "bhid" },
   corefile: { t: "Foto core (file)", v: "core_photo", sel: "id,bhid,box_no,depth_from,depth_to,photo_type,photo_path,status,sop_ok,ditolak,alasan_tolak,captured_at,created_at,project", order: ["bhid", "depth_from"], bh: "bhid" },
   scanfile: { t: "Scan Form Logging (file)", v: "scan_job", sel: "id,form_type,bhid_hint,page_no,status,photo_path,sumber,file_name,captured_at,created_at,reviewed_at,review_note,project", order: ["created_at"], bh: "bhid_hint" },
   arsip: { t: "Arsip terhapus (admin)", v: "deleted_record", order: ["deleted_at"], bh: "bhid", admin: true },
@@ -1974,8 +2011,8 @@ function dbQuery(d, f) {
   if (f.proj) { if (d.bh) q = q.in(d.bh, f.proj.bhids.length ? f.proj.bhids : ["-"]); else if (["v_dash_rig_day", "p2h_check", "v_kepatuhan_harian"].includes(d.v)) q = q.in("rig", f.proj.rigs.length ? f.proj.rigs : ["-"]); }
   if (f.bad && d.bad && ["chk_harian", "flags"].includes(d.bad[0])) q = q.neq(d.bad[0], "");
   else if (f.bad && d.bad) q = q.or(d.bad.map((c) => `and(${c}.not.is.null,${c}.not.in.(${[...OKV].map((x) => `"${x}"`).join(",")}))`).join(","));
-  const desc = ["v_kepatuhan_harian", "deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "form_photo", "v_ddr_list", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day", "scan_job"].includes(d.v);
-  for (const o of d.order) q = q.order(o, { ascending: !desc });
+  const desc = ["v_survey_marking", "v_kepatuhan_harian", "deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "form_photo", "v_ddr_list", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day", "scan_job"].includes(d.v);
+  for (const o of d.order) q = q.order(o, { ascending: d.v === "v_survey_marking" ? o !== "tanggal" : !desc }); // marking: tanggal terbaru dulu, pembacaan ke-1,2,3 berurutan
   return q;
 }
 async function fetchAll(d, f) {
@@ -2418,7 +2455,7 @@ async function dbView(v) {
     try {
       const X = await import("./vendor/xlsx.js"); const wb = X.utils.book_new();
       const got = {};
-      for (const k of dsAllowed() ?? ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "jam", "bbm", "lubang", "kinerja", "logging", "kepatuhan", "corefile", "scanfile", "arsipfoto"]) {
+      for (const k of dsAllowed() ?? ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "jam", "bbm", "lubang", "kinerja", "logging", "kepatuhan", "marking", "corefile", "scanfile", "arsipfoto"]) {
         const rows = (await tambahLink(k, await fetchAll(DATASETS[k], { ...f, bad: false }))).map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (Array.isArray(o[c])) o[c] = o[c].join("; "); return o; }); got[k] = rows;
         X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), DATASETS[k].t.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
       }
@@ -2430,7 +2467,7 @@ async function dbView(v) {
       aoa.push([], ["Tebal zona per lubang", "Limonit (m)", "Saprolit (m)", "Conto", "Recovery %"]);
       for (const h of got.lubang.filter((h) => h.jumlah_conto > 0)) aoa.push([h.bhid, h.tebal_limonit, h.tebal_saprolit, h.jumlah_conto, h.recovery_pct]);
       X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Dashboard");
-      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = isClient() ? "Excel diunduh (sheet terakhir = Dashboard)." : "Excel diunduh (18 sheet termasuk Rekap operator & Status Form Logging; sheet terakhir = Dashboard). Salinan Excel otomatis tiap malam 20.47 WIB ada di Google Drive: TGEP Drill Log / 03 Ekspor Database Harian; file foto & scan di 04 File Database.";
+      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = isClient() ? "Excel diunduh (sheet terakhir = Dashboard)." : "Excel diunduh (semua tabel termasuk Marking koordinat, Rekap operator & Status Form Logging; sheet terakhir = Dashboard). Salinan Excel otomatis tiap malam 20.47 WIB ada di Google Drive: TGEP Drill Log / 03 Ekspor Database Harian; file foto & scan di 04 File Database.";
     } catch (e) { $("#info").textContent = e.message; }
   };
   show(st.page || 0);
