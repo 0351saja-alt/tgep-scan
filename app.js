@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.5";
+const APP_VERSION = "2026-11-17.6";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1802,6 +1802,71 @@ function dbQuery(d, f) {
 async function fetchAll(d, f) {
   const out = []; for (let i = 0; ; i += 1000) { const { data, error } = await dbQuery(d, f).range(i, i + 999); if (error) throw error; out.push(...data); if (data.length < 1000) return out; }
 }
+// ---------- Database FIX (hanya data final) untuk Microsoft Access ----------
+// Final: sampel VERIFIED/SYNCED, DDR SIGNED, assay/QAQC yang sudah dilaporkan lab. Satu sheet = satu tabel Access.
+const FIX = [
+  ["collar", "holeid", "", "Collar lubang yang punya data final; status_lubang LENGKAP bila semua sampel final & bor selesai", "holeid,east,north,rl,depth,coord_source,area,prospect,grid,start_date,stop_date,core_size,sample_type,purpose,spacing,depth_tp,depth_l,depth_s,n_sample_final,n_sample_belum,status_lubang"],
+  ["survey", "holeid, depth", "holeid → collar", "Survey arah lubang (vertikal)", "holeid,depth,azimuth,dip"],
+  ["geology", "sample_no", "holeid → collar", "Logging geologi per interval (sampel VERIFIED/SYNCED)", "holeid,depth_from,depth_to,sample_no,sample_id,zone,lith1,lith1_pct,lith2,lith2_pct,colour,hardness,weathering,serpentinisation,silica_pct,garnierite_pct,min1,min1_pct,min2,min2_pct,core_length,recovery_pct,loss_from,loss_to,sample_wt_kg,comment,status_data,tgl_verifikasi"],
+  ["density", "sample_no", "sample_no → geology", "Density (caliper & Archimedes) sampel final", "holeid,depth_from,depth_to,sample_no,zone,len_cm,diam_cm,wet_wt_g,dry_wt_g,vol_caliper_ml,vol_arch_ml,wet_density,dry_density,wet_density_arch,dry_density_arch,moisture_pct,arch_diff_pct"],
+  ["assay", "lab_sample_id", "sample_no → geology", "Assay conto primer (hasil lab) dari sampel final", "holeid,depth_from,depth_to,sample_no,lab_sample_id,ni,co,fe,mgo,sio2,al2o3,cr2o3,cao,mno,loi,lab_job_no,method,date_reported"],
+  ["qaqc", "lab_sample_id", "", "Hasil QAQC lab (CRM, blank, duplikat)", "dispatch_id,seq_in_batch,lab_sample_id,qc_type,source_sample_no,crm_id,ni_cert_pct,ni_sd_pct,ni,co,fe,crm_z,lab_job_no,date_reported"],
+  ["ddr", "ddr_id", "", "DDR bertanda tangan (SIGNED)", "ddr_id,report_date,shift,rig,holeid,project,location,client,driller_name,helpers,crew_count,crew_nama,hm_start,hm_end,weather,hole_type,rod_m,target_m,total_depth_m,rig_type,notes"],
+  ["ddr_jam", "", "ddr_id → ddr", "Distribusi jam DDR SIGNED", "ddr_id,tanggal,rig,shift,holeid,kategori,kelompok,mulai,selesai,menit,keterangan"],
+  ["ddr_barang", "", "", "Pemakaian barang/consumable DDR SIGNED", "report_date,rig,shift,holeid,kategori,item,unit,qty,note"],
+  ["progres_harian", "", "", "Progres bor harian per rig/lubang dari foto bergeotag", "tanggal,rig,holeid,jam_masuk,jam_mulai_bor,jam_selesai_bor,jam_keluar,jumlah_run,meter_bor,core_terambil_m,recovery_pct,kedalaman_akhir,ganti_mata_bor,standby_menit,jam_kerja_bor,p2h_layak,p2h_item_tidak_ok,kejadian_bermasalah"],
+  ["absensi", "", "", "Absensi personil per shift (Masuk/Keluar shift) — data penggajian", "tanggal,shift,rig,project,nama,nama_tertulis,id_karyawan,perusahaan,jabatan,jam_masuk,jam_keluar,durasi_jam,status,status_nama,alasan_masuk"],
+  ["lookup", "list_name, code", "", "Daftar kode (zona, litologi, mineral, dll.)", "list_name,code,name,extra,sort"],
+];
+const keTanggal = (v) => { if (typeof v !== "string") return v; const m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!m || v.length > 26) return v; return m[4] ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : new Date(+m[1], m[2] - 1, +m[3]); };
+async function unduhFix(info) {
+  if (!online()) return alert("Perlu sinyal internet.");
+  try {
+    const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new(), skema = [];
+    for (const [t, pk, fk, ket, cols] of FIX) {
+      info.textContent = `Mengambil ${t}…`; const C = cols.split(","), rows = [];
+      for (let i = 0; ; i += 1000) { const { data, error } = await sb.from("fix_" + t).select(cols).range(i, i + 999); if (error) throw new Error(`${t}: ${error.message}`);
+        rows.push(...(data ?? [])); if (!data || data.length < 1000) break; }
+      const aoa = [C, ...rows.map((r) => C.map((c) => (r[c] === null || r[c] === undefined ? null : keTanggal(r[c]))))];
+      const ws = X.utils.aoa_to_sheet(aoa, { cellDates: true, dateNF: "yyyy-mm-dd hh:mm" }); X.utils.book_append_sheet(wb, ws, t);
+      skema.push({ tabel: t, kunci_utama: pk, relasi: fk, jumlah_baris: rows.length, keterangan: ket });
+    }
+    X.utils.book_append_sheet(wb, X.utils.json_to_sheet(skema), "_skema");
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([["TGEP — Database FIX (hanya data final)"], [`Diunduh ${new Date().toLocaleString("id-ID")} oleh ${me?.full_name ?? ""}`],
+      ["Final = sampel VERIFIED/SYNCED; DDR SIGNED; assay & QAQC yang sudah dilaporkan lab. Data draf/belum diperiksa tidak ikut."],
+      ["Impor ke Access: unduh 'Macro impor Access' (TGEP_Impor_Access.bas) dari aplikasi, di Access tekan Alt+F11 > File > Import File > pilih .bas, lalu jalankan ImporTGEP (F5)."],
+      ["Tanpa macro: Access > External Data > New Data Source > From File > Excel > pilih sheet satu per satu (baris pertama = nama kolom)."]]), "_info");
+    X.writeFile(wb, `TGEP_Database_FIX_${todayWIB()}.xlsx`, { cellDates: true });
+    info.textContent = `Database FIX diunduh: ${skema.map((x) => `${x.tabel} ${x.jumlah_baris}`).join(" · ")}`;
+  } catch (e) { info.textContent = "Gagal: " + e.message; }
+}
+function unduhMacroAccess() {
+  const T = FIX.map((x) => `"${x[0]}"`).join(", "), q = (sql) => `    msg = msg & Jalankan(db, "${sql}")`;
+  const L = ["Attribute VB_Name = \"TGEP_Impor\"", "Option Compare Database", "Option Explicit", "",
+    "' Impor Database FIX TGEP (file TGEP_Database_FIX_yyyy-mm-dd.xlsx dari aplikasi) ke database Access ini.",
+    "' Pakai: Alt+F11 > File > Import File > pilih file ini, klik di dalam ImporTGEP lalu tekan F5.",
+    "' Tabel lama dengan nama yang sama diganti isinya (impor ulang aman). Kunci utama & relasi dibuat ulang.", "",
+    "Public Function ImporTGEP()", "    Dim fd As Object, path As String, t As Variant, db As DAO.Database, msg As String, i As Integer",
+    "    Set fd = Application.FileDialog(3)", "    fd.Title = \"Pilih file TGEP_Database_FIX_....xlsx\"", "    fd.Filters.Clear", "    fd.Filters.Add \"Excel\", \"*.xlsx\"",
+    "    If fd.Show = 0 Then Exit Function", "    path = fd.SelectedItems(1)", "    Set db = CurrentDb",
+    "    For i = db.Relations.Count - 1 To 0 Step -1", "        If Left(db.Relations(i).Name, 3) = \"fk_\" Then db.Relations.Delete db.Relations(i).Name", "    Next i",
+    `    For Each t In Array(${T})`, "        On Error Resume Next", "        DoCmd.DeleteObject acTable, t", "        Err.Clear", "        On Error GoTo 0",
+    "        DoCmd.TransferSpreadsheet acImport, acSpreadsheetTypeExcel12Xml, t, path, True, t & \"!\"", "    Next t",
+    q("ALTER TABLE collar ADD CONSTRAINT pk_collar PRIMARY KEY (holeid)"), q("ALTER TABLE geology ADD CONSTRAINT pk_geology PRIMARY KEY (sample_no)"),
+    q("ALTER TABLE density ADD CONSTRAINT pk_density PRIMARY KEY (sample_no)"), q("ALTER TABLE assay ADD CONSTRAINT pk_assay PRIMARY KEY (lab_sample_id)"),
+    q("ALTER TABLE qaqc ADD CONSTRAINT pk_qaqc PRIMARY KEY (lab_sample_id)"), q("ALTER TABLE ddr ADD CONSTRAINT pk_ddr PRIMARY KEY (ddr_id)"),
+    q("ALTER TABLE survey ADD CONSTRAINT pk_survey PRIMARY KEY (holeid, depth)"), q("ALTER TABLE lookup ADD CONSTRAINT pk_lookup PRIMARY KEY (list_name, code)"),
+    q("ALTER TABLE survey ADD CONSTRAINT fk_survey_collar FOREIGN KEY (holeid) REFERENCES collar (holeid)"),
+    q("ALTER TABLE geology ADD CONSTRAINT fk_geology_collar FOREIGN KEY (holeid) REFERENCES collar (holeid)"),
+    q("ALTER TABLE density ADD CONSTRAINT fk_density_geology FOREIGN KEY (sample_no) REFERENCES geology (sample_no)"),
+    q("ALTER TABLE assay ADD CONSTRAINT fk_assay_geology FOREIGN KEY (sample_no) REFERENCES geology (sample_no)"),
+    q("ALTER TABLE ddr_jam ADD CONSTRAINT fk_ddrjam_ddr FOREIGN KEY (ddr_id) REFERENCES ddr (ddr_id)"),
+    "    MsgBox \"Impor TGEP selesai: 12 tabel.\" & IIf(msg = \"\", \"\", vbCrLf & vbCrLf & \"Catatan:\" & vbCrLf & msg), vbInformation", "End Function", "",
+    "Private Function Jalankan(db As DAO.Database, sql As String) As String", "    On Error Resume Next", "    db.Execute sql, dbFailOnError",
+    "    If Err.Number <> 0 Then Jalankan = \"- \" & sql & \" : \" & Err.Description & vbCrLf", "End Function", ""];
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([L.join("\r\n")], { type: "text/plain" })); a.download = "TGEP_Impor_Access.bas"; a.click();
+}
 async function dbView(v) {
   const keys = dsAllowed() ?? Object.keys(DATASETS).filter((k) => !DATASETS[k].admin || me?.role === "admin");
   const st = JSON.parse(sessionStorage.getItem("dbst") || '{"ds":"collar","bh":"","bad":false,"page":0}');
@@ -1816,8 +1881,11 @@ async function dbView(v) {
     <button id="go" style="flex:0">Tampilkan</button>
     <button class="sec" id="xl" style="flex:0">Unduh Excel (semua tabel)</button>
     <button class="sec" id="csv" style="flex:0">Unduh CSV tabel ini</button>
+    ${isClient() ? "" : `<button id="acc" style="flex:0;white-space:nowrap">Unduh database FIX (Access)</button><button class="sec" id="accm" style="flex:0;white-space:nowrap">Macro impor Access</button>`}
    </div><div id="info" class="muted" style="margin-top:8px"></div></div>
    <div class="card"><div id="tb"></div><div class="row" style="margin-top:8px"><button class="sec" id="pv" style="flex:0">← Sebelumnya</button><button class="sec" id="nx" style="flex:0">Berikutnya →</button></div></div>`;
+  $("#acc")?.addEventListener("click", () => unduhFix($("#info")));
+  $("#accm")?.addEventListener("click", unduhMacroAccess);
   let projF = null;
   const read = () => ({ ds: $("#ds").value, bh: $("#fb").value.trim().toUpperCase(), bad: $("#fbad").checked, page: st.page, proj: projF });
   $("#fproj").onchange = async () => { sessionStorage.setItem("filterProyek", $("#fproj").value); projF = await proyekFilter(); };
