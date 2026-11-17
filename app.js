@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.9";
+const APP_VERSION = "2026-11-17.10";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1952,6 +1952,8 @@ async function petaView(v) {
   try { if (!window.maplibregl) { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "vendor/maplibre-gl.css"; document.head.appendChild(l); await muatJS("vendor/maplibre-gl.js", () => window.maplibregl); } }
   catch (e) { return ($("#pmInfo").textContent = e.message); }
   const BB = [121.725, -1.8, 121.85, -1.622], demURL = new URL("peta/dem/", location.href).href + "{z}/{x}/{y}.png";
+  // Batas IUP: selalu ambil terbaru dari server saat online (jangan hanya andalkan simpanan sesi), simpan untuk offline
+  if (online()) { const { data, error } = await sb.from("wilayah").select("nama,nomor_sk,titik").eq("aktif", true); if (!error && data) localStorage.setItem("wilayah", JSON.stringify(data)); }
   const W = JSON.parse(localStorage.getItem("wilayah") || "[]");
   const map = (petaML = new maplibregl.Map({ container: "pmap", bounds: [[121.7387, -1.726], [121.7784, -1.6327]], fitBoundsOptions: { padding: 25 }, maxPitch: 80, attributionControl: { compact: true },
     style: { version: 8, sources: {
@@ -1990,14 +1992,31 @@ async function petaView(v) {
       map.addLayer({ id: id + "_l", type: "line", source: id, filter: ["in", "$type", "Polygon", "LineString"], layout: { visibility: on }, paint: { "line-color": c, "line-width": 2 } }, "trk");
       map.addLayer({ id: id + "_p", type: "circle", source: id, filter: ["==", "$type", "Point"], layout: { visibility: on }, paint: { "circle-radius": 4.5, "circle-color": c, "circle-stroke-color": "#111", "circle-stroke-width": 1 } }, "trk"); }
   };
+  // Zoom ke lapisan: kumpulkan semua koordinat lalu fitBounds (titik tunggal → zoom 16)
+  const zoomKe = (coords, pesan) => { const bb = new maplibregl.LngLatBounds(); const tiap = (c) => (typeof c[0] === "number" ? (Number.isFinite(c[0]) && bb.extend([c[0], c[1]])) : c.forEach(tiap)); tiap(coords);
+    if (bb.isEmpty()) return ($("#pmInfo").textContent = `${pesan}: tidak ada data untuk di-zoom.`);
+    const sw = bb.getSouthWest(), ne = bb.getNorthEast(); if (sw.lng === ne.lng && sw.lat === ne.lat) map.flyTo({ center: sw, zoom: 16 }); else map.fitBounds(bb, { padding: 50, maxZoom: 17, duration: 800 });
+    $("#pmInfo").textContent = `Zoom ke ${pesan}`; };
+  const zoomLapisan = (k) => {
+    if (k === "iup") return zoomKe(W.map((w) => w.titik.map((t) => [t.lon, t.lat])), "batas IUP");
+    if (k === "track") return zoomKe(trk?.pts ?? [], "jejak yang sedang direkam");
+    if (k.startsWith("st_")) { const st = k.slice(3); setVis(k, true); terapkanVis(); panel(); return zoomKe(L.filter((f) => f.properties.status === st).map((f) => f.geometry.coordinates), `lubang ${LABEL_STATUS[st]}`); }
+    if (k === "lbl") return zoomKe(L.map((f) => f.geometry.coordinates), "semua lubang");
+    if (k.startsWith("ly_")) { const ly = LAY.find((x) => "ly_" + x.id === k); if (!ly) return; setVis(k, true); terapkanVis(); panel(); return zoomKe(ly.geojson.features.filter((f) => f.geometry).map((f) => f.geometry.coordinates), ly.nama); }
+    if (k.startsWith("tr_")) { const t = JSON.parse(localStorage.getItem("trackList") || "[]")[Number(k.slice(3))]; if (!t) return;
+      map.getSource("trkSimpan")?.setData({ type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: t.pts.map((p) => [p[0], p[1]]) } }] });
+      return zoomKe(t.pts.map((p) => [p[0], p[1]]), `jejak “${t.nama}” (${(t.km ?? 0).toFixed(2)} km)`); }
+  };
+  const tz = (k) => `<a href="#" data-zm="${k}" title="Zoom ke lapisan ini" style="text-decoration:none;margin-left:2px">⌖</a>`;
   const panel = () => {
-    const ck = (k, t, def = true, extra = "") => `<label style="display:flex;gap:6px;align-items:center;margin:2px 0"><input type="checkbox" data-vk="${k}" ${tampil(k, def) ? "checked" : ""} style="width:auto">${t}${extra}</label>`;
-    $("#pmPanel").innerHTML = `<div class="row" style="flex-wrap:wrap;gap:18px;align-items:flex-start"><div><b>Dasar</b>${ck("hs", "Bayangan relief")}${ck("iup", "Batas IUP")}${ck("iupno", "Nomor titik IUP")}${ck("track", "Jejak GPS (lacak)")}</div>
+    const ck = (k, t, def = true, extra = "", zoom = true) => `<label style="display:flex;gap:6px;align-items:center;margin:2px 0"><input type="checkbox" data-vk="${k}" ${tampil(k, def) ? "checked" : ""} style="width:auto">${t}${zoom ? tz(k) : ""}${extra}</label>`;
+    $("#pmPanel").innerHTML = `<div class="row" style="flex-wrap:wrap;gap:18px;align-items:flex-start"><div><b>Dasar</b>${ck("hs", "Bayangan relief", true, "", false)}${ck("iup", "Batas IUP")}${ck("iupno", "Nomor titik IUP", true, "", false)}${ck("track", "Jejak GPS (lacak)")}</div>
       <div><b>Lubang bor</b>${Object.keys(LABEL_STATUS).filter((k) => k !== "SELESAI").map((k) => ck("st_" + k, LABEL_STATUS[k])).join("")}${ck("lbl", "Nama lubang")}</div>
       <div><b>Lapisan tambahan</b>${LAY.map((ly) => ck("ly_" + ly.id, `<span style="display:inline-block;width:12px;height:12px;background:${esc(ly.warna)};border-radius:3px"></span> ${esc(ly.nama)} <span class="muted">${ly.server ? "(server)" : "(HP ini)"}</span>`, true,
         (ly.server ? bisaTulis : true) ? ` <a href="#" data-del="${ly.id}" data-srv="${ly.server ? 1 : 0}" style="color:#c00">hapus</a>` : "")).join("") || `<span class="muted">Belum ada. Pakai “Impor file”.</span>`}</div>
-      <div><b>Jejak tersimpan</b>${(JSON.parse(localStorage.getItem("trackList") || "[]")).map((t, i) => `<div>${esc(t.nama)} <span class="muted">${(t.km ?? 0).toFixed(2)} km</span> <a href="#" data-gpx="${i}">GPX</a> · <a href="#" data-kml="${i}">KML</a> · <a href="#" data-tdel="${i}" style="color:#c00">hapus</a></div>`).join("") || `<span class="muted">Belum ada.</span>`}</div></div>`;
+      <div><b>Jejak tersimpan</b>${(JSON.parse(localStorage.getItem("trackList") || "[]")).map((t, i) => `<div>${esc(t.nama)} ${tz("tr_" + i)} <span class="muted">${(t.km ?? 0).toFixed(2)} km</span> <a href="#" data-gpx="${i}">GPX</a> · <a href="#" data-kml="${i}">KML</a> · <a href="#" data-tdel="${i}" style="color:#c00">hapus</a></div>`).join("") || `<span class="muted">Belum ada.</span>`}</div></div>`;
     $("#pmPanel").querySelectorAll("[data-vk]").forEach((c) => (c.onchange = () => { setVis(c.dataset.vk, c.checked); terapkanVis(); }));
+    $("#pmPanel").querySelectorAll("[data-zm]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); zoomLapisan(a.dataset.zm); }));
     $("#pmPanel").querySelectorAll("[data-del]").forEach((a) => (a.onclick = async (e) => { e.preventDefault(); if (!confirm("Hapus lapisan ini?")) return;
       if (a.dataset.srv === "1") { const { error } = await sb.from("peta_layer").update({ aktif: false }).eq("id", a.dataset.del); if (error) return alert(error.message); }
       else localStorage.setItem("petaLokal", JSON.stringify(lapisanLokal().filter((x) => x.id !== a.dataset.del)));
@@ -2090,6 +2109,8 @@ async function petaView(v) {
     map.addLayer({ id: "iup-garis", type: "line", source: "iup", paint: { "line-color": "#ff2d2d", "line-width": 2.5 } });
     LBL.iup = W.flatMap((w) => w.titik.map((t) => label([t.lon, t.lat], String(t.no), "background:rgba(190,0,0,.75)")));
     map.addSource("trk", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addSource("trkSimpan", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "trkSimpan", type: "line", source: "trkSimpan", paint: { "line-color": "#ff00d4", "line-width": 3 } });
     map.addLayer({ id: "trk", type: "line", source: "trk", paint: { "line-color": "#00e5ff", "line-width": 3.5, "line-dasharray": [2, 1] } });
 
     await Promise.all([muatLubang(), muatLapisan()]); gambarLubang(); gambarLapisan(); gambarTrack(); terapkanVis(); panel();
