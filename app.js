@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.29";
+const APP_VERSION = "2026-11-17.30";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2122,7 +2122,7 @@ async function tinggiDi(lon, lat) {
   return -10000 + (d[0] * 65536 + d[1] * 256 + d[2]) * 0.1;
 }
 let petaML = null;
-const WARNA_STATUS = { RENCANA: "#ffffff", PROGRES: "#ffd400", EOH: "#22c55e", STB: "#f97316", SELESAI: "#16a34a" };
+const WARNA_STATUS = { RENCANA: "#ffffff", PROGRES: "#ffd400", EOH: "#22c55e", STB: "#22c55e", SELESAI: "#16a34a" };
 const LABEL_STATUS = { RENCANA: "Rencana", PROGRES: "Progres (continue)", EOH: "EOH", STB: "STB", SELESAI: "Selesai" };
 const muatJS = (src, cek) => (cek() ? Promise.resolve() : new Promise((ok, no) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = () => no(new Error(`Gagal memuat ${src} (perlu sinyal pertama kali)`)); document.head.appendChild(sc); }));
 // File → GeoJSON (WGS84). SHP: .zip atau .shp+.dbf(+.prj); KML; KMZ; GeoJSON; CSV (kolom lon/lat atau x/y UTM 51S)
@@ -2163,7 +2163,7 @@ async function petaView(v) {
       <button class="sec" id="pmT" style="flex:0">● Lacak</button><button class="sec" id="pmI" style="flex:0">Ke IUP</button><button class="sec" id="pmO" style="flex:0">Simpan offline</button></div>
     <div id="pmPanel" class="card" style="display:none;margin:8px 0 0;padding:8px;background:#f6f7f2"></div>
     <div style="position:relative"><div id="pmap" style="height:70vh;margin-top:8px;border-radius:10px;overflow:hidden;background:#dfe5df"></div>
-      <div id="pmLeg" style="position:absolute;left:8px;top:16px;background:rgba(255,255,255,.88);border-radius:8px;padding:6px 8px;font-size:12px;line-height:1.6">${Object.keys(LABEL_STATUS).filter((k) => k !== "SELESAI").map((k) => `<div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${WARNA_STATUS[k]};border:1.5px solid #111;vertical-align:-1px"></span> ${LABEL_STATUS[k]}</div>`).join("")}<div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;border:2.5px solid #e00;vertical-align:-1px"></span> di luar IUP</div></div></div>
+      <div id="pmLeg" style="position:absolute;left:8px;top:16px;background:rgba(255,255,255,.88);border-radius:8px;padding:6px 8px;font-size:12px;line-height:1.6">${[["RENCANA", "Rencana"], ["PROGRES", "Progres (continue)"], ["EOH", "EOH / STB (selesai bor)"]].map(([k, t]) => `<div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${WARNA_STATUS[k]};border:1.5px solid #111;vertical-align:-1px"></span> ${t}</div>`).join("")}<div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;border:2.5px solid #e00;vertical-align:-1px"></span> di luar IUP</div></div></div>
     <div class="muted" id="pmInfo" style="margin-top:6px;min-height:1.2em">Memuat peta…</div>
     <p class="muted" style="margin:4px 0 0">Relief: DEMNAS (BIG) ±8 m sampai pantai; di hutan bisa mengikuti puncak pohon. Citra: Esri World Imagery (perlu sinyal). GPS, relief, IUP, lubang & lapisan tetap jalan offline setelah “Simpan offline”.</p></div>`;
   try { if (!window.maplibregl) { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "vendor/maplibre-gl.css"; document.head.appendChild(l); await muatJS("vendor/maplibre-gl.js", () => window.maplibregl); } }
