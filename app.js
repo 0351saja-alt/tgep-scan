@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.20";
+const APP_VERSION = "2026-11-17.21";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -159,7 +159,8 @@ async function bukaLinkView(bucket, path) {
   $("#bk").onclick = () => { history.replaceState(null, "", location.pathname + location.search); render(); };
   if (!online()) return ($("#bf").innerHTML = `<p class="err">Perlu sinyal untuk membuka file.</p>`);
   const { data, error } = await sb.storage.from(bucket).createSignedUrl(path, 3600);
-  if (error || !data?.signedUrl) return ($("#bf").innerHTML = `<p class="err">File tidak bisa dibuka: ${esc(error?.message ?? "tidak ditemukan / akun ini tidak punya akses")}</p>`);
+  if (error || !data?.signedUrl) { const dv = await linkDrive(bucket, path);
+    return ($("#bf").innerHTML = dv ? `<p>File asli sudah dipindah ke Google Drive.</p><p><a href="${esc(dv)}" target="_blank" rel="noopener"><b>Buka di Google Drive</b></a></p>` : `<p class="err">File tidak bisa dibuka: ${esc(error?.message ?? "tidak ditemukan / akun ini tidak punya akses")}</p>`); }
   const { data: dv } = isClient() ? { data: null } : await sb.from("drive_file").select("drive_url").eq("bucket", bucket).eq("path", path).maybeSingle();
   if (dv?.drive_url) $("#bf").insertAdjacentHTML("beforebegin", `<p><a href="${esc(dv.drive_url)}" target="_blank" rel="noopener"><b>Buka di Google Drive</b></a></p>`);
   const gambar = /\.(jpe?g|png|webp|gif)$/i.test(path);
@@ -271,7 +272,7 @@ async function syncArsip(it) {
 async function arsipList(box) {
   const { data } = await sb.from("form_photo").select("id,jenis,rig,bhid,tanggal,shift,keterangan,halaman,jumlah_halaman,sumber,file_name,photo_path,created_at").order("created_at", { ascending: false }).limit(50);
   box.innerHTML = `<h3>Foto formulir arsip (50 terakhir)</h3><ul class="list">${(data ?? []).map((p) => `<li style="flex-wrap:wrap"><span style="flex:1"><b>${esc(ARSIP[p.jenis])}</b> · ${esc(p.bhid || "")} ${esc(p.rig || "")} ${p.tanggal ?? ""} ${p.shift ? (p.shift === "PAGI" ? "Day" : "Night") : ""}${p.halaman ? ` · hal. ${p.halaman}/${p.jumlah_halaman ?? "?"}` : ""}<br><span class="muted">${p.sumber}${p.file_name ? " · " + esc(p.file_name) : ""}${p.keterangan ? " · " + esc(p.keterangan) : ""}</span></span><button class="sec" data-ar="${esc(p.photo_path)}" style="flex:0">Lihat</button></li>`).join("") || `<li class="muted">Belum ada.</li>`}</ul>`;
-  box.querySelectorAll("[data-ar]").forEach((b) => (b.onclick = async () => { const { data: u } = await sb.storage.from("scan-photos").createSignedUrl(b.dataset.ar, 3600); if (u?.signedUrl) window.open(u.signedUrl, "_blank"); }));
+  box.querySelectorAll("[data-ar]").forEach((b) => (b.onclick = async () => { bukaFile("scan-photos", b.dataset.ar); }));
 }
 
 async function reviewList(v) {
@@ -710,7 +711,9 @@ async function progView(v) {
     ]);
     $("#today").innerHTML = `${(sum ?? []).map((s) => `<p><b>${esc(s.bhid)}</b>: ${s.meter_bor} m · ${s.jumlah_run} run · recovery ${s.recovery_pct ?? "-"}% · standby ${s.standby_menit} mnt · P2H ${s.jam_p2h ? fmtT(s.jam_p2h).slice(-8) : "BELUM"}${s.chk_harian ? `<br><span class="err">${esc(s.chk_harian)}</span>` : ""}</p>`).join("")}
       <ul class="list">${(evs ?? []).map((x) => `<li><span style="flex:1">${fmtT(x.captured_at).slice(-8)} · <b>${esc(EV[x.event_type])}</b>${x.event_type === "RUN" ? ` ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m (core ${fmtD(x.core_length)})` : ""}${x.reason ? " · " + esc(x.reason) : ""}${x.flags ? `<br><span class="err">${esc(x.flags)}</span>` : ""}</span>${x.photo_path ? `<button class="sec" data-ph="${esc(x.photo_path)}" style="flex:0">Foto</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada aktivitas terkirim hari ini untuk rig ini.</li>`}</ul><div id="phv"></div>`;
-    $("#today").querySelectorAll("[data-ph]").forEach((b) => (b.onclick = async () => { const { data } = await sb.storage.from("progress-photos").createSignedUrl(b.dataset.ph, 600); $("#phv").innerHTML = `<img src="${data?.signedUrl ?? ""}" alt="Foto aktivitas bor" style="width:100%;border-radius:8px">`; }));
+    $("#today").querySelectorAll("[data-ph]").forEach((b) => (b.onclick = async () => { const { data } = await sb.storage.from("progress-photos").createSignedUrl(b.dataset.ph, 600);
+      if (data?.signedUrl) return ($("#phv").innerHTML = `<img src="${data.signedUrl}" alt="Foto aktivitas bor" style="width:100%;border-radius:8px">`);
+      const dv = await linkDrive("progress-photos", b.dataset.ph); $("#phv").innerHTML = dv ? `<p>Foto sudah dipindah ke Google Drive. <a href="${esc(dv)}" target="_blank" rel="noopener">Buka di Drive</a></p>` : `<p class="err">Foto tidak ditemukan.</p>`; }));
   }
 }
 async function p2hForm() {
@@ -1765,7 +1768,7 @@ async function folderView(v, uid, nama) {
     const byDay = {}; for (const r of data ?? []) (byDay[fmtT(r.waktu).slice(0, 10)] ??= []).push(r);
     const tot = Object.entries((data ?? []).reduce((m, r) => ((m[r.jenis] = (m[r.jenis] ?? 0) + 1), m), {}));
     $("#fl").innerHTML = `<p><b>${(data ?? []).length}</b> kiriman · ${tot.map(([k, n]) => `${esc(k)} ${n}`).join(" · ") || "-"}</p>` + (Object.entries(byDay).map(([d, rs]) => `<h3 style="margin:12px 0 4px">${d} <span class="muted">(${rs.length})</span></h3><ul class="list">${rs.map((r) => `<li style="flex-wrap:wrap"><span style="flex:1">${fmtT(r.waktu).slice(-8)} · <b>${esc(r.jenis)}</b> ${esc(r.rig ?? "")} ${esc(r.bhid ?? "")}${r.status ? ` <span class="pill ${esc(r.status)}">${esc(r.status)}</span>` : ""}<br><span class="muted">${esc(r.ket ?? "")}</span></span>${r.photo_path && r.bucket ? `<button class="sec" data-b="${esc(r.bucket)}" data-p="${esc(r.photo_path)}" style="flex:0">Lihat</button>` : r.jenis === "DDR" || r.jenis === "TTD DDR" ? `<button class="sec" data-ddr="${r.ref_id}" style="flex:0">DDR</button>` : ""}${admin && hapusJenis(r.jenis) ? `<button class="sec" data-hx="${esc(r.ref_id)}" data-hj="${esc(r.jenis)}" style="flex:0;color:#B3261E;border-color:#B3261E">Hapus</button><label style="flex:0;margin:0" title="Pilih untuk hapus sekaligus"><input type="checkbox" data-hc="${esc(r.ref_id)}" data-hj="${esc(r.jenis)}" data-hk="${esc(`${fmtT(r.waktu)} · ${r.jenis} ${r.rig ?? ""} ${r.bhid ?? ""}`)}" style="width:auto"></label>` : ""}</li>`).join("")}</ul>`).join("") || `<p class="muted">Tidak ada kiriman pada periode ini.</p>`);
-    $("#fl").querySelectorAll("[data-p]").forEach((b) => (b.onclick = async () => { const { data: u } = await sb.storage.from(b.dataset.b).createSignedUrl(b.dataset.p, 3600); if (u?.signedUrl) window.open(u.signedUrl, "_blank"); else alert("Foto tidak dapat dibuka."); }));
+    $("#fl").querySelectorAll("[data-p]").forEach((b) => (b.onclick = async () => { bukaFile(b.dataset.b, b.dataset.p); }));
     $("#fl").querySelectorAll("[data-ddr]").forEach((b) => (b.onclick = () => printDDR(b.dataset.ddr)));
     if (!admin) return;
     const ket = (id) => (data ?? []).find((r) => String(r.ref_id) === id);
@@ -1898,10 +1901,17 @@ const FILE_COL = { aktivitas: { photo_path: "progress-photos" }, p2h: { photo_pa
 const linkFile = (bucket, path) => new URL("./", location.href).href + "#buka=" + encodeURIComponent(bucket) + ":" + encodeURIComponent(path);
 const tambahLink = async (k, rows) => { const fc = FILE_COL[k]; if (!fc) return rows; const DV = await petaDrive(rows, fc);
   return rows.map((r) => { const o = { ...r }; for (const [c, b] of Object.entries(fc)) if (r[c]) { o[c + "_link"] = linkFile(b, r[c]); if (!isClient()) o[c + "_drive"] = DV[b + ":" + r[c]] ?? ""; } return o; }); };
+// Buka file: dari server bila masih ada; bila file asli sudah dipindah ke Google Drive (dihapus dari server setelah 1 hari), buka salinan Drive.
+async function linkDrive(bucket, path) {
+  if (isClient()) return null;
+  const { data } = await sb.from("drive_file").select("drive_url").eq("bucket", bucket).eq("path", path).maybeSingle();
+  return data?.drive_url ?? null;
+}
 async function bukaFile(bucket, path) {
   const w = window.open("", "_blank"); const { data, error } = await sb.storage.from(bucket).createSignedUrl(path, 3600);
-  if (error || !data?.signedUrl) { w?.close(); return alert("File tidak bisa dibuka: " + (error?.message ?? "tidak ditemukan / tidak punya akses")); }
-  if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
+  const url = data?.signedUrl ?? (await linkDrive(bucket, path));
+  if (!url) { w?.close(); return alert("File tidak bisa dibuka: " + (error?.message ?? "tidak ditemukan / tidak punya akses")); }
+  if (w) w.location = url; else location.href = url;
 }
 // Salinan Google Drive (diisi Apps Script "X-Terra Sinkron Drive"): peta bucket:path -> link Drive
 async function petaDrive(rows, fc) {
