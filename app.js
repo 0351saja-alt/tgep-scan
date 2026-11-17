@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-17.44";
+const APP_VERSION = "2026-11-18.02";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1280,9 +1280,43 @@ async function syncDDR(it) {
   await qDel(it.client_uuid);
   if (errs.length) alert(`DDR ${it.row.rig} ${it.row.report_date} ${it.row.shift} terkirim, tetapi tanda tangan gagal:\n${errs.join("\n")}\nUlangi dari daftar DDR → Tanda tangani.`);
 }
+// ---------- Penampil dokumen di dalam aplikasi (pengganti jendela pop-up yang tidak jalan di aplikasi terpasang) ----------
+// Pakai: const w = jendelaDok("Judul", "A4"|"16:9"); lalu w.document.open()/write()/close() seperti jendela biasa.
+// tempel dokumen HTML (laporan/slide) ke elemen, terisolasi dengan shadow DOM; slide 16:9 diskalakan ke lebar layar
+function pasangDok(isi, host, buf, ukuran) {
+  const doc = new DOMParser().parseFromString(buf, "text/html");
+  const css = [...doc.querySelectorAll("style")].map((x) => x.textContent).join("\n").replace(/@page\s*\{[^}]*\}/g, "");
+  doc.querySelectorAll(".bar0,.bar,script").forEach((x) => x.remove());
+  isi.innerHTML = ""; host.style.cssText = ukuran === "16:9" ? "padding:4px 0" : "background:#fff;max-width:1000px;margin:0 auto"; host.dataset.dok = "1"; isi.appendChild(host);
+  const sh = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+  sh.innerHTML = `<style>:host{display:block}${css.replace(/\bbody\b/g, ".dok-body")}</style><div class="dok-body" style="margin:0;background:transparent">${doc.body.innerHTML}</div>`;
+  if (ukuran === "16:9") { const skala = () => { if (isi.isConnected) host.style.zoom = Math.min(1, (isi.clientWidth - 6) / 1300); }; skala(); addEventListener("resize", skala); }
+}
+// wadah tulis yang menempel dokumen ke elemen halaman (dipakai Dashboard)
+function wadahDi(el, ukuran) { let buf = ""; const host = document.createElement("div");
+  return { document: { open() { buf = ""; }, write(h) { buf += h; }, close() { pasangDok(el, host, buf, ukuran); }, get body() { return { set innerHTML(h) { el.innerHTML = h; } }; } } }; }
+function jendelaDok(judul, ukuran = "A4") {
+  document.getElementById("dokLayer")?.remove(); document.getElementById("dokPrint")?.remove(); window._lapDL = null;
+  const L = Object.assign(document.createElement("div"), { id: "dokLayer" });
+  L.style.cssText = "position:fixed;inset:0;z-index:80;background:#3a4741;display:flex;flex-direction:column";
+  L.innerHTML = `<div style="display:flex;gap:8px;align-items:center;padding:8px 10px;background:#12251E;color:#fff;flex:0 0 auto">
+    <b style="flex:1;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(judul)}</b>
+    <button data-cetak style="flex:0 0 auto;width:auto;padding:8px 12px;background:#1E9E69">Simpan PDF</button><button data-xl style="flex:0 0 auto;width:auto;padding:8px 12px;display:none" class="sec">Excel</button><button data-tutup class="sec" style="flex:0 0 auto;width:auto;padding:8px 12px">✕ Tutup</button></div>
+    <div data-isi style="flex:1;overflow:auto;-webkit-overflow-scrolling:touch"><p style="color:#fff;font-family:Arial;padding:20px">Menyusun ${esc(judul.toLowerCase())}…</p></div>`;
+  document.body.appendChild(L); document.body.style.overflow = "hidden";
+  const pr = Object.assign(document.createElement("style"), { id: "dokPrint" });
+  pr.textContent = `@media print{@page{size:${ukuran === "16:9" ? "338.67mm 190.5mm" : "A4"};margin:${ukuran === "16:9" ? 0 : "10mm"}}body>*:not(#dokLayer){display:none!important}#dokLayer{position:static!important;background:#fff!important}#dokLayer>div:first-child{display:none!important}#dokLayer [data-isi]{overflow:visible!important}[data-dok]{zoom:1!important;padding:0!important}}`;
+  document.head.appendChild(pr);
+  const isi = L.querySelector("[data-isi]"), host = document.createElement("div"); let buf = "";
+  const tutup = () => { L.remove(); pr.remove(); document.body.style.overflow = ""; };
+  L.querySelector("[data-tutup]").onclick = tutup;
+  L.querySelector("[data-cetak]").onclick = () => print();
+  const tampil = () => { pasangDok(isi, host, buf, ukuran);
+    if (window._lapDL) { const b = L.querySelector("[data-xl]"); b.style.display = ""; b.onclick = () => window._lapDL(); } };
+  return { document: { open() { buf = ""; }, write(h) { buf += h; }, close() { tampil(); }, get body() { return { set innerHTML(h) { buf = `<html><body>${h}</body></html>`; tampil(); } }; } }, close: tutup };
+}
 async function printDDR(id) {
-  const w = window.open("", "_blank"); if (!w) return alert("Izinkan pop-up untuk mencetak.");
-  w.document.write("<p>Memuat DDR…</p>");
+  const w = jendelaDok("DDR", "A4");
   const { data: d } = await sb.from("ddr").select("*").eq("id", id).single();
   const { data: sg } = await sb.from("ddr_signature").select("*").eq("ddr_id", id);
   const [a, b] = shiftWindow(d.report_date, d.shift);
@@ -1350,17 +1384,15 @@ async function dashView(v) {
     <div style="flex:1"><div style="font:700 11px Arial;letter-spacing:.16em;color:#7CE0B0">PT TERRA GRAPINDO ECO PRIMA</div><div style="font:800 21px Arial">Dashboard eksplorasi nikel laterit</div><div style="font-size:12px;opacity:.75">X-Terra · data dari lapangan, terverifikasi</div></div></div>
     <div class="card"><h2>Dashboard progres & evaluasi</h2>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
-    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0;white-space:nowrap">Cetak layar</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button><button id="pres" style="flex:0;white-space:nowrap;background:#12251E">🎞 Presentasi 16:9</button></div></div>
-    <div id="kpi" class="card"></div>
-    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0;flex:1">Peta pemboran & grafik per lubang</h3><span class="muted" style="flex:0;white-space:nowrap" id="petaInfo"></span></div><div id="dPeta" class="muted" style="margin-top:6px">Memuat peta…</div></div>
-    <div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px"></div>
-    <div class="card"><h3 style="margin:0 0 6px">Tampilan 3D pemboran</h3><div id="d3D" class="muted">Memuat tampilan 3D…</div></div>`;
-  petaDashboard(st, () => tok !== dashView.tok).catch((e) => { if ($("#dPeta")) $("#dPeta").textContent = "Peta gagal dimuat: " + e.message; });
-  $("#pr").onclick = () => print();
+    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button><button id="pres" style="flex:0;white-space:nowrap;background:#12251E">🎞 Presentasi 16:9</button></div></div>
+    <div id="dSlide" style="background:#3a4741;border-radius:14px;padding:6px 3px;margin-bottom:12px"><p style="color:#fff;font-family:Arial;padding:16px;margin:0">Menyusun tampilan presentasi…</p></div>
+    <details class="card" id="rinci" open><summary style="font-weight:700;cursor:pointer">Indikator & grafik dashboard</summary><div id="kpi" style="margin-top:8px"></div>
+    <div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-top:10px"></div></details>`;
+  if (online()) laporanProgres({ from: st.from, to: st.to, rig: st.rig, proj: sessionStorage.getItem("filterProyek") || "", slide: true, wadah: wadahDi($("#dSlide"), "16:9") }).catch((e) => { if ($("#dSlide")) $("#dSlide").innerHTML = `<p style="color:#fff;padding:16px">Tampilan presentasi gagal: ${esc(e.message)}</p>`; });
   $("#lap").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value });
   $("#pres").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value, slide: true });
   $("#go").onclick = () => { sessionStorage.setItem("filterProyek", $("#fproj").value); sessionStorage.setItem("dash", JSON.stringify({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() })); dashView(v); };
-  if (!online()) return ($("#kpi").textContent = "Dashboard perlu sinyal internet.");
+  if (!online()) { $("#dSlide").innerHTML = `<p style="color:#fff;padding:16px;margin:0">Dashboard perlu sinyal internet.</p>`; return; }
   const pf = await proyekFilter();
   const R = (q) => (st.rig ? q.eq("rig", st.rig) : pf ? q.in("rig", pf.rigs.length ? pf.rigs : ["-"]) : q);
   const [{ data: rd }, { data: tm }, { data: cu }, { data: hl }] = await Promise.all([
@@ -1708,6 +1740,31 @@ function panelHarian(dayRows) {
     <polyline points="${dayRows.map((r, i) => `${12 + i * bw + bw / 2},${cy(r[3])}`).join(" ")}" fill="none" stroke="#E0A100" stroke-width="2"/><text x="12" y="76" font-size="8.5" fill="#6b7a72">${dayRows[0][0].slice(5)}</text><text x="242" y="76" font-size="8.5" text-anchor="end" fill="#6b7a72">${dayRows[dayRows.length - 1][0].slice(5)}</text>
     <text x="248" y="9" font-size="9" text-anchor="end" fill="#E0A100">kumulatif ${c1.toFixed(0)} m</text><text x="12" y="9" font-size="9" fill="#1E9E69">maks ${mx.toFixed(1)} m/hari</text></svg>`;
 }
+// ---------- grafik SVG untuk slide performa rig ----------
+function barH(rows, o = {}) { // rows: [{label, v, c, sub}]
+  const W = o.w ?? 560, rh = o.rh ?? 26, H = Math.max(40, rows.length * rh + 14), mx = Math.max(1e-9, ...rows.map((r) => +r.v || 0)), L = o.lw ?? 120;
+  if (!rows.length) return `<svg viewBox="0 0 ${W} 50" width="100%"><text x="${W / 2}" y="30" font-size="13" text-anchor="middle" fill="#6b7a72">belum ada data</text></svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="font-family:Arial,sans-serif;max-height:${o.maxH ?? 999}px">${rows.map((r, i) => { const w = ((W - L - (rows.some((x) => x.sub) ? 175 : 80)) * (+r.v || 0)) / mx, y = 6 + i * rh;
+    return `<text x="${L - 6}" y="${y + rh / 2 + 4}" font-size="12" text-anchor="end">${esc(r.label)}</text><rect x="${L}" y="${y + 3}" width="${Math.max(1, w)}" height="${rh - 8}" rx="4" fill="${r.c ?? "#1E9E69"}"/>
+      <text x="${L + w + 6}" y="${y + rh / 2 + 4}" font-size="12" font-weight="700">${esc(r.t ?? String(r.v))}</text>${r.sub ? `<text x="${W - 2}" y="${y + rh / 2 + 4}" font-size="10.5" text-anchor="end" fill="#6b7a72">${esc(r.sub)}</text>` : ""}`; }).join("")}</svg>`;
+}
+function stackH(rows, kunci, o = {}) { // rows: [{label, parts:{k:v}}], kunci: [[k, warna]]
+  const W = o.w ?? 560, rh = 28, H = rows.length * rh + 34, L = o.lw ?? 90;
+  if (!rows.length) return `<svg viewBox="0 0 ${W} 50" width="100%"><text x="${W / 2}" y="30" font-size="13" text-anchor="middle" fill="#6b7a72">belum ada data</text></svg>`;
+  let g = rows.map((r, i) => { const tot = kunci.reduce((s, [k]) => s + (+r.parts[k] || 0), 0) || 1; let x = L; const y = 6 + i * rh;
+    return `<text x="${L - 6}" y="${y + 16}" font-size="12" text-anchor="end">${esc(r.label)}</text>` + kunci.map(([k, c]) => { const w = ((W - L - 10) * (+r.parts[k] || 0)) / tot; const out = w > 0 ? `<rect x="${x}" y="${y + 3}" width="${w}" height="${rh - 8}" fill="${c}"><title>${esc(k)}: ${Math.round(+r.parts[k] / 60 * 10) / 10} jam</title></rect>${w > 34 ? `<text x="${x + w / 2}" y="${y + 17}" font-size="10" text-anchor="middle" fill="#fff">${Math.round((100 * (+r.parts[k] || 0)) / tot)}%</text>` : ""}` : ""; x += w; return out; }).join(""); }).join("");
+  g += kunci.map(([k, c], i) => `<rect x="${L + i * 96}" y="${H - 18}" width="10" height="10" fill="${c}"/><text x="${L + 14 + i * 96}" y="${H - 9}" font-size="10.5">${esc(k)}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="font-family:Arial,sans-serif">${g}</svg>`;
+}
+function heatRig(days, rigs) { // kalender meter per rig per hari
+  const tg = [...new Set(days.map((d) => d.tanggal))].sort(); if (!tg.length || !rigs.length) return `<svg viewBox="0 0 560 50" width="100%"><text x="280" y="30" font-size="13" text-anchor="middle" fill="#6b7a72">belum ada data</text></svg>`;
+  const W = 1180, L = 70, cw = Math.min(40, (W - L - 10) / tg.length), rh = 26, H = rigs.length * rh + 30, mx = Math.max(1, ...days.map((d) => +d.meter_bor || 0));
+  const col = (v) => (!v ? "#eef2ef" : `rgba(30,158,105,${0.25 + 0.75 * (v / mx)})`);
+  let g = rigs.map((r, i) => `<text x="${L - 6}" y="${i * rh + 17}" font-size="12" text-anchor="end">${esc(r)}</text>` + tg.map((t, j) => { const d = days.find((x) => x.rig === r && x.tanggal === t), v = +d?.meter_bor || 0, bad = d && (!d.ada_p2h || d.p2h_bermasalah);
+    return `<rect x="${L + j * cw}" y="${i * rh + 2}" width="${cw - 2}" height="${rh - 4}" rx="3" fill="${col(v)}" stroke="${bad && v ? "#D62828" : "none"}" stroke-width="1.5"><title>${t} ${esc(r)}: ${v} m</title></rect>${v && cw > 26 ? `<text x="${L + j * cw + cw / 2 - 1}" y="${i * rh + 17}" font-size="9.5" text-anchor="middle" fill="${v > mx * 0.6 ? "#fff" : "#12251E"}">${v.toFixed(0)}</text>` : ""}`; }).join("")).join("");
+  g += tg.filter((_, j) => j % Math.ceil(tg.length / 15) === 0).map((t) => `<text x="${L + tg.indexOf(t) * cw + cw / 2}" y="${H - 6}" font-size="10" text-anchor="middle" fill="#6b7a72">${t.slice(5)}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="font-family:Arial,sans-serif">${g}</svg>`;
+}
 // ---------- Kesimpulan prospek (saringan awal, ambang bisa disesuaikan) ----------
 const KRITERIA = { tebal: [6, 3], kontinu: [70, 40], ob: [0.5, 1], lereng: [20, 30], nMin: 5 };
 // Penilaian dari data geologi lapangan (ketebalan, kontinuitas, overburden, lereng). Kadar Ni tidak dianalisis di sini.
@@ -1746,7 +1803,7 @@ function kesimpulanProspek({ A, T, prof, LB }) {
 }
 // ---------- Template presentasi pemboran 16:9 (cetak / simpan PDF) ----------
 async function presentasiHTML(D) {
-  const { st, PJ, mPer, mCum, nSelesai, HR, K, dayRows, rigRows, sbRows, notes, LB, prof, klien } = D, days = D.days ?? [];
+  const { st, PJ, mPer, mCum, nSelesai, HR, K, dayRows, rigRows, sbRows, notes, LB, prof, klien } = D, days = D.days ?? [], tm = D.tm ?? [];
   const n = (x) => Number(x) || 0, pct = (a, b) => (b ? Math.round((100 * a) / b) : null);
   const nama = PJ?.nama ?? (st.proj || "Semua proyek"), per = `${fmtTgl(st.from)} – ${fmtTgl(st.to)}`;
   const hit = (k) => LB.filter((x) => (k === "EOH" ? ["EOH", "STB", "SELESAI"].includes(x.status) : x.status === k)).length;
@@ -1801,6 +1858,30 @@ async function presentasiHTML(D) {
     <div><table class="t kc"><tr><th>Rig</th>${["Hari", "Meter", "m/hari", "Maks", "m/jam", "Lubang", "Σ kedalaman", "Limonit", "Saprolit"].map((h) => `<th class="r">${h}</th>`).join("")}</tr>
     ${A.perRig.map((x, k) => `<tr><td><span class="sw" style="background:${WARNA_RIG[k % WARNA_RIG.length]}"></span><b>${esc(x.r)}</b></td><td class="r">${x.hari}</td><td class="r"><b>${f(x.meter)}</b></td><td class="r">${f(x.sm.mean)}</td><td class="r">${f(x.sm.max)}</td><td class="r">${x.jam ? f(x.meter / x.jam, 2) : "–"}</td><td class="r">${x.lubang} (${x.selesai})</td><td class="r">${f(x.totDalam)}</td><td class="r">${x.L.n ? f(x.L.mean) : "–"}</td><td class="r">${x.S.n ? f(x.S.mean) : "–"}</td></tr>`).join("")}</table>
     <h3 style="margin:8px 0 2px">Kendala utama</h3><ul class="tl" style="font-size:13px">${sbRows.slice(0, 3).map((r) => `<li>${esc(r[0])} — ${r[1]} jam</li>`).join("") || "<li>Tidak ada standby/perbaikan tercatat.</li>"}</ul></div></div>`, "statistik harian per rig"));
+  // ===== Performa rig (gabungan grafik dashboard) =====
+  let CU = []; try { if (typeof sb !== "undefined") { let q = sb.from("v_consumable_use").select("rig,kategori,unit,qty,item").gte("report_date", st.from).lte("report_date", st.to); if (st.rig) q = q.eq("rig", st.rig); CU = (await q).data ?? []; } } catch {}
+  const RG = A.rigs, sum = (xs, k) => xs.reduce((a, x) => a + (+x[k] || 0), 0), perRigD = (r) => days.filter((d) => d.rig === r);
+  const akt = (r) => perRigD(r).filter((d) => +d.meter_bor > 0), pctR = (a, b) => (b ? Math.round((100 * a) / b) : null);
+  const kegKunci = [["Drilling", "#1E9E69"], ["Working", "#2563EB"], ["Standby", "#E0A100"], ["Perbaikan", "#D62828"], ["Lainnya", "#9CA3AF"]];
+  const kegOf = (k) => (/drill|bor|coring|run/i.test(k) ? "Drilling" : /stand/i.test(k) ? "Standby" : /perbaik|repair|rusak/i.test(k) ? "Perbaikan" : /work|kerja|pindah|p2h|setup|moving/i.test(k) ? "Working" : "Lainnya");
+  const waktuRig = RG.map((r) => { const parts = {}; for (const x of tm.filter((x) => x.rig === r)) { const k = kegOf(String(x.kegiatan ?? "")); parts[k] = (parts[k] ?? 0) + (+x.menit || 0); } return { label: r, parts }; }).filter((x) => Object.keys(x.parts).length);
+  const bbmRig = RG.map((r, k) => { const b = sum(perRigD(r), "bbm_liter"), m = sum(perRigD(r), "meter_bor"); return { label: r, v: b, t: `${b.toFixed(0)} L`, sub: m ? `${(b / m).toFixed(2)} L/m` : "", c: WARNA_RIG[k % WARNA_RIG.length] }; });
+  const mRig = RG.map((r, k) => { const m = sum(perRigD(r), "meter_bor"), j = sum(perRigD(r), "jam_kerja_bor"); return { label: r, v: m, t: `${m.toFixed(1)} m`, sub: j ? `${(m / j).toFixed(2)} m/jam · ${akt(r).length} hari` : `${akt(r).length} hari`, c: WARNA_RIG[k % WARNA_RIG.length] }; });
+  const kpRig = RG.flatMap((r) => { const a = akt(r); return [{ label: `${r} · P2H`, v: pctR(a.filter((d) => d.ada_p2h && !d.p2h_bermasalah).length, a.length) ?? 0, t: a.length ? `${pctR(a.filter((d) => d.ada_p2h && !d.p2h_bermasalah).length, a.length)}%` : "–", c: "#1E9E69" },
+    { label: `${r} · DDR TTD`, v: pctR(a.filter((d) => d.n_ddr_ttd > 0).length, a.length) ?? 0, t: a.length ? `${pctR(a.filter((d) => d.n_ddr_ttd > 0).length, a.length)}%` : "–", c: "#2563EB" }]; });
+  const recRig = RG.map((r, k) => { const xs = perRigD(r).filter((d) => d.recovery_pct != null), v = xs.length ? xs.reduce((a, d) => a + +d.recovery_pct, 0) / xs.length : null; return { label: r, v: v ?? 0, t: v != null ? `${v.toFixed(0)}%` : "–", c: v != null && v < 90 ? "#D62828" : "#1E9E69" }; });
+  const sbCause = sbRows.slice(0, 7).map((r) => ({ label: String(r[0]).replace(/^(Standby|Perbaikan): /, "").slice(0, 26), v: +r[1], t: `${r[1]} jam`, c: /^Perbaikan/.test(r[0]) ? "#D62828" : "#E0A100" }));
+  const cair = {}; for (const c of CU.filter((c) => /liter/i.test(c.unit ?? ""))) cair[c.kategori ?? c.item] = (cair[c.kategori ?? c.item] ?? 0) + (+c.qty || 0);
+  const cairRows = Object.entries(cair).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => ({ label: k, v, t: `${v.toFixed(0)} L`, c: "#0891B2" }));
+  const ganti = RG.map((r, k) => ({ label: r, v: sum(perRigD(r), "ganti_mata_bor"), t: String(sum(perRigD(r), "ganti_mata_bor")), sub: `${sum(perRigD(r), "jumlah_run")} run`, c: WARNA_RIG[k % WARNA_RIG.length] }));
+  S.push(slide("Performa rig: produksi & waktu", `<div class="dua" style="grid-template-columns:1fr 1fr;gap:10px 26px">
+    <div><h3 style="margin:0 0 4px">Meter bor & produktivitas per rig</h3>${barH(mRig, { lw: 70 })}</div>
+    <div><h3 style="margin:0 0 4px">Pembagian waktu kerja per rig</h3>${stackH(waktuRig, kegKunci, { lw: 70 })}</div></div>
+    <h3 style="margin:10px 0 4px">Kalender meter bor harian per rig <span style="font-weight:400;color:#6b7a72;font-size:13px">· angka = meter · bingkai merah = tanpa P2H / P2H bermasalah</span></h3>${heatRig(days, RG)}
+    <div class="dua" style="grid-template-columns:1fr 1fr;gap:10px 26px;margin-top:8px"><div><h3 style="margin:0 0 4px">Recovery core rata-rata per rig</h3>${barH(recRig, { lw: 70 })}</div><div><h3 style="margin:0 0 4px">Ganti mata bor & jumlah run</h3>${barH(ganti, { lw: 70 })}</div></div>`, "gabungan grafik dashboard"));
+  S.push(slide("Performa rig: biaya, kepatuhan & kendala", `<div class="dua" style="grid-template-columns:1fr 1fr;gap:16px 26px">
+    <div><h3 style="margin:0 0 4px">BBM per rig (total & per meter)</h3>${barH(bbmRig, { lw: 70 })}<h3 style="margin:12px 0 4px">Pemakaian cairan per jenis (DDR)</h3>${barH(cairRows, { lw: 120 })}</div>
+    <div><h3 style="margin:0 0 4px">Kepatuhan P2H & DDR bertanda tangan (hari aktif)</h3>${barH(kpRig, { lw: 110, rh: 22 })}<h3 style="margin:12px 0 4px">Penyebab standby & perbaikan</h3>${barH(sbCause, { lw: 170 })}</div></div>`, "BBM · cairan · P2H · DDR · standby"));
   // ===== 3. Peta pemboran + grafik per lubang =====
   S.push(slide("Peta pemboran & grafik per lubang", `<div class="peta">${petaGraf}</div>`, `${LB.length} titik · kotak = kolom zona / kedalaman vs rencana · Rec = recovery`));
   // ===== 4. Geologi =====
@@ -1904,8 +1985,7 @@ async function blok3D(L, prof, o = {}) {
 }
 async function laporanProgres(st) {
   if (!online()) return alert("Laporan perlu sinyal internet.");
-  const w = window.open("", "_blank"); if (!w) return alert("Izinkan pop-up untuk membuat laporan.");
-  w.document.write("<p style='font-family:Arial'>Menyusun laporan progres…</p>");
+  const w = st.wadah ?? jendelaDok(st.slide ? "Presentasi pemboran 16:9" : "Laporan progres pemboran", st.slide ? "16:9" : "A4");
   try {
     sessionStorage.setItem("filterProyek", st.proj || "");
     const pf = await proyekFilter();
@@ -1928,8 +2008,6 @@ async function laporanProgres(st) {
     const LB = ((await ambilLubangPeta()).data ?? []).filter((x) => !pf || pf.bhids.includes(x.bhid) || x.status === "RENCANA").sort((a, b) => String(a.bhid).localeCompare(String(b.bhid), "id", { numeric: true }));
     await muatZona();
     const { data: prof } = await sb.from("v_profil_bor").select("*").in("bhid", LB.map((x) => x.bhid).length ? LB.map((x) => x.bhid) : ["-"]).order("bhid").order("dari_m");
-    const petaGrafik = await petaSVG(LB.map((x) => ({ ...x, rec: HR.find((h) => h.b === x.bhid)?.rec })), { w: 960, h: 600, grafik: prof ?? [] }).catch((e) => `<p>Peta gagal dibuat: ${esc(e.message)}</p>`);
-    const gbr3D = await blok3D(LB, prof, { w: 960, h: 500 }).catch((e) => `<p>Tampilan 3D gagal: ${esc(e.message)}</p>`);
     const titikRows = LB.map((x) => [x.bhid, LABEL_STATUS[x.status] ?? x.status, x.rig ?? "", x.kedalaman ?? "", x.rencana_kedalaman ?? "", x.dip ?? "", x.azimuth ?? "", x.di_dalam_iup === false ? "DI LUAR IUP" : "dalam IUP"]);
     const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p.project]));
     const kp = (kp0 ?? []).filter((r) => !st.proj || P[r.user_id] === st.proj);
@@ -1944,6 +2022,8 @@ async function laporanProgres(st) {
       const selesai = !!h.stop_date || (tgt > 0 && bor >= tgt - 0.05) || (n(t.td) > 0 && bor >= n(t.td) - 0.05);
       return { b, rig: l.rig ?? "", mulai: (h.start_date ?? l.mulai ?? "").toString().slice(0, 10), akhir: (l.terakhir_bor ?? h.stop_date ?? "").toString().slice(0, 10), bor, tgt, logm: n(l.kedalaman_logging), conto: n(l.jumlah_conto ?? h.jumlah_conto), lstat: l.status ?? "-", tl: h.tebal_limonit, ts: h.tebal_saprolit, rec: h.recovery_pct, selesai }; };
     const HR = bhids.map(holeRow), nSelesai = HR.filter((h) => h.selesai).length;
+    const petaGrafik = await petaSVG(LB.map((x) => ({ ...x, rec: HR.find((h) => h.b === x.bhid)?.rec })), { w: 960, h: 600, grafik: prof ?? [] }).catch((e) => `<p>Peta gagal dibuat: ${esc(e.message)}</p>`);
+    const gbr3D = await blok3D(LB, prof, { w: 960, h: 500 }).catch((e) => `<p>Tampilan 3D gagal: ${esc(e.message)}</p>`);
     const mPer = sum(days, "meter_bor"), mCum = sum(rdAll ?? [], "meter_bor");
     const klien = isClient();
     const K = computeKPI(days, tm ?? [], [], holes).filter(([l]) => !klien || (l !== "Foto core lengkap" && (clientGeo() || !GEO_KPI.includes(l))));
@@ -2005,7 +2085,7 @@ async function laporanProgres(st) {
     const tbl = (a, opt = {}) => `<table>${a.map((r, i) => `<tr>${r.map((c) => (i === 0 ? `<th>${esc(String(c))}</th>` : `<td${opt.col && /TERLAMBAT|BELUM\b/.test(String(c)) ? ' style="background:#F6C9C3"' : ""}>${esc(String(c ?? ""))}</td>`)).join("")}</tr>`).join("")}</table>`;
     const mx = Math.max(1, ...dayRows.map((r) => r[2])), bw = dayRows.length ? Math.min(40, Math.max(4, Math.floor(680 / dayRows.length) - 2)) : 10;
     const svg = dayRows.length ? `<svg width="720" height="170" style="border:1px solid #ddd;background:#fff">${dayRows.map((r, i) => { const h = (130 * r[2]) / mx; return `<rect x="${30 + i * (bw + 2)}" y="${145 - h}" width="${bw}" height="${h}" fill="#1E9E69"><title>${r[0]}: ${r[2]} m</title></rect>`; }).join("")}<text x="4" y="14" font-size="10">${mx.toFixed(0)} m</text><text x="30" y="162" font-size="10">${dayRows[0][0]}</text><text x="600" y="162" font-size="10">${dayRows.at(-1)[0]}</text></svg>` : "<p>Tidak ada data bor pada periode ini.</p>";
-    if (st.slide) { w.document.open(); w.document.write(await presentasiHTML({ st, PJ, mPer, mCum, nSelesai, HR, K, dayRows, rigRows, sbRows, notes, LB, prof, klien, days })); w.document.close(); return; }
+    if (st.slide) { w.document.open(); w.document.write(await presentasiHTML({ st, PJ, mPer, mCum, nSelesai, HR, K, dayRows, rigRows, sbRows, notes, LB, prof, klien, days, tm: tm ?? [] })); w.document.close(); return; }
     w.document.open(); w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Laporan Progres ${esc(PJ?.nama ?? "TGEP")} ${st.from}–${st.to}</title>
     <style>body{font-family:Arial,sans-serif;font-size:11px;margin:18px;color:#111;max-width:1000px} h1{font-size:18px;margin:0} h2{font-size:13px;margin:14px 0 4px;color:#12251E;border-bottom:2px solid #1E9E69} table{border-collapse:collapse;width:100%;margin:4px 0} td,th{border:1px solid #999;padding:3px 5px;text-align:left} th{background:#e6efe9} ul{margin:4px 0 4px 18px} .bar{display:flex;gap:8px;margin-bottom:10px} .bar a,.bar button{padding:6px 10px;border:1px solid #1E9E69;border-radius:6px;background:#fff;color:#12251E;text-decoration:none;font:inherit;cursor:pointer} @media print{.bar{display:none} h2{break-after:avoid} tr{break-inside:avoid}}</style></head><body>
     <div class="bar"><button onclick="print()">Cetak / simpan PDF</button><button onclick="try{opener._lapDL()}catch(e){alert('Buka ulang laporan dari menu Dashboard untuk mengunduh Excel.')}">Unduh Excel laporan</button></div>
