@@ -1,4 +1,6 @@
-# TGEP Scan Drill Log
+# X-Terra — Eksplorasi Nikel TGEP
+
+(dulu: TGEP Scan Drill Log; alamat web tetap …/tgep-scan/ agar aplikasi terpasang tidak putus)
 
 Aplikasi web (PWA) PT Terra Grapindo Eco Prima untuk:
 - memotret formulir lapangan F-BOR → dibaca otomatis, divalidasi, disetujui verifier → database;

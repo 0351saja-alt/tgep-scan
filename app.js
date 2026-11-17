@@ -1,4 +1,4 @@
-// TGEP Scan Drill Log — aplikasi web untuk HP (bisa dipasang & dipakai offline)
+// X-Terra (dulu X-Terra) — aplikasi web untuk HP (bisa dipasang & dipakai offline)
 import { createClient } from "./vendor/supabase.js";
 import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 
@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.10";
+const APP_VERSION = "2026-11-17.11";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -128,7 +128,7 @@ async function render() {
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
   beat();
-  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div><p class="muted" style="text-align:center;font-size:12px;margin:18px 0">${myTugas ? `Proyek <b>${esc(myTugas.nama)}</b> · ${esc(myTugas.rig ?? "semua rig")}${me?.role === "client" ? "" : ` · <a href="#" id="gantiP">${myTugas.pilih_rig ? "ganti rig" : "penugasan"}</a>`} · ` : ["client", "admin", "verifier"].includes(me?.role) ? "" : `<a href="#" id="gantiP">belum ada penugasan</a> · `}TGEP Scan Drill Log · versi ${APP_VERSION}</p>`;
+  app.innerHTML = banner + `<nav>${navs.map(([k, t]) => `<button data-t="${k}" class="${tab === k ? "on" : ""}">${t}</button>`).join("")}<button class="sec" id="out" style="flex:0">Keluar</button></nav><div id="v"></div><p class="muted" style="text-align:center;font-size:12px;margin:18px 0">${myTugas ? `Proyek <b>${esc(myTugas.nama)}</b> · ${esc(myTugas.rig ?? "semua rig")}${me?.role === "client" ? "" : ` · <a href="#" id="gantiP">${myTugas.pilih_rig ? "ganti rig" : "penugasan"}</a>`} · ` : ["client", "admin", "verifier"].includes(me?.role) ? "" : `<a href="#" id="gantiP">belum ada penugasan</a> · `}X-Terra · versi ${APP_VERSION}</p>`;
   $("#gantiP")?.addEventListener("click", (e) => { e.preventDefault(); pilihProyekView(false); });
   if (!sessionStorage.getItem("tolakCek")) { sessionStorage.setItem("tolakCek", "1"); cekPenolakan(true); }
   app.querySelectorAll("nav [data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; localStorage.setItem("tab", tab); render(); }));
@@ -1276,7 +1276,7 @@ async function laporanProgres(st) {
     ${klien ? "" : `<h2>7. Kepatuhan pengiriman operator</h2>${opRows.length ? tbl(T.operator, { col: 1 }) : "<p>Belum ada data operator.</p>"}
     <h2>8. Kelengkapan data & QC</h2>${tbl(T.qc)}`}
     <table style="margin-top:24px"><tr><td style="height:70px;width:50%;vertical-align:top"><b>Disusun oleh</b><br><br><br>Nama / tanggal:</td><td style="vertical-align:top"><b>Diperiksa oleh</b><br><br><br>Nama / tanggal:</td></tr></table>
-    <small>Dibuat otomatis dari database aplikasi TGEP Scan Drill Log · ${new Date().toLocaleString("id-ID")} · oleh ${esc(me?.full_name ?? "")}. Angka mengikuti data yang sudah masuk server saat laporan dibuat.</small></body></html>`);
+    <small>Dibuat otomatis dari database aplikasi X-Terra · ${new Date().toLocaleString("id-ID")} · oleh ${esc(me?.full_name ?? "")}. Angka mengikuti data yang sudah masuk server saat laporan dibuat.</small></body></html>`);
     w.document.close();
   } catch (e) { w.document.body.innerHTML = `<p style="font-family:Arial;color:#b00">Gagal menyusun laporan: ${esc(e.message)}</p>`; }
 }
