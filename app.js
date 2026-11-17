@@ -38,13 +38,44 @@ const db = await new Promise((res, rej) => {
 });
 const q = (mode, fn) => new Promise((res, rej) => { const t = db.transaction("queue", mode); const s = t.objectStore("queue"); const r = fn(s); t.oncomplete = () => res(r?.result); t.onerror = () => rej(t.error); });
 const qAll = () => q("readonly", (s) => s.getAll());
-const qPut = (x) => q("readwrite", (s) => s.put(x));
+const qPut = (x) => q("readwrite", (s) => s.put({ antre_at: Date.now(), ...x })); // antre_at: kapan pertama masuk antrean
 const qDel = (k) => q("readwrite", (s) => s.delete(k));
 
+// ---------- notifikasi singkat ----------
+function toast(t) { const el = Object.assign(document.createElement("div"), { textContent: t }); el.style.cssText = "position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:70;background:#12251E;color:#fff;padding:9px 14px;border-radius:10px;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.3)"; document.body.appendChild(el); setTimeout(() => el.remove(), 3500); }
+// ---------- pratinjau foto: "Pakai foto ini" atau "Foto ulang" ----------
+function pratinjauFoto(file, judul = "Periksa foto") {
+  return new Promise((res) => {
+    let url = URL.createObjectURL(file), cur = file;
+    const m = modal(`<h3>${esc(judul)}</h3><img id="pvImg" src="${url}" style="width:100%;max-height:60vh;object-fit:contain;border-radius:10px;background:#000">
+      <p class="muted" style="margin:6px 0">Pastikan foto jelas, tidak buram, dan objeknya terlihat utuh.</p>
+      <div class="row"><button id="pvOk">✓ Pakai foto ini</button><button class="sec" id="pvUl">📷 Foto ulang</button></div><button class="sec" id="pvX" style="margin-top:6px">Batal</button>
+      <input id="pvIn" type="file" accept="image/*" capture="environment" class="hide">`);
+    const tutup = (v) => { URL.revokeObjectURL(url); m.remove(); res(v); };
+    m.querySelector("#pvOk").onclick = () => tutup(cur);
+    m.querySelector("#pvX").onclick = () => tutup(null);
+    m.querySelector("#pvUl").onclick = () => m.querySelector("#pvIn").click();
+    m.querySelector("#pvIn").onchange = (ev) => { const f = ev.target.files[0]; ev.target.value = ""; if (!f) return; URL.revokeObjectURL(url); cur = f; url = URL.createObjectURL(f); m.querySelector("#pvImg").src = url; };
+  });
+}
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.32";
+// Kirim otomatis: saat sinyal kembali (online), saat aplikasi dibuka lagi, dan dicoba ulang tiap 2 menit selama antrean belum kosong
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync(); });
+setInterval(async () => { if (db && (await qAll()).length) sync(); }, 120e3);
+setInterval(() => cekAntreLama(), 60e3);
+async function cekAntreLama() {
+  if (!db) return; const L = await qAll(), lama = L.filter((x) => Date.now() - (x.antre_at ?? Date.now()) > 3600e3);
+  let el = document.getElementById("antreLama");
+  if (!L.length) { el?.remove(); return; }
+  if (!el) { el = Object.assign(document.createElement("div"), { id: "antreLama" }); el.style.cssText = "position:fixed;left:8px;right:8px;bottom:8px;z-index:60;padding:10px 12px;border-radius:12px;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.25);display:flex;gap:8px;align-items:center"; document.body.appendChild(el); }
+  const err = L.find((x) => x.error)?.error;
+  el.style.background = lama.length ? "#F6C9C3" : "#FFE58A";
+  el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
+  el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
+}
+const APP_VERSION = "2026-11-17.34";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -75,7 +106,7 @@ async function shrink(file, max = 2400) {
 let syncing = false;
 async function sync() {
   if (syncing || !navigator.onLine || !session || session.offline) return;
-  syncing = true;
+  syncing = true; const n0 = (await qAll()).length;
   try {
     for (const it of await qAll()) {
       if (it.kind === "core") { await syncCore(it); continue; }
@@ -94,7 +125,7 @@ async function sync() {
       if (job) await sb.functions.invoke("process-scan", { body: { job_id: job.id } });
       await qDel(it.client_uuid);
     }
-  } finally { syncing = false; beat(true); loadLanjutan(); jadwalCekTolak(); if (["foto", "core", "prog", "ddr"].includes(tab)) render(); }
+  } finally { syncing = false; const n1 = (await qAll()).length; if (n0 > n1) toast(`✓ ${n0 - n1} data terkirim${n1 ? ` · ${n1} masih antre` : ""}`); cekAntreLama(); beat(true); loadLanjutan(); jadwalCekTolak(); if (["foto", "core", "prog", "ddr"].includes(tab)) render(); }
 }
 async function syncCore(it) {
   const base = `${session.user.id}/${it.bhid}/${it.client_uuid}`;
@@ -178,7 +209,8 @@ async function bukaLinkView(bucket, path) {
 }
 function loginView() {
   const qp = new URLSearchParams(location.search);
-  const after = qp.get("daftar") === "ok" ? `<div class="card" style="background:#DCEFE4"><b>Pendaftaran terkirim.</b> Akun Anda menunggu persetujuan admin TGEP. Setelah disetujui, masuk dengan email dan kata sandi yang Anda buat.</div>` : "";
+  const dicabut = localStorage.getItem("aksesDicabut");
+  const after = dicabut ? `<div class="card" style="background:#F6C9C3"><b>Akun Anda sudah ${esc(dicabut)} oleh admin.</b> Semua akses dan data aplikasi di HP ini sudah ditutup. Untuk memakai aplikasi lagi, <a href="daftar.html">daftar ulang</a> lalu tunggu persetujuan admin.</div>` : qp.get("daftar") === "ok" ? `<div class="card" style="background:#DCEFE4"><b>Pendaftaran terkirim.</b> Akun Anda menunggu persetujuan admin TGEP. Setelah disetujui, masuk dengan email dan kata sandi yang Anda buat.</div>` : "";
   app.innerHTML = after + `<div class="card"><h2>Masuk</h2><p class="muted">Akun dibuat oleh admin. Setelah sekali masuk, aplikasi tetap bisa memotret saat offline.</p>
   <label>Email</label><input id="em" type="email" autocomplete="username"><label>Kata sandi</label><input id="pw" type="password" autocomplete="current-password">
   <div style="margin-top:12px"><button id="go">Masuk</button></div><div id="e" class="err"></div>
@@ -186,7 +218,8 @@ function loginView() {
   if (qp.get("email")) $("#em").value = qp.get("email");
   $("#go").onclick = async () => {
     const { error } = await sb.auth.signInWithPassword({ email: $("#em").value.trim(), password: $("#pw").value });
-    if (error) $("#e").textContent = error.message;
+    if (error) $("#e").textContent = /banned/i.test(error.message) ? "Akun ini sudah dinonaktifkan admin. Untuk memakai aplikasi lagi, hubungi admin agar pendaftaran Anda ditinjau ulang." : /invalid login/i.test(error.message) ? "Email atau kata sandi salah. Bila akun Anda sudah dihapus admin, daftar ulang lewat tautan di bawah." : error.message;
+    else localStorage.removeItem("aksesDicabut");
   };
 }
 
@@ -247,7 +280,7 @@ async function fotoView(v) {
   };
   $("#bCam").onclick = () => meta() && $("#fCam").click();
   $("#bUp").onclick = () => meta() && $("#fUp").click();
-  $("#fCam").onchange = async (ev) => { const f = ev.target.files[0], m = meta(); if (!f || !m) return; const ok = await put(m, await shrink(f), "KAMERA", null, null, null, new Date().toISOString()); ev.target.value = ""; if (ok === false) return; render(); sync(); };
+  $("#fCam").onchange = async (ev) => { const f0 = ev.target.files[0], m = meta(); ev.target.value = ""; if (!f0 || !m) return; const f = await pratinjauFoto(f0, "Foto formulir"); if (!f) return; const ok = await put(m, await shrink(f), "KAMERA", null, null, null, new Date().toISOString()); ev.target.value = ""; if (ok === false) return; render(); sync(); };
   $("#fUp").onchange = async (ev) => {
     const fs = [...ev.target.files], m = meta(); if (!fs.length || !m) return;
     let n = 0;
@@ -646,7 +679,8 @@ async function progView(v) {
   v.querySelector("[data-mk]")?.addEventListener("click", () => { keep(); markingForm(); });
   v.querySelector("[data-p2h]").onclick = () => { keep(); if (!localStorage.getItem("rig")) return ($("#e").textContent = "Isi nama rig dulu."); p2hForm(); };
   $("#pf").onchange = async (ev) => {
-    const file = ev.target.files[0]; ev.target.value = ""; if (!file) return;
+    const f0 = ev.target.files[0]; ev.target.value = ""; if (!f0) return;
+    const file = await pratinjauFoto(f0, `Foto ${EV[pending] ?? "aktivitas"}`); if (!file) return;
     const capturedAt = new Date(), age = Math.round((Date.now() - file.lastModified) / 1000);
     const posP = getPos();
     const r = { rig: localStorage.getItem("rig"), bhid: localStorage.getItem("bhid") || null };
@@ -788,7 +822,8 @@ async function p2hForm() {
     m.querySelector("#pf2").click();
   };
   m.querySelector("#pf2").onchange = async (ev) => {
-    const file = ev.target.files[0]; if (!file) return;
+    const f0 = ev.target.files[0]; ev.target.value = ""; if (!f0) return;
+    const file = await pratinjauFoto(f0, "Foto unit rig (P2H)"); if (!file) return;
     const capturedAt = new Date(), age = Math.round((Date.now() - file.lastModified) / 1000), pos = await Promise.race([getPos(), new Promise((r) => setTimeout(() => r(null), 15000))]);
     const nNot = res.filter((x) => x.status === "TIDAK OK").length;
     const row = { rig: localStorage.getItem("rig"), shift: localStorage.getItem("shift"), hour_meter: Number(String(m.querySelector("#hm").value).replace(",", ".")) || null,
@@ -2644,9 +2679,21 @@ async function editSample(no, done) {
 // ---------- sesi ----------
 async function loadMe() {
   if (!session) { me = null; return; }
-  const { data } = await sb.from("app_user").select("full_name,role").eq("user_id", session.user.id).maybeSingle();
-  me = data ?? JSON.parse(localStorage.getItem("me") || "null");
-  if (data) localStorage.setItem("me", JSON.stringify(data));
+  if (session.offline) { me = JSON.parse(localStorage.getItem("me") || "null"); return; }
+  const { data, error } = await sb.from("app_user").select("full_name,role").eq("user_id", session.user.id).maybeSingle();
+  if (error) { me = JSON.parse(localStorage.getItem("me") || "null"); return; }   // gangguan jaringan: pakai identitas terakhir
+  if (!data || data.role === "nonaktif") {
+    // akun yang pernah aktif lalu dihapus / dinonaktifkan: tutup akses total, hapus semua data tersimpan di HP
+    if (data?.role === "nonaktif" || localStorage.getItem("me")) return aksesDicabut(data?.role === "nonaktif" ? "dinonaktifkan" : "dihapus");
+    me = null; return;   // pendaftar baru: menunggu persetujuan
+  }
+  me = data; localStorage.setItem("me", JSON.stringify(data));
+}
+async function aksesDicabut(jenis) {
+  me = null; session = null;
+  try { localStorage.clear(); sessionStorage.clear(); } catch {}
+  localStorage.setItem("aksesDicabut", jenis); localStorage.setItem("manualLogout", "1");
+  try { await sb.auth.signOut({ scope: "local" }); } catch {}
 }
 // Mode offline: bila token tidak bisa diperbarui karena tidak ada sinyal, pakai identitas terakhir
 // supaya tetap bisa memotret. Antrean baru dikirim setelah login sah saat online.
@@ -2656,6 +2703,7 @@ function offlineSession() {
 }
 sb.auth.onAuthStateChange(async (e, s) => {
   if (s) localStorage.setItem("lastUser", JSON.stringify({ id: s.user.id, email: s.user.email }));
+  if (!s && e === "SIGNED_OUT" && navigator.onLine) { localStorage.removeItem("lastUser"); localStorage.removeItem("me"); } // sesi ditolak server saat online (akun dihapus/diblokir): mode offline ikut ditutup
   session = s ?? (e === "SIGNED_OUT" && !localStorage.getItem("manualLogout") ? offlineSession() : null);
   localStorage.removeItem("manualLogout");
   await loadMe(); render(); if (s) sync();
