@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.4";
+const APP_VERSION = "2026-11-17.5";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -538,11 +538,22 @@ const shiftDari = (d) => { const w = new Date(d.toLocaleString("en-US", { timeZo
   const t = new Date(w.getTime() - 6 * 36e5); const tgl = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
   return { tanggal: tgl, shift: h >= 6 && h < 18 ? "PAGI" : "MALAM" }; };
 const kunciPersonil = (rig, tgl, sh) => `personil|${rig}|${tgl}|${sh}`;
+// Daftar personil resmi (diisi admin). Disimpan di HP agar tetap bisa dipilih tanpa sinyal.
+const masterPersonil = () => JSON.parse(localStorage.getItem("masterPersonil") || "[]");
+const kunciNama = (x) => String(x ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+async function loadPersonil() {
+  if (!online()) return masterPersonil();
+  const { data, error } = await sb.from("personil").select("id,project,nama,jabatan,rigs,status,aktif").neq("status", "DITOLAK").order("nama");
+  if (!error) localStorage.setItem("masterPersonil", JSON.stringify(data ?? []));
+  return masterPersonil();
+}
+const resmiDi = (rig) => masterPersonil().filter((p) => p.status === "RESMI" && p.aktif && (!myTugas?.project || p.project === myTugas.project) && (!rig || !(p.rigs ?? []).length || p.rigs.includes(rig)));
 const crewMin = () => Number(localStorage.getItem("crewMin")) || 4;   // qc_param CREW_MIN: driller + helper/mekanik, tanpa WSG
 const jabatanSaya = () => (me?.role === "geologist" ? "WSG" : me?.role === "driller" ? "Driller" : "Lainnya");
 function personilAwal(rig, t, capturedAt) {
   const { tanggal, shift } = shiftDari(capturedAt), hariIni = JSON.parse(localStorage.getItem(kunciPersonil(rig, tanggal, shift)) || "null");
-  let L = t === "KELUAR" && hariIni ? hariIni : hariIni ?? JSON.parse(localStorage.getItem(`personilLast|${rig}`) || "[]");
+  const M = resmiDi(rig).map((p) => ({ nama: p.nama, jabatan: p.jabatan }));
+  let L = t === "KELUAR" && hariIni ? hariIni : hariIni ?? (M.length ? M : JSON.parse(localStorage.getItem(`personilLast|${rig}`) || "[]"));
   L = L.map((x) => ({ ...x }));
   if (t === "MASUK" && me?.full_name && !L.some((x) => x.nama.toUpperCase() === me.full_name.toUpperCase())) L.unshift({ nama: me.full_name, jabatan: jabatanSaya() });
   if (!L.some((x) => x.jabatan === "WSG")) L.unshift({ nama: "", jabatan: "WSG" });
@@ -551,15 +562,20 @@ function personilAwal(rig, t, capturedAt) {
   return L.sort((a, b) => JABATAN.indexOf(a.jabatan) - JABATAN.indexOf(b.jabatan));
 }
 function personilEditor(box, list) {
-  const riwayat = JSON.parse(localStorage.getItem("namaPersonil") || "[]");
+  const rigNow = localStorage.getItem("rig") || "", resmi = resmiDi(rigNow), semua = resmiDi(""), R = Object.fromEntries(semua.map((p) => [kunciNama(p.nama), p]));
+  const riwayat = [...new Set([...resmi.map((p) => p.nama), ...semua.map((p) => p.nama)])];
   const baris = (x) => `<div class="row" data-ps style="align-items:center;margin-top:4px"><select style="flex:0 0 112px">${JABATAN.map((j) => `<option ${x.jabatan === j ? "selected" : ""}>${j}</option>`).join("")}</select>
-    <input value="${esc(x.nama)}" placeholder="Nama" list="dlNama" autocapitalize="words"><button class="sec" data-hp style="flex:0;padding:8px 12px">✕</button></div>`;
+    <input value="${esc(x.nama)}" placeholder="Pilih / ketik nama" list="dlNama" autocapitalize="words"><span data-st style="flex:0 0 18px;text-align:center"></span><button class="sec" data-hp style="flex:0;padding:8px 12px">✕</button></div>`;
   box.innerHTML = `<datalist id="dlNama">${riwayat.map((n) => `<option value="${esc(n)}">`).join("")}</datalist><div data-pl>${list.map(baris).join("")}</div>
     <button class="sec" data-pa style="width:auto;margin-top:6px">+ personil</button><div class="muted" data-pc style="margin-top:4px"></div>`;
   const hitung = () => { const L = ambilPersonil(box), n = (j) => L.filter((x) => x.jabatan === j).length;
     const cr = L.length - n("WSG"), kos = [...box.querySelectorAll("[data-ps] input")].filter((x) => !x.value.trim()).length;
-    box.querySelector("[data-pc]").innerHTML = `${L.length} orang · WSG ${n("WSG")} · <b style="color:${cr < crewMin() ? "var(--red)" : "inherit"}">crew ${cr}/${crewMin()}</b> (driller ${n("Driller")})${kos ? ` · <span style="color:var(--red)">${kos} nama kosong</span>` : ""}`; };
-  const pasang = () => { box.querySelectorAll("[data-hp]").forEach((b) => (b.onclick = () => { b.closest("[data-ps]").remove(); hitung(); })); box.querySelectorAll("[data-ps] input,[data-ps] select").forEach((x) => (x.oninput = hitung)); };
+    box.querySelectorAll("[data-ps]").forEach((r) => { const v = r.querySelector("input").value.trim(), o = R[kunciNama(v)];
+      r.querySelector("[data-st]").innerHTML = !v ? "" : o ? `<span title="Terdaftar" style="color:var(--green)">✓</span>` : `<span title="Belum terdaftar — diusulkan ke admin" style="color:#B26B00">?</span>`; });
+    const baru = L.filter((x) => !R[kunciNama(x.nama)]).length;
+    box.querySelector("[data-pc]").innerHTML = (baru ? `<span style="color:#B26B00">${baru} nama belum terdaftar (?) — akan diusulkan ke admin.</span><br>` : "") + `${L.length} orang · WSG ${n("WSG")} · <b style="color:${cr < crewMin() ? "var(--red)" : "inherit"}">crew ${cr}/${crewMin()}</b> (driller ${n("Driller")})${kos ? ` · <span style="color:var(--red)">${kos} nama kosong</span>` : ""}`; };
+  const pasang = () => { box.querySelectorAll("[data-hp]").forEach((b) => (b.onclick = () => { b.closest("[data-ps]").remove(); hitung(); })); box.querySelectorAll("[data-ps] input,[data-ps] select").forEach((x) => (x.oninput = hitung));
+    box.querySelectorAll("[data-ps] input").forEach((x) => (x.onchange = () => { const o = R[kunciNama(x.value)]; if (o) { x.value = o.nama; x.closest("[data-ps]").querySelector("select").value = o.jabatan; } hitung(); })); };
   box.querySelector("[data-pa]").onclick = () => { box.querySelector("[data-pl]").insertAdjacentHTML("beforeend", baris({ nama: "", jabatan: "Helper" })); pasang(); box.querySelector("[data-pl] [data-ps]:last-child input").focus(); hitung(); };
   pasang(); hitung();
 }
@@ -617,7 +633,7 @@ async function progView(v) {
     const tp = () => m.querySelector('input[name="et"]:checked').value;
     const upd = () => { const t = tp(); m.querySelector("#runf").style.display = t === "RUN" ? "" : "none"; m.querySelector("#ok").textContent = `Ya, simpan sebagai ${EV[t]}`;
       const ps = t === "MASUK" || t === "KELUAR"; m.querySelector("#psn").style.display = ps ? "" : "none";
-      if (ps && !m.querySelector("#psnBox").dataset.ok) { m.querySelector("#psnBox").dataset.ok = "1"; personilEditor(m.querySelector("#psnBox"), personilAwal(r.rig, t, capturedAt));
+      if (ps && !m.querySelector("#psnBox").dataset.ok) { m.querySelector("#psnBox").dataset.ok = "1"; loadPersonil(); personilEditor(m.querySelector("#psnBox"), personilAwal(r.rig, t, capturedAt));
         m.querySelector("#psnT").textContent = t === "MASUK" ? "Personil hadir (WSG, driller, crew)" : "Personil yang keluar shift";
         m.querySelector("#psnTip").textContent = t === "MASUK" ? "Tulis semua yang ada di foto. Terisi dari shift terakhir rig ini — hapus yang tidak hadir, tambah yang baru." : "Hapus nama yang sudah pulang lebih dulu."; } };
     m.querySelectorAll('input[name="et"]').forEach((x) => (x.onchange = upd)); upd();
@@ -1370,6 +1386,7 @@ async function loadTugas() {
   if (!online()) return myTugas;
   const [{ data: a, error }, { data: pj }] = await Promise.all([sb.rpc("my_assignment"), sb.from("project").select("*").eq("aktif", true).order("nama")]);
   localStorage.setItem("projects", JSON.stringify(pj ?? []));
+  loadPersonil();
   sb.from("qc_param").select("value").eq("name", "CREW_MIN").maybeSingle().then(({ data }) => { if (data?.value) localStorage.setItem("crewMin", data.value); });
   if (error) return myTugas;
   const rigs = a?.rigs ?? [], simpan = localStorage.getItem("rig");
@@ -1483,7 +1500,7 @@ async function rekapView(v) {
   v.innerHTML = `<div class="card"><h2>Rekap & pelacakan operator</h2>
     <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div>${proyekSelect()}<button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button></div>
     <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. Form Logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.</p></div>
-    <div id="rs" class="card">Memuat…</div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rab" class="card"></div><div id="rp" class="card"></div><div id="rpj" class="card"></div>` : ""}`;
+    <div id="rs" class="card">Memuat…</div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rab" class="card"></div><div id="rmp" class="card"></div><div id="rp" class="card"></div><div id="rpj" class="card"></div>` : ""}`;
   $("#rgo").onclick = () => { sessionStorage.setItem("rekapTgl", $("#rt").value); sessionStorage.setItem("filterProyek", $("#fproj").value); rekapView(v); };
   if (!online()) return ($("#rs").textContent = "Rekap perlu sinyal internet.");
   const from14 = new Date(Date.parse(tgl) - 13 * 864e5).toISOString().slice(0, 10);
@@ -1511,7 +1528,7 @@ async function rekapView(v) {
     const csv = [cols.join(","), ...(all ?? []).map((r) => cols.map((c) => `"${String(Array.isArray(r[c]) ? r[c].join("; ") : r[c] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })); a.download = `TGEP_Rekap_Operator_${from14}_${tgl}.csv`; a.click(); };
   if (me?.role === "admin") {
-    absensiGaji($("#rab"));
+    absensiGaji($("#rab")); personilAdmin($("#rmp"));
     proyekAdmin($("#rpj"));
     const [{ data: us }, { data: pn }, { data: pj }] = await Promise.all([sb.from("app_user").select("user_id,full_name,role,company").in("role", ["driller", "geologist"]).order("full_name"), sb.from("penugasan").select("*"), sb.from("project").select("code,nama,rigs,aktif").order("nama")]);
     const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p]));
@@ -1558,15 +1575,15 @@ async function absensiGaji(box) {
     if (st.rig) { q = q.eq("rig", st.rig); q2 = q2.eq("rig", st.rig); } if (st.jab) q = q.eq("jabatan", st.jab);
     const [{ data: rows, error }, { data: sh, error: e2 }] = await Promise.all([q, q2]); if (error || e2) throw new Error((error ?? e2).message);
     const P = {};
-    for (const r of rows ?? []) { const k = r.nama_kunci || String(r.nama).toUpperCase(), o = (P[k] ??= { kunci: k, ejaan: {}, jab: {}, rig: new Set(), tgl: new Set(), shift: 0, pagi: 0, malam: 0, lengkap: 0, belum: 0, tanpaMasuk: 0, jam: 0, hari: {} });
-      o.ejaan[r.nama] = (o.ejaan[r.nama] ?? 0) + 1; o.jab[r.jabatan] = (o.jab[r.jabatan] ?? 0) + 1; o.rig.add(r.rig);
+    for (const r of rows ?? []) { const k = r.nama_kunci || String(r.nama).toUpperCase(), o = (P[k] ??= { kunci: k, resmi: r.nama_resmi, idk: r.id_karyawan ?? "", pt: r.perusahaan ?? "", stn: r.status_nama === "ALIAS" ? "RESMI" : r.status_nama, ejaan: {}, jab: {}, rig: new Set(), tgl: new Set(), shift: 0, pagi: 0, malam: 0, lengkap: 0, belum: 0, tanpaMasuk: 0, jam: 0, hari: {} });
+      o.ejaan[r.nama] = (o.ejaan[r.nama] ?? 0) + 1; o.jab[r.jabatan_resmi ?? r.jabatan] = (o.jab[r.jabatan_resmi ?? r.jabatan] ?? 0) + 1; o.rig.add(r.rig);
       if (r.status === "TIDAK FOTO MASUK") { o.tanpaMasuk++; continue; }
       o.tgl.add(r.tanggal); o.shift++; r.shift === "PAGI" ? o.pagi++ : o.malam++; r.status === "LENGKAP" ? o.lengkap++ : o.belum++;
       o.jam += Number(r.durasi_jam) || 0; o.hari[r.tanggal] = (o.hari[r.tanggal] ?? "") + (r.shift === "PAGI" ? "P" : "M"); }
     const top = (m) => Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
-    const orang = Object.values(P).map((o) => ({ ...o, nama: top(o.ejaan), jabatan: top(o.jab), ejaanLain: Object.keys(o.ejaan).length > 1 ? Object.keys(o.ejaan) : [] }))
+    const orang = Object.values(P).map((o) => ({ ...o, nama: o.resmi ?? top(o.ejaan), jabatan: top(o.jab), ejaanLain: Object.keys(o.ejaan).filter((e) => kunciNama(e) !== kunciNama(o.resmi ?? top(o.ejaan))) }))
       .sort((a, b) => JABATAN.indexOf(a.jabatan) - JABATAN.indexOf(b.jabatan) || a.nama.localeCompare(b.nama));
-    const mirip = []; for (let i = 0; i < orang.length; i++) for (let j = i + 1; j < orang.length; j++) { const a = orang[i].kunci, b = orang[j].kunci;
+    const mirip = []; for (let i = 0; i < orang.length; i++) for (let j = i + 1; j < orang.length; j++) { if (orang[i].stn === "RESMI" && orang[j].stn === "RESMI") continue; const a = kunciNama(orang[i].nama), b = kunciNama(orang[j].nama);
       if (levenshtein(a, b) <= (Math.min(a.length, b.length) <= 6 ? 1 : 2) || a.startsWith(b + " ") || b.startsWith(a + " ")) mirip.push([orang[i].nama, orang[j].nama]); }
     const tanggal = []; for (let d = new Date(st.from + "T00:00:00Z"); d <= new Date(st.to + "T00:00:00Z"); d = new Date(d.getTime() + 864e5)) tanggal.push(d.toISOString().slice(0, 10));
     return { rows: rows ?? [], sh: sh ?? [], orang, mirip, tanggal };
@@ -1577,10 +1594,11 @@ async function absensiGaji(box) {
     const { orang, mirip, sh, tanggal } = D, j1 = (x) => (Math.round(x * 10) / 10).toLocaleString("id-ID");
     const shKurang = sh.filter((x) => (x.kurang ?? []).length);
     $("#agO").innerHTML = `<p style="color:inherit"><b>${orang.length}</b> orang · <b>${sh.length}</b> shift rig · ${tanggal.length} hari</p>
-      ${mirip.length ? `<div class="card" style="background:#FBE6D0;margin:6px 0"><b>Periksa nama mirip sebelum penggajian</b> — bisa jadi orang yang sama ditulis berbeda (dihitung terpisah):<br>${mirip.map(([a, b]) => `${esc(a)} ↔ ${esc(b)}`).join("<br>")}</div>` : ""}
+      ${mirip.length ? `<div class="card" style="background:#FBE6D0;margin:6px 0"><b>Periksa nama mirip sebelum penggajian</b> — bisa jadi orang yang sama ditulis berbeda (dihitung terpisah). Gabungkan di kartu Daftar personil resmi:<br>${mirip.map(([a, b]) => `${esc(a)} ↔ ${esc(b)}`).join("<br>")}</div>` : ""}
+      ${orang.some((o) => o.stn !== "RESMI") ? `<p style="color:#B26B00;margin:6px 0">${orang.filter((o) => o.stn !== "RESMI").length} nama belum terdaftar resmi (tanda ?). Setujui atau gabungkan di kartu Daftar personil resmi sebelum penggajian.</p>` : ""}
       ${shKurang.length ? `<p class="err" style="margin:6px 0">${shKurang.length} shift rig bermasalah (crew kurang, tanpa driller, belum foto keluar, dll.) — lihat sheet “Per shift rig” di Excel.</p>` : ""}
       <div class="tw"><table><tr><th>Nama</th><th>Jabatan</th><th>Rig</th><th>Hari kerja</th><th>Shift</th><th>Pagi</th><th>Malam</th><th>Jam kerja</th><th>Belum foto keluar</th>${tanggal.map((d) => `<th>${d.slice(8)}</th>`).join("")}</tr>
-      ${orang.map((o) => `<tr><td style="padding:4px 6px;white-space:nowrap"><b>${esc(o.nama)}</b>${o.ejaanLain.length ? `<br><span class="muted">ditulis: ${o.ejaanLain.map(esc).join(" / ")}</span>` : ""}</td><td style="padding:4px 6px">${esc(o.jabatan)}</td><td style="padding:4px 6px">${esc([...o.rig].join(", "))}</td>
+      ${orang.map((o) => `<tr><td style="padding:4px 6px;white-space:nowrap"><b>${esc(o.nama)}</b>${o.stn !== "RESMI" ? ` <span style="color:#B26B00" title="Belum terdaftar resmi">?</span>` : ""}${o.idk ? ` <span class="muted">${esc(o.idk)}</span>` : ""}${o.ejaanLain.length ? `<br><span class="muted">ditulis: ${o.ejaanLain.map(esc).join(" / ")}</span>` : ""}</td><td style="padding:4px 6px">${esc(o.jabatan)}</td><td style="padding:4px 6px">${esc([...o.rig].join(", "))}</td>
         <td style="padding:4px 6px;text-align:right"><b>${o.tgl.size}</b></td><td style="padding:4px 6px;text-align:right">${o.shift}</td><td style="padding:4px 6px;text-align:right">${o.pagi}</td><td style="padding:4px 6px;text-align:right">${o.malam}</td>
         <td style="padding:4px 6px;text-align:right">${j1(o.jam)}</td><td style="padding:4px 6px;text-align:right;${o.belum ? "color:var(--red)" : ""}">${o.belum || ""}</td>
         ${tanggal.map((d) => `<td style="padding:4px 3px;text-align:center">${o.hari[d] ?? ""}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="9" class="muted" style="padding:6px">Belum ada data personil pada periode ini.</td></tr>`}</table></div>
@@ -1590,10 +1608,10 @@ async function absensiGaji(box) {
   $("#agX").onclick = async () => {
     try { if (!D) D = await ambil(); const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new(), { orang, rows, sh, mirip, tanggal } = D;
       const add = (data, nm) => X.utils.book_append_sheet(wb, data.length ? X.utils.json_to_sheet(data) : X.utils.aoa_to_sheet([["(kosong)"]]), nm);
-      add(orang.map((o) => ({ Nama: o.nama, Jabatan: o.jabatan, Rig: [...o.rig].join(", "), "Hari kerja": o.tgl.size, "Jumlah shift": o.shift, "Shift pagi": o.pagi, "Shift malam": o.malam,
+      add(orang.map((o) => ({ Nama: o.nama, "ID karyawan": o.idk, Perusahaan: o.pt, "Status nama": o.stn === "RESMI" ? "RESMI" : "BELUM TERDAFTAR", Jabatan: o.jabatan, Rig: [...o.rig].join(", "), "Hari kerja": o.tgl.size, "Jumlah shift": o.shift, "Shift pagi": o.pagi, "Shift malam": o.malam,
         "Jam kerja": Math.round(o.jam * 100) / 100, "Shift lengkap (masuk+keluar)": o.lengkap, "Belum foto keluar": o.belum, "Hanya di foto keluar": o.tanpaMasuk, "Ejaan lain": o.ejaanLain.join(" / ") })), "Rekap per orang");
       add(orang.map((o) => Object.fromEntries([["Nama", o.nama], ["Jabatan", o.jabatan], ...tanggal.map((d) => [d, o.hari[d] ?? ""]), ["Hari kerja", o.tgl.size]])), "Kehadiran harian");
-      add(rows.map((r) => ({ Tanggal: r.tanggal, Shift: r.shift, Rig: r.rig, Nama: r.nama, Jabatan: r.jabatan, "Jam masuk": (r.jam_masuk ?? "").replace("T", " ").slice(0, 16), "Jam keluar": (r.jam_keluar ?? "").replace("T", " ").slice(0, 16),
+      add(rows.map((r) => ({ Tanggal: r.tanggal, Shift: r.shift, Rig: r.rig, "Nama resmi": r.nama_resmi ?? "", "Nama tertulis": r.nama, "ID karyawan": r.id_karyawan ?? "", Jabatan: r.jabatan_resmi ?? r.jabatan, "Jam masuk": (r.jam_masuk ?? "").replace("T", " ").slice(0, 16), "Jam keluar": (r.jam_keluar ?? "").replace("T", " ").slice(0, 16),
         "Durasi (jam)": r.durasi_jam, Status: r.status, "Alasan (crew kurang dll.)": r.alasan_masuk ?? "", "Dicatat oleh": r.dicatat_oleh ?? "" })), "Detail per shift");
       add(sh.map((x) => ({ Tanggal: x.tanggal, Shift: x.shift, Rig: x.rig, "Jam masuk": (x.jam_masuk ?? "").replace("T", " ").slice(0, 16), "Jam keluar": (x.jam_keluar ?? "").replace("T", " ").slice(0, 16),
         WSG: x.wsg, Driller: x.driller, Crew: x.crew, "Jumlah crew (tanpa WSG)": x.jumlah_crew, "Crew minimum": x.crew_min, Kekurangan: (x.kurang ?? []).join("; ") })), "Per shift rig");
@@ -1604,6 +1622,41 @@ async function absensiGaji(box) {
     } catch (e) { alert(e.message); }
   };
   tampil();
+}
+// ---------- Daftar personil resmi (admin) ----------
+async function personilAdmin(box) {
+  const pjs = JSON.parse(localStorage.getItem("projects") || "[]"), proj = sessionStorage.getItem("mpProj") || pjs[0]?.code || "";
+  const rigsP = pjs.find((p) => p.code === proj)?.rigs ?? [];
+  const { data, error } = await sb.from("personil").select("*").eq("project", proj).order("status").order("jabatan").order("nama");
+  if (error) return (box.innerHTML = `<p class="err">${esc(error.message)}</p>`);
+  const L = data ?? [], us = L.filter((p) => p.status === "USULAN"), rs = L.filter((p) => p.status === "RESMI"), JB = (cur) => JABATAN.map((j) => `<option ${cur === j ? "selected" : ""}>${j}</option>`).join("");
+  const rigC = (id, sel) => rigsP.map((r) => `<label style="flex:0;white-space:nowrap;margin:0"><input type="checkbox" data-mr="${id}" value="${esc(r)}" ${(sel ?? []).includes(r) ? "checked" : ""} style="width:auto"> ${esc(r)}</label>`).join(" ");
+  box.innerHTML = `<h3>Daftar personil resmi (admin)</h3><p class="muted">Nama di sini muncul sebagai pilihan dan isian otomatis di <b>Masuk shift</b> rig yang dicentang (langsung saat HP petugas online). Nama baru yang diketik petugas masuk ke <b>Usulan</b>: setujui bila orang baru, atau gabungkan ke nama resmi bila hanya beda ejaan — rekap gaji ikut terhitung ke orang resmi, catatan lapangan tidak diubah.</p>
+    ${pjs.length > 1 ? `<label>Proyek</label><select id="mpP">${pjs.map((p) => `<option value="${esc(p.code)}" ${p.code === proj ? "selected" : ""}>${esc(p.nama)}</option>`).join("")}</select>` : ""}
+    ${us.length ? `<h3 style="margin-top:12px;color:#B26B00">Usulan dari lapangan (${us.length})</h3><ul class="list">${us.map((p) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:160px"><b>${esc(p.nama)}</b> · ${esc(p.jabatan)} · ${esc((p.rigs ?? []).join(", "))}<br><span class="muted">${esc(p.catatan ?? "")}</span></span>
+      <button data-ok="${p.id}" style="flex:0">Setujui</button><select data-gt="${p.id}" style="max-width:200px"><option value="">Gabungkan ke…</option>${rs.map((r) => `<option value="${r.id}">${esc(r.nama)} (${esc(r.jabatan)})</option>`).join("")}</select><button class="sec" data-tl="${p.id}" style="flex:0">Tolak</button></li>`).join("")}</ul>` : ""}
+    <h3 style="margin-top:12px">Resmi (${rs.length})</h3>
+    <ul class="list">${rs.map((p) => `<li style="flex-wrap:wrap;${p.aktif ? "" : "opacity:.55"}"><input data-mn="${p.id}" value="${esc(p.nama)}" style="flex:1;min-width:150px"><select data-mj="${p.id}" style="flex:0 0 110px">${JB(p.jabatan)}</select>
+      <span style="display:flex;gap:8px;flex:0">${rigC(p.id, p.rigs)}</span><input data-mi="${p.id}" value="${esc(p.id_karyawan ?? "")}" placeholder="ID karyawan" style="max-width:120px"><input data-mt="${p.id}" value="${esc(p.perusahaan ?? "")}" placeholder="Perusahaan" style="max-width:150px">
+      <button class="sec" data-ms="${p.id}" style="flex:0">Simpan</button><button class="sec" data-ma="${p.id}" data-v="${p.aktif ? 0 : 1}" style="flex:0">${p.aktif ? "Nonaktifkan" : "Aktifkan"}</button></li>`).join("") || `<li class="muted">Belum ada. Tambahkan WSG, driller dan crew tiap rig di bawah.</li>`}</ul>
+    <h3 style="margin-top:12px">Tambah personil</h3><div class="row" style="flex-wrap:wrap;align-items:center"><input id="mpN" placeholder="Nama lengkap" style="min-width:160px"><select id="mpJ" style="flex:0 0 110px">${JB("Helper")}</select>
+      <span style="display:flex;gap:8px;flex:0">${rigC("baru", [])}</span><input id="mpI" placeholder="ID karyawan (opsional)" style="max-width:150px"><input id="mpT" placeholder="Perusahaan" style="max-width:150px"><button id="mpA" style="flex:0">Tambah</button></div><div id="mpE" class="err"></div>`;
+  const ulang = () => { loadPersonil(); personilAdmin(box); }, rigOf = (id) => [...box.querySelectorAll(`[data-mr="${id}"]:checked`)].map((x) => x.value), nul = (x) => x.trim() || null;
+  box.querySelector("#mpP")?.addEventListener("change", (e) => { sessionStorage.setItem("mpProj", e.target.value); personilAdmin(box); });
+  box.querySelector("#mpA").onclick = async () => { const nama = box.querySelector("#mpN").value.trim().replace(/\s+/g, " "); if (!nama) return (box.querySelector("#mpE").textContent = "Isi nama.");
+    const { error } = await sb.from("personil").insert({ project: proj, nama, jabatan: box.querySelector("#mpJ").value, rigs: rigOf("baru"), id_karyawan: nul(box.querySelector("#mpI").value), perusahaan: nul(box.querySelector("#mpT").value), updated_by: session.user.id });
+    if (error) return (box.querySelector("#mpE").textContent = /personil_unik|duplicate/.test(error.message) ? "Nama ini sudah ada di daftar (atau di usulan)." : error.message); ulang(); };
+  box.querySelectorAll("[data-ms]").forEach((b) => (b.onclick = async () => { const id = b.dataset.ms;
+    const { error } = await sb.from("personil").update({ nama: box.querySelector(`[data-mn="${id}"]`).value.trim().replace(/\s+/g, " "), jabatan: box.querySelector(`[data-mj="${id}"]`).value, rigs: rigOf(id),
+      id_karyawan: nul(box.querySelector(`[data-mi="${id}"]`).value), perusahaan: nul(box.querySelector(`[data-mt="${id}"]`).value), updated_at: new Date().toISOString(), updated_by: session.user.id }).eq("id", id);
+    if (error) return alert(/personil_unik|duplicate/.test(error.message) ? "Nama itu sudah dipakai orang lain di daftar." : error.message); b.textContent = "✓"; loadPersonil(); }));
+  box.querySelectorAll("[data-ma]").forEach((b) => (b.onclick = async () => { const { error } = await sb.from("personil").update({ aktif: b.dataset.v === "1", updated_at: new Date().toISOString(), updated_by: session.user.id }).eq("id", b.dataset.ma); if (error) return alert(error.message); ulang(); }));
+  box.querySelectorAll("[data-ok]").forEach((b) => (b.onclick = async () => { const { error } = await sb.from("personil").update({ status: "RESMI", updated_at: new Date().toISOString(), updated_by: session.user.id }).eq("id", b.dataset.ok); if (error) return alert(error.message); ulang(); }));
+  box.querySelectorAll("[data-tl]").forEach((b) => (b.onclick = async () => { if (!confirm("Tolak nama ini? Shift yang memakai nama ini tidak dihitung ke orang resmi mana pun.")) return;
+    const { error } = await sb.from("personil").update({ status: "DITOLAK", aktif: false, updated_at: new Date().toISOString(), updated_by: session.user.id }).eq("id", b.dataset.tl); if (error) return alert(error.message); ulang(); }));
+  box.querySelectorAll("[data-gt]").forEach((s) => (s.onchange = async () => { if (!s.value) return; const ke = s.options[s.selectedIndex].text;
+    if (!confirm(`Gabungkan "${us.find((p) => p.id === s.dataset.gt)?.nama}" ke ${ke}? Semua shift dengan ejaan itu dihitung untuk ${ke}.`)) return (s.value = "");
+    const { error } = await sb.rpc("admin_gabung_personil", { p_dari: s.dataset.gt, p_ke: s.value }); if (error) return alert(error.message); ulang(); }));
 }
 async function folderView(v, uid, nama) {
   const to = sessionStorage.getItem("rekapTgl") || todayWIB(), from = new Date(Date.parse(to) - 29 * 864e5).toISOString().slice(0, 10);
