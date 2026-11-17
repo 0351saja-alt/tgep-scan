@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.22";
+const APP_VERSION = "2026-11-17.23";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -111,6 +111,7 @@ async function syncCore(it) {
 
 // ---------- tampilan ----------
 async function render() {
+  document.body.style.overflow = ""; if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); // keluar dari layar penuh peta saat pindah menu
   if (!session) return loginView();
   if (!me) {
     app.innerHTML = `<div class="card"><h2>Menunggu persetujuan admin</h2><p>Akun <b>${esc(session.user.email)}</b> sudah terdaftar, tetapi belum disetujui admin TGEP. Coba masuk lagi setelah admin menyetujui.</p><p id="rq" class="muted"></p><button class="sec" id="out">Keluar</button></div>`;
@@ -2060,7 +2061,8 @@ function pastikanWGS84(fc) { const ubah = (c) => (typeof c[0] === "number" ? (Ma
 const lapisanLokal = () => JSON.parse(localStorage.getItem("petaLokal") || "[]");
 async function petaView(v) {
   const bisaTulis = ["verifier", "admin"].includes(me?.role);
-  v.innerHTML = `<div class="card" style="padding:8px"><div class="row" style="flex-wrap:wrap;align-items:center;gap:6px">
+  v.innerHTML = `<div class="card" id="pmCard" style="padding:8px"><div class="row" style="flex-wrap:wrap;align-items:center;gap:6px">
+      <button id="pmFull" style="flex:0;white-space:nowrap" title="Tampilan penuh layar HP">⛶ Layar penuh</button>
       <select id="pmB" style="flex:0 0 140px"><option value="sat">Citra satelit</option><option value="osm">Peta jalan (OSM)</option><option value="none">Tanpa latar</option></select>
       <button class="sec" id="pm3" style="flex:0">3D</button><label style="flex:0;white-space:nowrap;margin:0">Tinggi <input id="pmX" type="range" min="1" max="4" step="0.5" value="1.5" style="width:80px;vertical-align:middle"> <span id="pmXv">1,5×</span></label>
       <button class="sec" id="pmL" style="flex:0">Lapisan ▾</button><button class="sec" id="pmF" style="flex:0">Impor file</button><input type="file" id="pmFi" multiple accept=".zip,.shp,.dbf,.prj,.shx,.cpg,.kml,.kmz,.geojson,.json,.csv,.txt" style="display:none">
@@ -2273,6 +2275,22 @@ async function petaView(v) {
   $("#pm3").onclick = () => { const p = map.getPitch() > 5 ? 0 : 65; map.easeTo({ pitch: p, bearing: p ? -20 : 0, duration: 800 }); $("#pm3").textContent = p ? "2D" : "3D"; };
   $("#pmX").oninput = () => { $("#pmXv").textContent = String(eks()).replace(".", ",") + "×"; if (map.getTerrain()) map.setTerrain({ source: "dem", exaggeration: eks() }); };
   $("#pmL").onclick = () => { const p = $("#pmPanel"); p.style.display = p.style.display === "none" ? "" : "none"; };
+  // Layar penuh: kartu peta menutup seluruh layar (berlaku juga di iPhone); di Android bilah browser ikut disembunyikan
+  const kartu = $("#pmCard"), pm = $("#pmap"), gayaAsal = kartu.getAttribute("style");
+  const aturPenuh = (on) => {
+    kartu.dataset.penuh = on ? "1" : "";
+    kartu.setAttribute("style", on ? "position:fixed;inset:0;z-index:60;margin:0;border-radius:0;padding:6px;overflow:auto;background:#fff" : gayaAsal);
+    pm.style.height = on ? "calc(100dvh - 120px)" : "70vh"; pm.style.minHeight = on ? "60vh" : "";
+    document.body.style.overflow = on ? "hidden" : "";
+    $("#pmFull").textContent = on ? "✕ Keluar layar penuh" : "⛶ Layar penuh";
+    setTimeout(() => map.resize(), 60);
+  };
+  $("#pmFull").onclick = async () => {
+    const on = !kartu.dataset.penuh; aturPenuh(on);
+    try { if (on && document.documentElement.requestFullscreen && !document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+          else if (!on && document.fullscreenElement) await document.exitFullscreen(); } catch { /* iPhone: cukup tampilan penuh halaman */ }
+  };
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && kartu.isConnected && kartu.dataset.penuh) aturPenuh(false); });
   $("#pmI").onclick = () => map.fitBounds([[121.7387, -1.726], [121.7784, -1.6327]], { padding: 30, duration: 800 });
   // Simpan relief + pustaka peta ke HP agar peta bisa dibuka tanpa sinyal (citra satelit tidak ikut — perlu sinyal)
   $("#pmO").onclick = async () => {
