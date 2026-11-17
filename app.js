@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.17";
+const APP_VERSION = "2026-11-17.18";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -160,6 +160,8 @@ async function bukaLinkView(bucket, path) {
   if (!online()) return ($("#bf").innerHTML = `<p class="err">Perlu sinyal untuk membuka file.</p>`);
   const { data, error } = await sb.storage.from(bucket).createSignedUrl(path, 3600);
   if (error || !data?.signedUrl) return ($("#bf").innerHTML = `<p class="err">File tidak bisa dibuka: ${esc(error?.message ?? "tidak ditemukan / akun ini tidak punya akses")}</p>`);
+  const { data: dv } = isClient() ? { data: null } : await sb.from("drive_file").select("drive_url").eq("bucket", bucket).eq("path", path).maybeSingle();
+  if (dv?.drive_url) $("#bf").insertAdjacentHTML("beforebegin", `<p><a href="${esc(dv.drive_url)}" target="_blank" rel="noopener"><b>Buka di Google Drive</b></a></p>`);
   const gambar = /\.(jpe?g|png|webp|gif)$/i.test(path);
   $("#bf").innerHTML = `${gambar ? `<img src="${data.signedUrl}" style="max-width:100%;border-radius:8px;margin:6px 0">` : ""}<p><a href="${data.signedUrl}" target="_blank" rel="noopener">Buka / unduh file asli</a> <span class="muted">(link unduhan berlaku 1 jam)</span></p>`;
 }
@@ -1869,11 +1871,23 @@ const DATASETS = {
 // Kolom berisi file → tempat penyimpanan (bucket). Di tabel tampil tombol “Buka”; di Excel/CSV ada kolom *_link (link permanen, perlu login).
 const FILE_COL = { aktivitas: { photo_path: "progress-photos" }, p2h: { photo_path: "progress-photos" }, arsipfoto: { photo_path: "scan-photos" }, corefile: { photo_path: "core-photos" }, scanfile: { photo_path: "scan-photos" } };
 const linkFile = (bucket, path) => new URL("./", location.href).href + "#buka=" + encodeURIComponent(bucket) + ":" + encodeURIComponent(path);
-const tambahLink = (k, rows) => { const fc = FILE_COL[k]; if (!fc) return rows; return rows.map((r) => { const o = { ...r }; for (const [c, b] of Object.entries(fc)) if (r[c]) o[c + "_link"] = linkFile(b, r[c]); return o; }); };
+const tambahLink = async (k, rows) => { const fc = FILE_COL[k]; if (!fc) return rows; const DV = await petaDrive(rows, fc);
+  return rows.map((r) => { const o = { ...r }; for (const [c, b] of Object.entries(fc)) if (r[c]) { o[c + "_link"] = linkFile(b, r[c]); if (!isClient()) o[c + "_drive"] = DV[b + ":" + r[c]] ?? ""; } return o; }); };
 async function bukaFile(bucket, path) {
   const w = window.open("", "_blank"); const { data, error } = await sb.storage.from(bucket).createSignedUrl(path, 3600);
   if (error || !data?.signedUrl) { w?.close(); return alert("File tidak bisa dibuka: " + (error?.message ?? "tidak ditemukan / tidak punya akses")); }
   if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
+}
+// Salinan Google Drive (diisi Apps Script "X-Terra Sinkron Drive"): peta bucket:path -> link Drive
+async function petaDrive(rows, fc) {
+  const paths = [...new Set(rows.flatMap((r) => Object.keys(fc).map((c) => r[c]).filter(Boolean)))];
+  if (!paths.length || isClient()) return {};
+  const M = {};
+  for (let i = 0; i < paths.length; i += 150) {
+    const { data } = await sb.from("drive_file").select("bucket,path,drive_url").in("path", paths.slice(i, i + 150));
+    for (const d of data ?? []) M[d.bucket + ":" + d.path] = d.drive_url;
+  }
+  return M;
 }
 const OKV = new Set(["OK", "OK-SW", "MENUNGGU LAB", "MENUNGGU CEK"]);
 function dbQuery(d, f) {
@@ -2242,8 +2256,8 @@ async function dbView(v) {
     if (!data?.length) return ($("#tb").innerHTML = `<p class="muted">Tidak ada data.</p>`);
     const cols = Object.keys(data[0]).filter((c) => !["data", "related"].includes(c));
     const canDel = me?.role === "admin" && d.del, canRes = me?.role === "admin" && f.ds === "arsip";
-    const fc = FILE_COL[f.ds] ?? {};
-    const cell = (c, x) => { if (fc[c] && x) return `<td style="padding:4px 7px;white-space:nowrap"><button class="sec" data-fb="${fc[c]}" data-fp="${esc(x)}" style="padding:2px 10px">Buka</button> <a href="#" data-fl="${esc(linkFile(fc[c], x))}" title="Salin link permanen" style="text-decoration:none">🔗</a></td>`;
+    const fc = FILE_COL[f.ds] ?? {}, DV = await petaDrive(data, fc);
+    const cell = (c, x) => { if (fc[c] && x) { const dv = DV[fc[c] + ":" + x]; return `<td style="padding:4px 7px;white-space:nowrap"><button class="sec" data-fb="${fc[c]}" data-fp="${esc(x)}" style="padding:2px 10px">Buka</button> ${dv ? `<a href="${esc(dv)}" target="_blank" rel="noopener" class="pill" style="background:#C8EBD4;color:#12251E;text-decoration:none" title="Buka salinan di Google Drive">Drive</a> ` : `<span class="muted" title="Belum tersalin ke Google Drive (disalin otomatis tiap 10 menit)">·</span> `}<a href="#" data-fl="${esc(dv || linkFile(fc[c], x))}" title="Salin link permanen${dv ? " (Google Drive)" : ""}" style="text-decoration:none">🔗</a></td>`; }
       const s = x !== null && typeof x === "object" ? JSON.stringify(x) : x; const bad = c.startsWith("chk_") && x && !OKV.has(x); return `<td style="padding:4px 7px;white-space:nowrap;${bad ? "background:#F6C9C3" : ""}">${esc(s)}</td>`; };
     $("#tb").innerHTML = `<div class="tw"><table><tr>${canDel || canRes ? "<th></th>" : ""}${cols.map((c) => `<th style="padding:4px 7px">${esc(c)}</th>`).join("")}</tr>
       ${data.map((r) => `<tr>${canDel ? `<td><button class="danger" data-k="${esc(r[d.del[1]])}" style="padding:2px 8px">Hapus</button></td>` : ""}${canRes ? `<td>${r.restored_at ? "dipulihkan" : `<button class="sec" data-r="${r.id}" style="padding:2px 8px">Pulihkan</button>`}</td>` : ""}${cols.map((c) => cell(c, r[c])).join("")}</tr>`).join("")}</table></div>`;
@@ -2257,7 +2271,7 @@ async function dbView(v) {
   const tag = () => { const f = read(); return `${f.bh ? f.bh + "_" : ""}${new Date().toISOString().slice(0, 10)}`; };
   $("#csv").onclick = async () => {
     const f = read(), d = DATASETS[f.ds]; $("#info").textContent = "Menyiapkan CSV…";
-    try { const rows = tambahLink(f.ds, await fetchAll(d, f)); if (!rows.length) return ($("#info").textContent = "Tidak ada data.");
+    try { const rows = await tambahLink(f.ds, await fetchAll(d, f)); if (!rows.length) return ($("#info").textContent = "Tidak ada data.");
       const cols = Object.keys(rows[0]).filter((c) => !["data", "related"].includes(c));
       const q = (x) => { if (x === null || x === undefined) return ""; const s = typeof x === "object" ? JSON.stringify(x) : String(x); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
       const csv = "\ufeff" + [cols.join(","), ...rows.map((r) => cols.map((c) => q(r[c])).join(","))].join("\r\n");
@@ -2271,7 +2285,7 @@ async function dbView(v) {
       const X = await import("./vendor/xlsx.js"); const wb = X.utils.book_new();
       const got = {};
       for (const k of dsAllowed() ?? ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "jam", "bbm", "lubang", "kinerja", "logging", "kepatuhan", "corefile", "scanfile", "arsipfoto"]) {
-        const rows = tambahLink(k, await fetchAll(DATASETS[k], { ...f, bad: false })).map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (Array.isArray(o[c])) o[c] = o[c].join("; "); return o; }); got[k] = rows;
+        const rows = (await tambahLink(k, await fetchAll(DATASETS[k], { ...f, bad: false }))).map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (Array.isArray(o[c])) o[c] = o[c].join("; "); return o; }); got[k] = rows;
         X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), DATASETS[k].t.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
       }
       const { data: tmx } = await sb.from("v_dash_time").select("*");
@@ -2282,7 +2296,7 @@ async function dbView(v) {
       aoa.push([], ["Tebal zona per lubang", "Limonit (m)", "Saprolit (m)", "Conto", "Recovery %"]);
       for (const h of got.lubang.filter((h) => h.jumlah_conto > 0)) aoa.push([h.bhid, h.tebal_limonit, h.tebal_saprolit, h.jumlah_conto, h.recovery_pct]);
       X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Dashboard");
-      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = isClient() ? "Excel diunduh (sheet terakhir = Dashboard)." : "Excel diunduh (18 sheet termasuk Rekap operator & Status Form Logging; sheet terakhir = Dashboard). Grafik lengkap ada di menu Dashboard.";
+      X.writeFile(wb, `TGEP_Database_${tag()}.xlsx`); $("#info").textContent = isClient() ? "Excel diunduh (sheet terakhir = Dashboard)." : "Excel diunduh (18 sheet termasuk Rekap operator & Status Form Logging; sheet terakhir = Dashboard). Salinan Excel otomatis tiap malam 20.47 WIB ada di Google Drive: TGEP Drill Log / 03 Ekspor Database Harian; file foto & scan di 04 File Database.";
     } catch (e) { $("#info").textContent = e.message; }
   };
   show(st.page || 0);
