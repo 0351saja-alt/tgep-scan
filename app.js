@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.04";
+const APP_VERSION = "2026-11-18.05";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1687,6 +1687,26 @@ function pencarSVG(P, o) {
     <text x="${W - 15}" y="30" font-size="11" text-anchor="end" fill="${n >= 3 ? "#D62828" : "#6b7a72"}">${n >= 3 ? `r = ${r.toFixed(2)} (${kuat}) · n = ${n}${n < 5 ? " · belum stabil" : ""}` : `n = ${n} — korelasi belum bisa dihitung`}</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="font-family:Arial,sans-serif;background:#fbfcfb;border:1px solid #e3e8e1;border-radius:8px;max-height:${o.maxH ?? 999}px">${g}</svg>`;
 }
+// recovery core tertimbang panjang: Σ panjang core / Σ panjang interval (Form Logging); bila belum ada, pakai recovery harian (DDR/progres)
+async function recoveryData(LB, HR = [], prof = []) {
+  let G = []; try { const bh = LB.map((x) => x.bhid); if (typeof sb !== "undefined" && bh.length && online()) G = (await sb.from("v_dh_geology").select("holeid,from,to,zone,core_length,recovery_pct").in("holeid", bh)).data ?? []; } catch {}
+  const ZW = {}; for (const r of prof ?? []) ZW[r.zona] ??= { nama: r.nama_zona, warna: r.warna };
+  const agg = (xs) => { let L = 0, C = 0, n = 0, low = 0; for (const g of xs) { const len = +g.to - +g.from; if (!(len > 0)) continue;
+      const c = g.core_length != null && g.core_length !== "" ? +g.core_length : g.recovery_pct != null && g.recovery_pct !== "" ? (len * +g.recovery_pct) / 100 : null; if (c == null || !Number.isFinite(c)) continue;
+      L += len; C += c; n++; if (c / len < 0.9) low++; } return { v: L ? (100 * C) / L : null, m: L, n, low }; };
+  const warnaR = (v) => (v == null ? "#9CA3AF" : v >= 90 ? "#1E9E69" : v >= 80 ? "#E0A100" : "#D62828");
+  const bhs = [...new Set([...G.map((g) => g.holeid), ...HR.filter((h) => h.rec != null).map((h) => h.b)])].sort();
+  const lubang = bhs.map((b) => { const a = agg(G.filter((g) => g.holeid === b)), hr = HR.find((h) => h.b === b)?.rec; const v = a.v ?? (hr != null ? +hr : null);
+    return { label: b, v: v ?? 0, nilai: v, t: v != null ? `${v.toFixed(1)}%` : "–", sub: a.n ? `${a.n} int · ${a.m.toFixed(1)} m${a.low ? ` · ${a.low} <90%` : ""}` : "dari laporan harian", c: warnaR(v), sumber: a.n ? "logging" : "harian" }; });
+  const zk = [...new Set(G.map((g) => g.zone).filter(Boolean))];
+  const layer = zk.map((k) => { const a = agg(G.filter((g) => g.zone === k)); return { k, nama: ZW[k]?.nama ?? k, warnaZ: ZW[k]?.warna ?? "#94a3b8", ...a, label: ZW[k]?.nama ?? k, nilai: a.v, t: a.v != null ? `${a.v.toFixed(1)}%` : "–", sub: `${a.n} int · ${a.m.toFixed(1)} m${a.low ? ` · ${a.low} <90%` : ""}`, c: warnaR(a.v) }; })
+    .filter((z) => z.n).sort((a, b) => (ZW[a.k] ? 0 : 1) - (ZW[b.k] ? 0 : 1));
+  const all = agg(G), hv = lubang.filter((x) => x.nilai != null);
+  const total = all.v ?? (hv.length ? hv.reduce((s, x) => s + x.nilai, 0) / hv.length : null);
+  const titik = G.filter((g) => +g.to > +g.from).map((g) => { const len = +g.to - +g.from, c = g.core_length != null ? +g.core_length : g.recovery_pct != null ? (len * +g.recovery_pct) / 100 : NaN;
+    return { x: (+g.from + +g.to) / 2, y: (100 * c) / len, t: `${g.holeid} ${g.zone ?? ""}`, c: ZW[g.zone]?.warna ?? "#94a3b8" }; }).filter((p) => Number.isFinite(p.y));
+  return { lubang, layer, total, nInt: all.n, mInt: all.m, low: all.low, titik, adaLogging: G.length > 0, okLubang: hv.filter((x) => x.nilai >= 90).length, nLubang: hv.length };
+}
 // data analisis layer, per rig, dan hubungan
 async function analisisData(LB, prof, days) {
   const PR = prof ?? [], bh = [...new Set(PR.map((r) => r.bhid))], RIG = Object.fromEntries(LB.map((x) => [x.bhid, x.rig || "-"]));
@@ -1742,7 +1762,7 @@ function panelHarian(dayRows) {
 }
 // ---------- grafik SVG untuk slide performa rig ----------
 function barH(rows, o = {}) { // rows: [{label, v, c, sub}]
-  const W = o.w ?? 560, rh = o.rh ?? 26, H = Math.max(40, rows.length * rh + 14), mx = Math.max(1e-9, ...rows.map((r) => +r.v || 0)), L = o.lw ?? 120;
+  const W = o.w ?? 560, rh = o.rh ?? 26, H = Math.max(40, rows.length * rh + 14), mx = o.max ?? Math.max(1e-9, ...rows.map((r) => +r.v || 0)), L = o.lw ?? 120;
   if (!rows.length) return `<svg viewBox="0 0 ${W} 50" width="100%"><text x="${W / 2}" y="30" font-size="13" text-anchor="middle" fill="#6b7a72">belum ada data</text></svg>`;
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="font-family:Arial,sans-serif;max-height:${o.maxH ?? 999}px">${rows.map((r, i) => { const w = ((W - L - (rows.some((x) => x.sub) ? 175 : 80)) * (+r.v || 0)) / mx, y = 6 + i * rh;
     return `<text x="${L - 6}" y="${y + rh / 2 + 4}" font-size="12" text-anchor="end">${esc(r.label)}</text><rect x="${L}" y="${y + 3}" width="${Math.max(1, w)}" height="${rh - 8}" rx="4" fill="${r.c ?? "#1E9E69"}"/>
@@ -1893,6 +1913,19 @@ async function presentasiHTML(D) {
     <table class="t kc"><tr><th>Layer</th>${["n", "Atas", "Bawah", "Min", "Rata-rata", "Median", "Maks", "SD"].map((h) => `<th class="r">${h}</th>`).join("")}</tr>${A.zona.map((z) => { const s2 = stat(z.tebal); return `<tr><td><span class="sw" style="background:${esc(z.warna)}"></span>${esc(z.nama)}</td><td class="r">${s2.n}</td><td class="r">${f(z.atas)}</td><td class="r">${f(z.bawah)}</td><td class="r">${f(s2.min)}</td><td class="r"><b>${f(s2.mean)}</b></td><td class="r">${f(s2.med)}</td><td class="r">${f(s2.max)}</td><td class="r">${f(s2.sd)}</td></tr>`; }).join("")}</table>
     <p class="ket">Tebal (m) per lubang yang menembus layer. Rasio limonit : saprolit = ${T.sS.mean ? f(T.sL.mean / T.sS.mean, 2) : "–"} : 1.</p></div></div>` : `<p class="kosong">Profil tampil setelah Form Logging disetujui verifier.</p>`, `${T.bh.length} lubang berdata logging`));
   // ===== 5. Hubungan & sebaran layer =====
+  // ===== Recovery core per lubang & per layer =====
+  const RC = await recoveryData(LB, HR, prof);
+  const rcL = RC.lubang, dua2 = rcL.length > 16, hL = dua2 ? Math.ceil(rcL.length / 2) : rcL.length;
+  const rcBar = (rows) => barH(rows, { lw: 92, rh: rcL.length > 24 ? 15 : rcL.length > 12 ? 19 : 24, max: 100, w: dua2 ? 420 : 560 });
+  S.push(slide("Recovery core", RC.nLubang || RC.layer.length ? `<div class="dua" style="grid-template-columns:1.1fr 1fr;gap:20px;align-items:start">
+    <div><h3 style="margin:0 0 4px">Recovery per lubang <span style="font-weight:400;color:#6b7a72;font-size:13px">· hijau ≥ 90 % · kuning 80–90 % · merah &lt; 80 %</span></h3>
+      ${dua2 ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${rcBar(rcL.slice(0, hL))}${rcBar(rcL.slice(hL))}</div>` : rcBar(rcL)}</div>
+    <div><div class="grid4" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">${card(RC.total != null ? RC.total.toFixed(1) + "%" : "–", "Recovery rata-rata", RC.adaLogging ? "tertimbang panjang interval" : "dari laporan harian", RC.total != null && RC.total < 90 ? "#D62828" : "#1E9E69")}
+      ${card(`${RC.okLubang}/${RC.nLubang}`, "Lubang ≥ 90 %", "")}${card(RC.nInt ? `${RC.low}/${RC.nInt}` : "–", "Interval < 90 %", RC.nInt ? `${RC.mInt.toFixed(1)} m ter-logging` : "belum ada logging", RC.low ? "#E0A100" : "#1E9E69")}</div>
+      <h3 style="margin:4px 0 4px">Recovery per layer</h3>${RC.layer.length ? barH(RC.layer.map((z) => ({ ...z, label: z.nama })), { lw: 110, rh: 24, max: 100 }) : `<p class="ket" style="font-size:13px">Recovery per layer muncul setelah Form Logging lubang disetujui verifier.</p>`}
+      ${RC.titik.length >= 2 ? pencarSVG(RC.titik, { judul: "Recovery vs kedalaman (tiap interval, warna = layer)", sx: "kedalaman tengah interval (m)", sy: "recovery (%)", maxH: 200 }) : ""}
+      <p class="ket">Recovery = Σ panjang core ÷ Σ panjang interval. Recovery rendah di satu layer menurunkan keterwakilan conto layer tersebut.</p></div></div>`
+    : `<p class="kosong">Belum ada data recovery (Form Logging atau laporan harian).</p>`, "per lubang & per layer"));
   S.push(slide("Hubungan & sebaran layer", `<div class="dua" style="grid-template-columns:1.3fr 1fr;align-items:start"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start">
     ${pencarSVG(A.hub.eohL, { judul: "Kedalaman vs tebal limonit", sx: "kedalaman akhir (m)", sy: "limonit (m)", maxH: 190 })}${pencarSVG(A.hub.eohS, { judul: "Kedalaman vs tebal saprolit", sx: "kedalaman akhir (m)", sy: "saprolit (m)", maxH: 190 })}
     ${pencarSVG(A.hub.lerEoh, { judul: "Lereng vs kedalaman", sx: "lereng collar (°)", sy: "kedalaman (m)", maxH: 190 })}${pencarSVG(A.hub.lerL, { judul: "Lereng vs tebal limonit", sx: "lereng collar (°)", sy: "limonit (m)", maxH: 190 })}</div>
@@ -2073,6 +2106,7 @@ async function laporanProgres(st) {
     if (!klien && nLab) notes.push(`${nLab} conto density menunggu hasil laboratorium (berat kering oven).`);
     if (!notes.length) notes.push("Tidak ada catatan khusus pada periode ini.");
     // tabel
+    const RC = await recoveryData(LB, HR, prof);
     const T = {
       ringkasan: [["Indikator", "Nilai"], ["Periode", `${st.from} s/d ${st.to}`], ["Proyek", PJ?.nama ?? "Semua proyek"], ["Rig", st.rig || "Semua rig"], ["Meter bor periode", mPer.toFixed(1) + " m"], ["Meter bor kumulatif", mCum.toFixed(1) + " m"],
         ["Target meter proyek", PJ?.target_meter ? `${PJ.target_meter} m (${pct(mCum, PJ.target_meter)}%)` : "belum diisi admin"], ["Lubang selesai / dikerjakan", `${nSelesai} / ${HR.length}`], ["Target lubang proyek", PJ?.target_lubang ? `${PJ.target_lubang} (${pct(nSelesai, PJ.target_lubang)}%)` : "belum diisi admin"],
@@ -2085,12 +2119,14 @@ async function laporanProgres(st) {
       operator: [["Operator", "Peran", "Rig", "Hari wajib", "Lengkap", "Sebagian", "Belum", "% lengkap", "Kekurangan terbanyak"], ...opRows],
       qc: [["Butir", "Jumlah"], ...qcRows],
       catatan: [["Catatan otomatis"], ...notes.map((x) => [x])],
+      recovery: [["Jenis", "Nama", "Recovery (%)", "Interval", "Meter ter-logging", "Interval < 90%", "Sumber"], ["Total", "Semua lubang", RC.total == null ? "" : +RC.total.toFixed(1), RC.nInt, +RC.mInt.toFixed(2), RC.low, RC.adaLogging ? "Form Logging" : "laporan harian"],
+        ...RC.layer.map((z) => ["Layer", z.nama, z.v == null ? "" : +z.v.toFixed(1), z.n, +z.m.toFixed(2), z.low, "Form Logging"]), ...RC.lubang.map((x) => ["Lubang", x.label, x.nilai == null ? "" : +x.nilai.toFixed(1), "", "", "", x.sumber === "logging" ? "Form Logging" : "laporan harian"])],
       titik: [["Hole ID", "Status", "Rig", "Kedalaman (m)", "Rencana (m)", "Dip (°)", "Azimuth (°)", "IUP"], ...titikRows],
       profil: [["Hole ID", "Dari (m)", "Sampai (m)", "Tebal (m)", "Zona", "Nama zona", "Jumlah conto"], ...(prof ?? []).map((r) => [r.bhid, +r.dari_m, +r.sampai_m, +r.tebal_m, r.zona, r.nama_zona, r.jumlah_conto])],
     };
     const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
     if (klien) T.lubang = T.lubang.map((r) => (clientGeo() ? [r[0], r[1], r[2], r[3], r[4], r[5], r[7], r[9], r[10], r[11], r[12]] : [r[0], r[1], r[2], r[3], r[4], r[5], r[12]]));
-    for (const [k, nm] of [["ringkasan", "Ringkasan"], ["catatan", "Catatan"], ["rig", "Per rig"], ["harian", "Harian"], ["lubang", "Status lubang"], ["standby", "Standby"], ["titik", "Titik bor"], ["profil", "Profil bor"], ...(klien ? [] : [["operator", "Kepatuhan operator"], ["qc", "Data & QC"]])])
+    for (const [k, nm] of [["ringkasan", "Ringkasan"], ["catatan", "Catatan"], ["rig", "Per rig"], ["harian", "Harian"], ["lubang", "Status lubang"], ["standby", "Standby"], ["titik", "Titik bor"], ["profil", "Profil bor"], ["recovery", "Recovery"], ...(klien ? [] : [["operator", "Kepatuhan operator"], ["qc", "Data & QC"]])])
       X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(T[k]), nm);
     const fname = `TGEP_Laporan_Progres_${st.proj || "semua"}_${st.from}_${st.to}.xlsx`;
     window._lapDL = () => X.writeFile(wb, fname);
@@ -2122,6 +2158,8 @@ async function laporanProgres(st) {
       ${A.zona.length ? `<h2>Sebaran layer</h2><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">${A.zona.map((z) => histKecil(z.tebal, z.warna, z.nama)).join("")}</div>${kedalamanLayerSVG(A.zona)}` : ""}
       <h2>Hubungan kedalaman, ketebalan & lereng</h2><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${pencarSVG(A.hub.eohL, { judul: "Kedalaman akhir vs tebal limonit", sx: "kedalaman akhir (m)", sy: "tebal limonit (m)" })}${pencarSVG(A.hub.eohS, { judul: "Kedalaman akhir vs tebal saprolit", sx: "kedalaman akhir (m)", sy: "tebal saprolit (m)" })}${pencarSVG(A.hub.lerEoh, { judul: "Lereng vs kedalaman", sx: "lereng (°)", sy: "kedalaman (m)" })}${pencarSVG(A.hub.lerL, { judul: "Lereng vs tebal limonit", sx: "lereng (°)", sy: "tebal limonit (m)" })}</div>
       <p><small>r = korelasi Pearson; dengan jumlah lubang kecil nilainya belum stabil. Lereng dari DEMNAS di posisi collar.</small></p>`; })()}
+    <h2>Recovery core per lubang & per layer</h2>${RC.nLubang || RC.layer.length ? `<p>Recovery rata-rata <b>${RC.total != null ? RC.total.toFixed(1) + " %" : "–"}</b> (${RC.adaLogging ? `tertimbang panjang, ${RC.nInt} interval / ${RC.mInt.toFixed(1)} m; ${RC.low} interval &lt; 90 %` : "dari laporan harian"}); ${RC.okLubang} dari ${RC.nLubang} lubang ≥ 90 %.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div><b>Per lubang</b>${barH(RC.lubang, { lw: 92, rh: 20, max: 100 })}</div><div><b>Per layer</b>${RC.layer.length ? barH(RC.layer, { lw: 110, rh: 22, max: 100 }) : "<p>Muncul setelah Form Logging disetujui.</p>"}${RC.titik.length >= 2 ? pencarSVG(RC.titik, { judul: "Recovery vs kedalaman", sx: "kedalaman tengah interval (m)", sy: "recovery (%)" }) : ""}</div></div>` : "<p>Belum ada data recovery.</p>"}
     <h2>Profil bor (ketebalan zona)</h2>${(prof ?? []).length ? profilSVG(prof) : "<p>Belum ada data logging yang masuk database untuk lubang-lubang ini.</p>"}
     ${await (async () => { const A = await analisisData(LB, prof, days), T2 = statistikData({ dayRows, HR, LB, prof, st, PJ, mCum });
       const KS = kesimpulanProspek({ A, T: T2, prof: prof ?? [], LB });
