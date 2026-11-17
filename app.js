@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.7";
+const APP_VERSION = "2026-11-17.8";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -124,7 +124,7 @@ async function render() {
   if (!["client", "admin", "verifier"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
   const navs = R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["fk", "Foto & scan"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
-    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
+    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ...(staff || ver ? [["peta", "Peta"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   const banner = session.offline ? `<div class="card" style="background:#FBE6D0">Mode offline — foto disimpan di HP dan dikirim otomatis saat ada sinyal.</div>` : "";
   beat();
@@ -135,7 +135,7 @@ async function render() {
   $("#out").onclick = async () => { if (!confirm("Keluar dari akun? Foto di antrean tetap tersimpan di HP.")) return; localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); session = null; await sb.auth.signOut().catch(() => {}); render(); };
   if (me?.role === "admin" && navigator.onLine && !session.offline) sb.from("registration_request").select("user_id", { count: "exact", head: true }).eq("status", "PENDING")
     .then(({ count }) => { const b = app.querySelector('nav [data-t="users"]'); if (b && count) b.textContent = `Pengguna (${count} baru)`; });
-  document.querySelector("main").style.maxWidth = tab === "db" || tab === "dash" || tab === "rekap" || tab === "klien" ? "none" : "";
+  document.querySelector("main").style.maxWidth = tab === "db" || tab === "dash" || tab === "rekap" || tab === "klien" || tab === "peta" ? "none" : "";
   if (tab === "foto") return fotoView($("#v"));
   if (tab === "review") return reviewList($("#v"));
   if (tab === "data") return dataView($("#v"));
@@ -150,6 +150,7 @@ async function render() {
   if (tab === "dash") return dashView($("#v"));
   if (tab === "klien") return klienView($("#v"));
   if (tab === "fk") return fotoKlienView($("#v"));
+  if (tab === "peta") return petaView($("#v"));
 }
 
 function loginView() {
@@ -1873,6 +1874,94 @@ function unduhMacroAccess() {
     "Private Function Jalankan(db As DAO.Database, sql As String) As String", "    On Error Resume Next", "    db.Execute sql, dbFailOnError",
     "    If Err.Number <> 0 Then Jalankan = \"- \" & sql & \" : \" & Err.Description & vbCrLf", "End Function", ""];
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([L.join("\r\n")], { type: "text/plain" })); a.download = "TGEP_Impor_Access.bas"; a.click();
+}
+// ---------- Peta: citra satelit + relief DEMNAS 3D + batas IUP + lubang bor ----------
+// UTM <-> geografis (WGS84), zona 51 selatan (EPSG:32751)
+const UTM = (() => { const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996, e2 = f * (2 - f), ep2 = e2 / (1 - e2), lon0 = (51 * 6 - 183) * Math.PI / 180, N0 = 10000000, E0 = 500000;
+  const M = (p) => a * ((1 - e2 / 4 - 3 * e2 * e2 / 64 - 5 * e2 ** 3 / 256) * p - (3 * e2 / 8 + 3 * e2 * e2 / 32 + 45 * e2 ** 3 / 1024) * Math.sin(2 * p) + (15 * e2 * e2 / 256 + 45 * e2 ** 3 / 1024) * Math.sin(4 * p) - (35 * e2 ** 3 / 3072) * Math.sin(6 * p));
+  const ke = (lon, lat) => { const p = lat * Math.PI / 180, l = lon * Math.PI / 180 - lon0, N = a / Math.sqrt(1 - e2 * Math.sin(p) ** 2), T = Math.tan(p) ** 2, C = ep2 * Math.cos(p) ** 2, A = Math.cos(p) * l;
+    return [E0 + k0 * N * (A + (1 - T + C) * A ** 3 / 6 + (5 - 18 * T + T * T + 72 * C - 58 * ep2) * A ** 5 / 120),
+      N0 + k0 * (M(p) + N * Math.tan(p) * (A * A / 2 + (5 - T + 9 * C + 4 * C * C) * A ** 4 / 24 + (61 - 58 * T + T * T + 600 * C - 330 * ep2) * A ** 6 / 720))]; };
+  const dari = (x, y) => { const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2)), mu = (y - N0) / k0 / (a * (1 - e2 / 4 - 3 * e2 * e2 / 64 - 5 * e2 ** 3 / 256));
+    const p1 = mu + (3 * e1 / 2 - 27 * e1 ** 3 / 32) * Math.sin(2 * mu) + (21 * e1 * e1 / 16 - 55 * e1 ** 4 / 32) * Math.sin(4 * mu) + (151 * e1 ** 3 / 96) * Math.sin(6 * mu);
+    const N1 = a / Math.sqrt(1 - e2 * Math.sin(p1) ** 2), T1 = Math.tan(p1) ** 2, C1 = ep2 * Math.cos(p1) ** 2, R1 = a * (1 - e2) / (1 - e2 * Math.sin(p1) ** 2) ** 1.5, D = (x - E0) / (N1 * k0);
+    const lat = p1 - (N1 * Math.tan(p1) / R1) * (D * D / 2 - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * ep2) * D ** 4 / 24 + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * ep2 - 3 * C1 * C1) * D ** 6 / 720);
+    const lon = lon0 + (D - (1 + 2 * T1 + C1) * D ** 3 / 6 + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * ep2 + 24 * T1 * T1) * D ** 5 / 120) / Math.cos(p1);
+    return [lon * 180 / Math.PI, lat * 180 / Math.PI]; };
+  return { ke, dari }; })();
+// Elevasi DEMNAS di satu titik: baca piksel tile terrain-RGB zoom 14 (sama dengan yang dipakai peta)
+const demCache = {};
+async function tinggiDi(lon, lat) {
+  const z = 14, n = 2 ** z, xf = (lon + 180) / 360 * n, r = lat * Math.PI / 180, yf = (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n, x = Math.floor(xf), y = Math.floor(yf), k = `${x}/${y}`;
+  demCache[k] ??= new Promise((ok) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => { const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0); ok(g); }; im.onerror = () => ok(null); im.src = `peta/dem/${z}/${x}/${y}.png`; });
+  const g = await demCache[k]; if (!g) return null; const d = g.getImageData(Math.min(255, Math.floor((xf - x) * 256)), Math.min(255, Math.floor((yf - y) * 256)), 1, 1).data;
+  return -10000 + (d[0] * 65536 + d[1] * 256 + d[2]) * 0.1;
+}
+let petaML = null;
+async function petaView(v) {
+  v.innerHTML = `<div class="card" style="padding:8px"><div class="row" style="flex-wrap:wrap;align-items:center;gap:6px">
+      <select id="pmB" style="flex:0 0 150px"><option value="sat">Citra satelit</option><option value="osm">Peta jalan (OSM)</option></select>
+      <button class="sec" id="pm3" style="flex:0">3D</button><label style="flex:0;white-space:nowrap;margin:0">Skala tinggi <input id="pmX" type="range" min="1" max="4" step="0.5" value="1.5" style="width:90px;vertical-align:middle"> <span id="pmXv">1,5×</span></label>
+      <label style="flex:0;white-space:nowrap;margin:0"><input type="checkbox" id="pmH" checked style="width:auto"> bayangan relief</label>
+      <button class="sec" id="pmI" style="flex:0">Ke IUP</button><button class="sec" id="pmG" style="flex:0">Lokasi saya</button></div>
+    <div id="pmap" style="height:72vh;margin-top:8px;border-radius:10px;overflow:hidden;background:#dfe5df"></div>
+    <div class="muted" id="pmInfo" style="margin-top:6px;min-height:1.2em">Memuat peta…</div>
+    <p class="muted" style="margin:4px 0 0">Relief: DEMNAS (BIG) ±8 m, dipotong ke area IUP; di hutan bisa mengikuti puncak pohon. Citra: Esri World Imagery. Batas IUP: Lampiran II SK 16/1/IUP/PMDN/2024. Titik lubang: collar (UTM) atau GPS foto Mulai bor.</p></div>`;
+  if (!window.maplibregl) {
+    await new Promise((ok, no) => { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "vendor/maplibre-gl.css"; document.head.appendChild(l);
+      const sc = document.createElement("script"); sc.src = "vendor/maplibre-gl.js"; sc.onload = ok; sc.onerror = () => no(new Error("Pustaka peta gagal dimuat (perlu sinyal saat pertama kali)")); document.head.appendChild(sc); }).catch((e) => ($("#pmInfo").textContent = e.message));
+    if (!window.maplibregl) return;
+  }
+  const BB = [121.728, -1.737, 121.789, -1.622];
+  const W = JSON.parse(localStorage.getItem("wilayah") || "[]");
+  const map = (petaML = new maplibregl.Map({ container: "pmap", bounds: [[121.7387, -1.7260], [121.7784, -1.6327]], fitBoundsOptions: { padding: 25 }, pitch: 0, maxPitch: 80, attributionControl: { compact: true },
+    style: { version: 8, glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+      sources: {
+        sat: { type: "raster", tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], tileSize: 256, maxzoom: 19, attribution: "Citra © Esri, Maxar, Earthstar Geographics" },
+        osm: { type: "raster", tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, maxzoom: 19, attribution: "© OpenStreetMap" },
+        dem: { type: "raster-dem", tiles: [new URL("peta/dem/{z}/{x}/{y}.png", location.href).href.replace("%7Bz%7D", "{z}").replace("%7Bx%7D", "{x}").replace("%7By%7D", "{y}")], tileSize: 256, minzoom: 10, maxzoom: 14, bounds: BB, encoding: "mapbox", attribution: "DEMNAS © BIG" },
+        demhs: { type: "raster-dem", tiles: [new URL("peta/dem/{z}/{x}/{y}.png", location.href).href.replace("%7Bz%7D", "{z}").replace("%7Bx%7D", "{x}").replace("%7By%7D", "{y}")], tileSize: 256, minzoom: 10, maxzoom: 14, bounds: BB, encoding: "mapbox" },
+      },
+      layers: [{ id: "sat", type: "raster", source: "sat" }, { id: "osm", type: "raster", source: "osm", layout: { visibility: "none" } },
+        { id: "hs", type: "hillshade", source: "demhs", paint: { "hillshade-exaggeration": 0.35, "hillshade-shadow-color": "#2b2b2b" } }] } }));
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right"); map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+  const eks = () => Number($("#pmX").value);
+  // Pasang lapisan begitu gaya peta siap — jangan tunggu citra satelit (bisa lambat/terputus di lapangan)
+  map.once("style.load", async () => {
+    map.setTerrain({ source: "dem", exaggeration: eks() });
+    // batas IUP
+    const fc = { type: "FeatureCollection", features: W.flatMap((w) => [{ type: "Feature", properties: { nama: w.nama }, geometry: { type: "Polygon", coordinates: [[...w.titik.map((t) => [t.lon, t.lat]), [w.titik[0].lon, w.titik[0].lat]]] } },
+      ...w.titik.map((t) => ({ type: "Feature", properties: { no: String(t.no) }, geometry: { type: "Point", coordinates: [t.lon, t.lat] } }))]) };
+    map.addSource("iup", { type: "geojson", data: fc }); map.addSource("iup-lbl", { type: "geojson", data: fc });
+    map.addLayer({ id: "iup-isi", type: "fill", source: "iup", filter: ["==", "$type", "Polygon"], paint: { "fill-color": "#ff2d2d", "fill-opacity": 0.06 } });
+    map.addLayer({ id: "iup-garis", type: "line", source: "iup", filter: ["==", "$type", "Polygon"], paint: { "line-color": "#ff2d2d", "line-width": 2.5 } });
+    map.addLayer({ id: "iup-no", type: "symbol", source: "iup-lbl", filter: ["==", "$type", "Point"], layout: { "text-field": ["get", "no"], "text-size": 12, "text-offset": [0.8, -0.8], "text-font": ["Open Sans Semibold"] }, paint: { "text-color": "#fff", "text-halo-color": "#c00", "text-halo-width": 1.5 } });
+    // lubang bor
+    let L = [];
+    if (online()) {
+      const [{ data: lw }, { data: dh }] = await Promise.all([sb.from("v_lubang_wilayah").select("*"), sb.from("v_logging_lubang").select("bhid,kedalaman_bor,kedalaman_logging,status,terakhir_bor")]);
+      const D = Object.fromEntries((dh ?? []).map((d) => [d.bhid, d])), sudah = new Set();
+      for (const r of lw ?? []) { if (sudah.has(r.bhid)) continue; sudah.add(r.bhid); const ll = r.x != null ? UTM.dari(r.x, r.y) : [r.lon, r.lat];
+        L.push({ type: "Feature", properties: { bhid: r.bhid, sumber: r.sumber, dalam: r.di_dalam_iup, kd: D[r.bhid]?.kedalaman_bor ?? null, st: D[r.bhid]?.status ?? "" }, geometry: { type: "Point", coordinates: ll } }); }
+    }
+    map.addSource("lubang", { type: "geojson", data: { type: "FeatureCollection", features: L } }); map.addSource("lubang-lbl", { type: "geojson", data: { type: "FeatureCollection", features: L } });
+    map.addLayer({ id: "lubang", type: "circle", source: "lubang", paint: { "circle-radius": 6, "circle-color": ["case", ["==", ["get", "dalam"], false], "#ff2d2d", "#ffd400"], "circle-stroke-color": "#111", "circle-stroke-width": 1.5 } });
+    map.addLayer({ id: "lubang-lbl", type: "symbol", source: "lubang-lbl", layout: { "text-field": ["get", "bhid"], "text-size": 12, "text-offset": [0, 1.2], "text-font": ["Open Sans Semibold"] }, paint: { "text-color": "#fff", "text-halo-color": "#000", "text-halo-width": 1.5 } });
+    map.on("click", "lubang", (e) => { const p = e.features[0].properties, c = e.features[0].geometry.coordinates, u = UTM.ke(c[0], c[1]);
+      new maplibregl.Popup().setLngLat(c).setHTML(`<b>${esc(p.bhid)}</b><br>${p.kd != null && p.kd !== "null" ? `Kedalaman bor ${esc(p.kd)} m<br>` : ""}${p.st ? `Status: ${esc(p.st)}<br>` : ""}E ${u[0].toFixed(1)} N ${u[1].toFixed(1)}<br><span style="color:${p.dalam === false || p.dalam === "false" ? "#c00" : "#555"}">${p.dalam === false || p.dalam === "false" ? "DI LUAR IUP" : "di dalam IUP"} · ${esc(p.sumber)}</span>`).addTo(map); });
+    map.on("mouseenter", "lubang", () => (map.getCanvas().style.cursor = "pointer")); map.on("mouseleave", "lubang", () => (map.getCanvas().style.cursor = ""));
+    $("#pmInfo").textContent = `${L.length} lubang bor · ${W.length ? W.map((w) => w.nama).join(", ") : "batas IUP belum termuat (buka saat online)"} · ketuk peta untuk koordinat & elevasi`;
+    if (!online()) $("#pmInfo").textContent += " · offline: citra & lubang tidak dimuat";
+  });
+  const info = async (ll) => { const u = UTM.ke(ll.lng, ll.lat), h = await tinggiDi(ll.lng, ll.lat), i = W.length ? (W.some((w) => diDalam(ll.lng, ll.lat, w.titik)) ? "di dalam IUP" : "di luar IUP") : "";
+    $("#pmInfo").textContent = `${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)} · UTM 51S E ${u[0].toFixed(1)} N ${u[1].toFixed(1)}${h != null ? ` · elevasi DEM ±${h.toFixed(1)} m` : ""}${i ? " · " + i : ""}`; };
+  map.on("click", (e) => { if (!map.queryRenderedFeatures(e.point, { layers: map.getLayer("lubang") ? ["lubang"] : [] }).length) info(e.lngLat); });
+  $("#pmB").onchange = (e) => { map.setLayoutProperty("sat", "visibility", e.target.value === "sat" ? "visible" : "none"); map.setLayoutProperty("osm", "visibility", e.target.value === "osm" ? "visible" : "none"); };
+  $("#pm3").onclick = () => { const p = map.getPitch() > 5 ? 0 : 65; map.easeTo({ pitch: p, bearing: p ? -20 : 0, duration: 800 }); $("#pm3").textContent = p ? "2D" : "3D"; };
+  $("#pmX").oninput = () => { $("#pmXv").textContent = String(eks()).replace(".", ",") + "×"; if (map.getTerrain()) map.setTerrain({ source: "dem", exaggeration: eks() }); };
+  $("#pmH").onchange = (e) => map.setLayoutProperty("hs", "visibility", e.target.checked ? "visible" : "none");
+  $("#pmI").onclick = () => map.fitBounds([[121.7387, -1.7260], [121.7784, -1.6327]], { padding: 30, duration: 800 });
+  $("#pmG").onclick = async () => { const p = await getPos(); if (!p) return ($("#pmInfo").textContent = "GPS tidak didapat — aktifkan Lokasi."); new maplibregl.Marker({ color: "#1E9E69" }).setLngLat([p.lon, p.lat]).addTo(map); map.flyTo({ center: [p.lon, p.lat], zoom: 15 }); info({ lng: p.lon, lat: p.lat }); };
 }
 async function dbView(v) {
   const keys = dsAllowed() ?? Object.keys(DATASETS).filter((k) => !DATASETS[k].admin || me?.role === "admin");
