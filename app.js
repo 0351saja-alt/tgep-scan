@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.30";
+const APP_VERSION = "2026-11-17.32";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -124,10 +124,11 @@ async function render() {
     return;
   }
   if (online() && !sessionStorage.getItem("tugasLoaded")) { sessionStorage.setItem("tugasLoaded", "1"); await loadTugas(); loadLanjutan(); }
+  setTimeout(() => cekZonaBaru(), 1500);
   if (!["client", "admin", "verifier"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
   const navs = R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
-    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ...(R !== "driller" ? [["peta", "Peta"]] : []), ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
+    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["peta", "Peta"], ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
   const PANDUAN = { driller: "driller", geologist: "geologist", verifier: "verifier", admin: "admin", client: "client" };
@@ -658,12 +659,14 @@ async function progView(v) {
       <div id="runf" class="row"><div><label>FROM (m)</label><input id="rf" inputmode="decimal" value="${fmtD(lastTo)}"></div><div><label>TO (m)</label><input id="rt" inputmode="decimal"></div><div><label>Core (m)</label><input id="rc" inputmode="decimal"></div></div>
       <div id="akhirf" style="display:none"><label>Status akhir lubang *</label><select id="sa"><option value="">— pilih —</option><option value="EOH">EOH — sampai target / bedrock</option><option value="STB">STB — berhenti sebelum target</option></select>
         <label>Kedalaman akhir (m)</label><input id="sad" inputmode="decimal" value="${fmtD(lastTo)}"></div>
+      <div id="dipf" style="display:none"><div class="row"><div><label>Kemiringan / dip (°)</label><input id="dip" inputmode="decimal" value="${esc(rencanaLokal().find((z) => z.bhid === r.bhid)?.dip ?? -90)}"></div><div><label>Azimuth (°)</label><input id="az" inputmode="decimal" value="${esc(rencanaLokal().find((z) => z.bhid === r.bhid)?.azimuth ?? 0)}"></div></div>
+        <p class="muted" style="margin:2px 0 0">−90 = tegak lurus ke bawah. Ubah hanya bila lubang dibor miring.</p></div>
       <div id="psn" style="display:none"><h3 style="margin:12px 0 2px" id="psnT">Personil hadir</h3><p class="muted" id="psnTip" style="margin:0"></p><div id="psnBox"></div></div>
       <div id="rsn"><label>Alasan / keterangan</label><input id="rn" placeholder="mis. mata bor aus, pompa rusak, hujan"></div>
       <p id="gps" class="muted">Mengambil GPS…</p>
       <div class="row" style="margin-top:10px"><button id="ok">Ya, simpan</button><button class="sec" id="cx">Batal</button></div><div id="me" class="err"></div>`);
     const tp = () => m.querySelector('input[name="et"]:checked').value;
-    const upd = () => { const t = tp(); m.querySelector("#runf").style.display = t === "RUN" ? "" : "none"; m.querySelector("#akhirf").style.display = t === "SELESAI_BOR" ? "" : "none"; m.querySelector("#ok").textContent = `Ya, simpan sebagai ${EV[t]}`;
+    const upd = () => { const t = tp(); m.querySelector("#runf").style.display = t === "RUN" ? "" : "none"; m.querySelector("#akhirf").style.display = t === "SELESAI_BOR" ? "" : "none"; m.querySelector("#dipf").style.display = t === "MULAI_BOR" ? "" : "none"; m.querySelector("#ok").textContent = `Ya, simpan sebagai ${EV[t]}`;
       const ps = t === "MASUK" || t === "KELUAR"; m.querySelector("#psn").style.display = ps ? "" : "none";
       if (ps && !m.querySelector("#psnBox").dataset.ok) { m.querySelector("#psnBox").dataset.ok = "1"; loadPersonil(); personilEditor(m.querySelector("#psnBox"), personilAwal(r.rig, t, capturedAt));
         m.querySelector("#psnT").textContent = t === "MASUK" ? "Personil hadir (WSG, driller, crew)" : "Personil yang keluar shift";
@@ -680,6 +683,11 @@ async function progView(v) {
         if (!(row.depth_to > row.depth_from)) return (m.querySelector("#me").textContent = "Isi FROM dan TO run (TO > FROM).");
         if (Math.abs(row.depth_from - lastTo) > 0.02 && !confirm(`FROM ${fmtD(row.depth_from)} m tidak menyambung dengan TO run terakhir ${fmtD(lastTo)} m. Tetap simpan?`)) return;
         if (row.core_length === null) return (m.querySelector("#me").textContent = "Isi panjang core yang terambil.");
+      }
+      if (t === "MULAI_BOR") {
+        row.dip = num(m.querySelector("#dip").value); row.azimuth = num(m.querySelector("#az").value);
+        if (row.dip === null || row.dip < -90 || row.dip > 0) return (m.querySelector("#me").textContent = "Dip antara −90 (tegak) dan 0 (mendatar).");
+        if (row.azimuth === null || row.azimuth < 0 || row.azimuth >= 360) return (m.querySelector("#me").textContent = "Azimuth antara 0 dan 359.");
       }
       if (t === "SELESAI_BOR") {
         row.status_akhir = m.querySelector("#sa").value || null; row.depth_to = num(m.querySelector("#sad").value);
@@ -705,7 +713,7 @@ async function progView(v) {
       m.querySelector("#ok").disabled = true;
       if (!pos) pos = await Promise.race([posP, new Promise((r2) => setTimeout(() => r2(null), 4000))]);
       if (pos) Object.assign(row, { lat: pos.lat, lon: pos.lon, gps_accuracy_m: pos.acc, gps_time: pos.t });
-      const line2 = t === "RUN" ? `RUN ${fmtD(row.depth_from)}–${fmtD(row.depth_to)} m · core ${fmtD(row.core_length)} m` : EV[t] + (row.status_akhir ? ` ${row.status_akhir}` : "") + (row.personil ? ` · ${row.personil.length} personil` : "") + (row.reason ? ` · ${row.reason}` : "");
+      const line2 = t === "RUN" ? `RUN ${fmtD(row.depth_from)}–${fmtD(row.depth_to)} m · core ${fmtD(row.core_length)} m` : EV[t] + (row.status_akhir ? ` ${row.status_akhir}` : "") + (t === "MULAI_BOR" ? ` · dip ${row.dip}° az ${row.azimuth}°` : "") + (row.personil ? ` · ${row.personil.length} personil` : "") + (row.reason ? ` · ${row.reason}` : "");
       const blob = await stampPhoto(file, [`TGEP · ${r.rig} · ${r.bhid ?? "-"} · ${me?.full_name ?? ""}`, line2,
         `${fmtT(capturedAt)} WIB · ${pos ? `${pos.lat.toFixed(6)}, ${pos.lon.toFixed(6)} ±${pos.acc} m` : "TANPA GPS"}`]);
       await qPut({ kind: "event", client_uuid: crypto.randomUUID(), row, blob });
@@ -1170,7 +1178,7 @@ async function dashView(v) {
   const st = JSON.parse(sessionStorage.getItem("dash") || "null") ?? { from, to, rig: "" };
   v.innerHTML = `<div class="card"><h2>Dashboard progres & evaluasi</h2>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
-    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0">Cetak / PDF</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan progres</button></div></div>
+    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="pr" style="flex:0;white-space:nowrap">Cetak layar</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button></div></div>
     <div id="kpi" class="card"></div><div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px"></div>`;
   $("#pr").onclick = () => print();
   $("#lap").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value });
@@ -1230,7 +1238,7 @@ async function dashView(v) {
   new Chart(box("c10", "Rata-rata density kering per zona (t/m³)"), { type: "bar", data: { labels: ["Limonit", "Saprolit"], datasets: [{ label: "dry density", data: [avg("dry_density_limonit"), avg("dry_density_saprolit")], backgroundColor: ["#E8892B", "#1E9E69"] }] } });
 }
 const isClient = () => me?.role === "client", clientGeo = () => isClient() && !!myTugas?.akses_geologi;
-const CLIENT_RIG_DS = ["kinerja", "progres", "ddr", "jam", "bbm", "p2h", "aktivitas"], CLIENT_GEO_DS = ["collar", "survey", "geology", "density", "assay", "qaqc", "lubang"];
+const CLIENT_RIG_DS = ["kinerja", "progres", "ddr", "jam", "bbm", "p2h", "aktivitas"], CLIENT_GEO_DS = ["collar", "survey", "geology", "density", "assay", "qaqc", "lubang", "profil"];
 const dsAllowed = () => isClient() ? [...CLIENT_RIG_DS, ...(clientGeo() ? CLIENT_GEO_DS : [])] : null;
 const GEO_KPI = ["Lubang berdata", "Jumlah conto", "Rata tebal limonit", "Rata tebal saprolit", "Conto bermasalah (QC)", "Foto core lengkap"];
 function computeKPI(days, tm, cu, holes) {
@@ -1251,6 +1259,106 @@ function computeKPI(days, tm, cu, holes) {
 }
 
 // ---------- Laporan progres (ringkasan periode; cetak/PDF + Excel) ----------
+// ---------- Titik bor untuk peta (semua peran, termasuk client) ----------
+async function ambilLubangPeta() {
+  const r = await sb.rpc("peta_lubang"); if (!r.error) return r;
+  return sb.from("v_peta_lubang").select("*");
+}
+// ---------- Warna zona + konfirmasi zona baru ----------
+let ZONA = JSON.parse(localStorage.getItem("zonaWarna") || "[]");
+async function muatZona() {
+  if (online()) { const { data } = await sb.from("zona_warna").select("*").order("urut"); if (data) { ZONA = data; localStorage.setItem("zonaWarna", JSON.stringify(data)); } }
+  return ZONA;
+}
+async function cekZonaBaru(paksa) {
+  if (!isStaff() || !online() || document.querySelector("[data-zbaru]")) return;
+  if (!paksa && Date.now() - Number(sessionStorage.getItem("zonaCek") || 0) < 6e5) return; sessionStorage.setItem("zonaCek", Date.now());
+  const baru = (await muatZona()).filter((z) => z.status === "MENUNGGU"); if (!baru.length) return;
+  const m = modal(`<div data-zbaru><h3>Zona baru di data logging</h3><p class="muted">Kode zona di bawah belum dikenal (masih abu-abu di profil bor). Isi nama dan pilih warnanya. Setelah dikonfirmasi, zona ini berlaku untuk semua pengguna dan muncul otomatis di profil bor.</p>
+    ${baru.map((z) => `<div class="row" data-z="${esc(z.code)}" style="align-items:flex-end;margin-top:6px"><div style="flex:0 0 74px"><label>Kode</label><b>${esc(z.code)}</b><div class="muted" style="font-size:11px">${esc(z.contoh_bhid ?? "")}</div></div><div><label>Nama zona *</label><input value="${esc(z.nama === z.code ? "" : z.nama)}" placeholder="mis. Gabro, Sedimen"></div><div style="flex:0 0 60px"><label>Warna</label><input type="color" value="${esc(z.warna)}" style="padding:2px;height:40px"></div></div>`).join("")}
+    <div class="row" style="margin-top:12px"><button id="zok">Konfirmasi</button><button class="sec" id="zx">Nanti</button></div><div id="ze" class="err"></div></div>`);
+  m.querySelector("#zx").onclick = () => m.remove();
+  m.querySelector("#zok").onclick = async () => {
+    const isi = [...m.querySelectorAll("[data-z]")].map((r) => ({ code: r.dataset.z, nama: r.querySelector("input:not([type=color])").value.trim(), warna: r.querySelector("input[type=color]").value }));
+    const kos = isi.filter((x) => !x.nama); if (kos.length) return (m.querySelector("#ze").textContent = `Isi nama untuk ${kos.map((x) => x.code).join(", ")}.`);
+    if (!confirm(`Konfirmasi ${isi.map((x) => `${x.code} = ${x.nama}`).join(", ")}? Zona ini akan berlaku untuk semua tim.`)) return;
+    for (const x of isi) { const { error } = await sb.from("zona_warna").update({ nama: x.nama, warna: x.warna, status: "TERKONFIRMASI" }).eq("code", x.code); if (error) return (m.querySelector("#ze").textContent = error.message); }
+    await muatZona(); m.remove();
+  };
+}
+// ---------- Profil bor (kolom zona per lubang) ----------
+function profilSVG(rows, o = {}) {
+  const B = [...new Set(rows.map((r) => r.bhid))], maxD = Math.max(1, ...rows.map((r) => +r.sampai_m));
+  const H = o.h ?? 320, top = 34, lw = 46, gap = 64, left = 46, W = left + B.length * (lw + gap) + 10, step = [1, 2, 5, 10, 20, 50].find((s) => maxD / s <= 10) ?? 100;
+  const y = (d) => top + (H * d) / maxD;
+  let g = `<line x1="${left - 8}" y1="${top}" x2="${left - 8}" y2="${y(maxD)}" stroke="#555"/>`;
+  for (let d = 0; d <= maxD + 1e-9; d += step) g += `<line x1="${left - 12}" y1="${y(d)}" x2="${left - 8}" y2="${y(d)}" stroke="#555"/><text x="${left - 14}" y="${y(d) + 3}" font-size="9" text-anchor="end">${d}</text>`;
+  g += `<text x="6" y="${top - 8}" font-size="9">m</text>`;
+  B.forEach((b, i) => { const x = left + i * (lw + gap), R = rows.filter((r) => r.bhid === b), dd = Math.max(...R.map((r) => +r.sampai_m));
+    g += `<text x="${x + lw / 2}" y="${top - 10}" font-size="10" font-weight="700" text-anchor="middle">${esc(b)}</text>`;
+    for (const r of R) { const y1 = y(+r.dari_m), h = Math.max(0.6, y(+r.sampai_m) - y1), gelap = (([rr, gg, bb]) => 0.299 * rr + 0.587 * gg + 0.114 * bb < 140)([1, 3, 5].map((k) => parseInt(String(r.warna).slice(k, k + 2), 16) || 0));
+      g += `<rect x="${x}" y="${y1}" width="${lw}" height="${h}" fill="${esc(r.warna)}" stroke="#222" stroke-width=".5"><title>${esc(r.nama_zona)} ${r.dari_m}–${r.sampai_m} m (${r.tebal_m} m)</title></rect>`;
+      if (h >= 11) g += `<text x="${x + lw / 2}" y="${y1 + h / 2 + 3}" font-size="9" text-anchor="middle" fill="${gelap ? "#fff" : "#111"}">${esc(r.zona)}</text>`;
+      g += `<text x="${x + lw + 3}" y="${y1 + h / 2 + 3}" font-size="8.5" fill="#333">${(+r.tebal_m).toFixed(1)} m</text>`; }
+    g += `<text x="${x + lw / 2}" y="${y(dd) + 12}" font-size="9" text-anchor="middle">EOH ${dd.toFixed(2)} m</text>`; });
+  const Z = [...new Map(rows.map((r) => [r.zona, r])).values()];
+  const leg = Z.map((r, i) => `<span style="display:inline-flex;align-items:center;gap:4px;margin:0 10px 4px 0"><span style="width:14px;height:12px;background:${esc(r.warna)};border:1px solid #222;display:inline-block"></span>${esc(r.zona)} = ${esc(r.nama_zona)}${r.status_zona === "MENUNGGU" ? " (belum dikonfirmasi)" : ""}</span>`).join("");
+  return `<div style="overflow-x:auto"><svg width="${W}" height="${top + H + 24}" style="background:#fff;font-family:Arial,sans-serif">${g}</svg></div><div style="font-size:11px;margin-top:4px">${leg}</div>`;
+}
+async function profilModal(bhid) {
+  const m = modal(`<h3>Profil bor ${esc(bhid)}</h3><div id="pfx">Memuat…</div><div class="row" style="margin-top:10px"><button class="sec" id="pfc">Tutup</button></div>`);
+  m.querySelector("#pfc").onclick = () => m.remove();
+  if (!online()) return (m.querySelector("#pfx").textContent = "Profil bor perlu sinyal internet.");
+  const { data, error } = await sb.from("v_profil_bor").select("*").eq("bhid", bhid).order("dari_m");
+  if (error) return (m.querySelector("#pfx").textContent = error.message);
+  if (!data?.length) return (m.querySelector("#pfx").innerHTML = `<p class="muted">Belum ada data logging ${esc(bhid)} di database${isClient() ? " yang dirilis untuk Anda" : " (Form Logging belum disetujui verifier)"}.</p>`);
+  const tb = (z) => data.filter((r) => r.zona === z).reduce((s, r) => s + +r.tebal_m, 0);
+  const ring = [...new Set(data.map((r) => r.zona))].map((z) => { const r = data.find((x) => x.zona === z); return `<tr><td><span style="display:inline-block;width:12px;height:12px;background:${esc(r.warna)};border:1px solid #222"></span> ${esc(r.nama_zona)}</td><td style="text-align:right">${tb(z).toFixed(2)} m</td></tr>`; }).join("");
+  m.querySelector("#pfx").innerHTML = profilSVG(data, { h: 260 }) + `<table class="tbl" style="margin-top:8px"><tr><th>Zona</th><th>Tebal</th></tr>${ring}</table>`;
+  cekZonaBaru(true);
+}
+// ---------- Peta pemboran statis (SVG) untuk laporan/PDF ----------
+let _konturCache = null, _elevCache = null;
+async function petaSVG(L, o = {}) {
+  const W = o.w ?? 900, H = o.h ?? 580, pad = 0.12;
+  const Wl = JSON.parse(localStorage.getItem("wilayah") || "[]"), pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat)).map((x) => ({ ...x, ll: x.x != null ? UTM.dari(+x.x, +x.y) : [+x.lon, +x.lat] }));
+  const semua = [...pts.map((p) => p.ll), ...Wl.flatMap((w) => (w.titik ?? []).map((t) => [t.lon, t.lat]))];
+  if (!semua.length) return "<p>Belum ada titik bor untuk dipetakan.</p>";
+  const fokus = pts.length ? pts.map((p) => p.ll) : semua;
+  let [x0, x1] = [Math.min(...fokus.map((c) => c[0])), Math.max(...fokus.map((c) => c[0]))], [y0, y1] = [Math.min(...fokus.map((c) => c[1])), Math.max(...fokus.map((c) => c[1]))];
+  const lc = (y0 + y1) / 2, kx = 111320 * Math.cos((lc * Math.PI) / 180), ky = 110574;
+  let mw = Math.max((x1 - x0) * kx, 400), mh = Math.max((y1 - y0) * ky, 300); mw *= 1 + 2 * pad; mh *= 1 + 2 * pad;
+  const sc = Math.min(W / mw, H / mh); mw = W / sc; mh = H / sc;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; x0 = cx - mw / 2 / kx; x1 = cx + mw / 2 / kx; y0 = cy - mh / 2 / ky; y1 = cy + mh / 2 / ky;
+  const X = (lon) => ((lon - x0) * kx) * sc, Y = (lat) => ((y1 - lat) * ky) * sc, P = (c) => `${X(c[0]).toFixed(1)},${Y(c[1]).toFixed(1)}`;
+  let g = "";
+  try { // latar elevasi DEMNAS
+    const I = await (await fetch("peta/kontur/index.json")).json(), bb = I.elevasi.bbox;
+    if (!_elevCache) { const b = await (await fetch("peta/kontur/elevasi.png")).blob(); _elevCache = await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); }); }
+    g += `<image href="${_elevCache}" x="${X(bb[0])}" y="${Y(bb[3])}" width="${X(bb[2]) - X(bb[0])}" height="${Y(bb[1]) - Y(bb[3])}" preserveAspectRatio="none" opacity=".55"/>`;
+    if (!_konturCache) _konturCache = await (await fetch("peta/kontur/kontur.geojson")).json();
+    const inBox = (c) => c[0] > x0 && c[0] < x1 && c[1] > y0 && c[1] < y1;
+    for (const f of _konturCache.features) { const c = f.geometry.coordinates; if (!c.some(inBox)) continue; const idx = f.properties.i === 1;
+      g += `<polyline points="${c.map(P).join(" ")}" fill="none" stroke="${idx ? "#6b4a2b" : "#9a7b5c"}" stroke-width="${idx ? 0.9 : 0.4}" opacity=".7"/>`;
+      if (idx) { const mid = c[Math.floor(c.length / 2)]; if (inBox(mid)) g += `<text x="${X(mid[0])}" y="${Y(mid[1])}" font-size="8" fill="#6b4a2b" stroke="#fff" stroke-width="2" paint-order="stroke">${f.properties.z}</text>`; } }
+  } catch {}
+  for (const w of Wl) if ((w.titik ?? []).length) g += `<polygon points="${w.titik.map((t) => P([t.lon, t.lat])).join(" ")}" fill="none" stroke="#d00" stroke-width="2" stroke-dasharray="7 4"/>`;
+  for (const p of pts) { const r = p.status === "RENCANA" ? 5 : 7, x = X(p.ll[0]), y = Y(p.ll[1]);
+    g += `<circle cx="${x}" cy="${y}" r="${r}" fill="${WARNA_STATUS[p.status] ?? "#999"}" stroke="${p.di_dalam_iup === false ? "#e00" : "#111"}" stroke-width="${p.di_dalam_iup === false ? 3 : 1.4}"/>
+      <text x="${x + r + 3}" y="${y + 3}" font-size="10" font-weight="700" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(p.bhid)}</text>`; }
+  // skala, utara, grid UTM
+  const nice = [50, 100, 200, 250, 500, 1000, 2000, 5000].find((m) => m * sc >= W / 8) ?? 5000, bx = 16, by = 34;
+  g += `<rect x="${bx - 6}" y="${by - 18}" width="${nice * sc + 52}" height="28" fill="#fff" opacity=".85"/><rect x="${bx}" y="${by}" width="${(nice * sc) / 2}" height="5" fill="#111"/><rect x="${bx + (nice * sc) / 2}" y="${by}" width="${(nice * sc) / 2}" height="5" fill="#fff" stroke="#111"/>
+    <text x="${bx}" y="${by - 4}" font-size="9">0</text><text x="${bx + nice * sc}" y="${by - 4}" font-size="9" text-anchor="middle">${nice >= 1000 ? nice / 1000 + " km" : nice + " m"}</text>`;
+  g += `<g transform="translate(${W - 30},34)"><polygon points="0,-20 7,4 0,-2 -7,4" fill="#111"/><text y="18" font-size="12" font-weight="700" text-anchor="middle">U</text></g>`;
+  const u0 = UTM.ke(x0, y0), u1 = UTM.ke(x1, y1), gs = [100, 250, 500, 1000, 2000].find((s) => (u1[0] - u0[0]) / s <= 6) ?? 5000;
+  for (let e = Math.ceil(u0[0] / gs) * gs; e < u1[0]; e += gs) { const ll = UTM.dari(e, (u0[1] + u1[1]) / 2), x = X(ll[0]); g += `<line x1="${x}" y1="0" x2="${x}" y2="6" stroke="#111"/><text x="${x}" y="16" font-size="8" text-anchor="middle">${e}</text>`; }
+  for (let n = Math.ceil(u0[1] / gs) * gs; n < u1[1]; n += gs) { const ll = UTM.dari((u0[0] + u1[0]) / 2, n), y = Y(ll[1]); g += `<line x1="0" y1="${y}" x2="6" y2="${y}" stroke="#111"/><text x="8" y="${y + 3}" font-size="8">${n}</text>`; }
+  const leg = [["RENCANA", "Rencana"], ["PROGRES", "Progres"], ["EOH", "EOH / STB (selesai)"]].map(([k, t], i) => `<circle cx="${W - 150}" cy="${H - 64 + i * 15}" r="5" fill="${WARNA_STATUS[k]}" stroke="#111"/><text x="${W - 140}" y="${H - 61 + i * 15}" font-size="10">${t}</text>`).join("");
+  g += `<rect x="${W - 160}" y="${H - 78}" width="152" height="70" fill="#fff" opacity=".9" stroke="#999"/>${leg}<line x1="${W - 156}" y1="${H - 16}" x2="${W - 142}" y2="${H - 16}" stroke="#d00" stroke-width="2" stroke-dasharray="5 3"/><text x="${W - 140}" y="${H - 13}" font-size="10">Batas IUP</text>`;
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="border:1px solid #333;background:#f4f1ea;max-width:100%;height:auto;font-family:Arial,sans-serif"><defs><clipPath id="cp"><rect width="${W}" height="${H}"/></clipPath></defs><g clip-path="url(#cp)">${g}</g></svg>
+    <div style="font-size:10px;color:#555">Grid UTM zona 51S (WGS84) · latar elevasi DEMNAS, kontur 25 m (tebal tiap 100 m) · posisi titik: collar/GPS Mulai bor/rencana</div>`;
+}
 async function laporanProgres(st) {
   if (!online()) return alert("Laporan perlu sinyal internet.");
   const w = window.open("", "_blank"); if (!w) return alert("Izinkan pop-up untuk membuat laporan.");
@@ -1274,6 +1382,11 @@ async function laporanProgres(st) {
       me?.role === "client" ? { data: [] } : inB(sb.from("v_sample_qc").select("bhid,chk_density,status"), "bhid"),
     ]);
     const days = rd ?? [], holesAll = hl ?? [], holes = holesAll.filter((h) => h.jumlah_conto > 0);
+    const LB = ((await ambilLubangPeta()).data ?? []).filter((x) => !pf || pf.bhids.includes(x.bhid) || x.status === "RENCANA").sort((a, b) => String(a.bhid).localeCompare(String(b.bhid), "id", { numeric: true }));
+    await muatZona();
+    const { data: prof } = await sb.from("v_profil_bor").select("*").in("bhid", LB.map((x) => x.bhid).length ? LB.map((x) => x.bhid) : ["-"]).order("bhid").order("dari_m");
+    const petaGbr = await petaSVG(LB, { w: 960, h: 600 }).catch((e) => `<p>Peta gagal dibuat: ${esc(e.message)}</p>`);
+    const titikRows = LB.map((x) => [x.bhid, LABEL_STATUS[x.status] ?? x.status, x.rig ?? "", x.kedalaman ?? "", x.rencana_kedalaman ?? "", x.dip ?? "", x.azimuth ?? "", x.di_dalam_iup === false ? "DI LUAR IUP" : "dalam IUP"]);
     const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p.project]));
     const kp = (kp0 ?? []).filter((r) => !st.proj || P[r.user_id] === st.proj);
     const n = (x) => Number(x) || 0, f1 = (x) => (x == null || x === "" ? "" : Number(x).toFixed(1)), f2 = (x) => (x == null || x === "" ? "" : Number(x).toFixed(2));
@@ -1336,10 +1449,12 @@ async function laporanProgres(st) {
       operator: [["Operator", "Peran", "Rig", "Hari wajib", "Lengkap", "Sebagian", "Belum", "% lengkap", "Kekurangan terbanyak"], ...opRows],
       qc: [["Butir", "Jumlah"], ...qcRows],
       catatan: [["Catatan otomatis"], ...notes.map((x) => [x])],
+      titik: [["Hole ID", "Status", "Rig", "Kedalaman (m)", "Rencana (m)", "Dip (°)", "Azimuth (°)", "IUP"], ...titikRows],
+      profil: [["Hole ID", "Dari (m)", "Sampai (m)", "Tebal (m)", "Zona", "Nama zona", "Jumlah conto"], ...(prof ?? []).map((r) => [r.bhid, +r.dari_m, +r.sampai_m, +r.tebal_m, r.zona, r.nama_zona, r.jumlah_conto])],
     };
     const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
     if (klien) T.lubang = T.lubang.map((r) => (clientGeo() ? [r[0], r[1], r[2], r[3], r[4], r[5], r[7], r[9], r[10], r[11], r[12]] : [r[0], r[1], r[2], r[3], r[4], r[5], r[12]]));
-    for (const [k, nm] of [["ringkasan", "Ringkasan"], ["catatan", "Catatan"], ["rig", "Per rig"], ["harian", "Harian"], ["lubang", "Status lubang"], ["standby", "Standby"], ...(klien ? [] : [["operator", "Kepatuhan operator"], ["qc", "Data & QC"]])])
+    for (const [k, nm] of [["ringkasan", "Ringkasan"], ["catatan", "Catatan"], ["rig", "Per rig"], ["harian", "Harian"], ["lubang", "Status lubang"], ["standby", "Standby"], ["titik", "Titik bor"], ["profil", "Profil bor"], ...(klien ? [] : [["operator", "Kepatuhan operator"], ["qc", "Data & QC"]])])
       X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(T[k]), nm);
     const fname = `TGEP_Laporan_Progres_${st.proj || "semua"}_${st.from}_${st.to}.xlsx`;
     window._lapDL = () => X.writeFile(wb, fname);
@@ -1351,10 +1466,13 @@ async function laporanProgres(st) {
     <div class="bar"><button onclick="print()">Cetak / simpan PDF</button><button onclick="try{opener._lapDL()}catch(e){alert('Buka ulang laporan dari menu Dashboard untuk mengunduh Excel.')}">Unduh Excel laporan</button></div>
     <h1>LAPORAN PROGRES PEMBORAN & DATA EKSPLORASI</h1><div>PT Terra Grapindo Eco Prima · ${esc(PJ?.nama ?? "Semua proyek")} · periode <b>${st.from} s/d ${st.to}</b>${st.rig ? " · rig " + esc(st.rig) : ""}</div>
     <h2>1. Ringkasan</h2>${tbl(T.ringkasan)}
+    <h2>Peta pemboran</h2>${petaGbr}
+    <h3 style="font-size:12px;margin:8px 0 2px">Titik bor (rencana, progres, EOH/STB)</h3>${tbl(T.titik)}
     <h2>2. Catatan & hal yang perlu ditindaklanjuti</h2><ul>${notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
     <h2>3. Progres per rig</h2>${tbl(T.rig)}
     <h2>4. Meter bor harian</h2>${svg}${tbl(T.harian)}
     <h2>5. Status lubang</h2>${klien ? tbl(clientGeo() ? [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Conto", "Limonit (m)", "Saprolit (m)", "Recovery %", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.conto, h.tl == null ? "" : +f1(h.tl), h.ts == null ? "" : +f1(h.ts), h.rec == null ? "" : Math.round(h.rec), h.selesai ? "SELESAI" : "BERJALAN"])] : [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.selesai ? "SELESAI" : "BERJALAN"])]) : tbl(T.lubang, { col: 1 })}<p style="color:#555">SELESAI = tanggal selesai terisi atau kedalaman ≥ target/total depth di DDR. Kedalaman dari foto RUN aplikasi${klien ? "" : "; tebal zona dan recovery dari Form Logging yang sudah disetujui"}.</p>
+    <h2>Profil bor (ketebalan zona)</h2>${(prof ?? []).length ? profilSVG(prof) : "<p>Belum ada data logging yang masuk database untuk lubang-lubang ini.</p>"}
     <h2>6. Penyebab standby & perbaikan</h2>${sbRows.length ? tbl(T.standby) : "<p>Tidak ada standby/perbaikan tercatat.</p>"}
     ${klien ? "" : `<h2>7. Kepatuhan pengiriman operator</h2>${opRows.length ? tbl(T.operator, { col: 1 }) : "<p>Belum ada data operator.</p>"}
     <h2>8. Kelengkapan data & QC</h2>${tbl(T.qc)}`}
@@ -1483,7 +1601,7 @@ let myTugas = JSON.parse(localStorage.getItem("myTugas") || "null");
 const kunciBH = (x) => String(x ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 const rencanaLokal = () => JSON.parse(localStorage.getItem("rencanaLubang") || "[]");
 async function muatRencana() {
-  if (online()) { const { data } = await sb.from("rencana_lubang").select("bhid,lon,lat,rig,rencana_kedalaman").order("bhid"); if (data) localStorage.setItem("rencanaLubang", JSON.stringify(data)); }
+  if (online()) { const { data } = await sb.from("rencana_lubang").select("bhid,lon,lat,rig,rencana_kedalaman,dip,azimuth").order("bhid"); if (data) localStorage.setItem("rencanaLubang", JSON.stringify(data)); }
   const dl = document.getElementById("dlBH") ?? document.body.appendChild(Object.assign(document.createElement("datalist"), { id: "dlBH" }));
   dl.innerHTML = rencanaLokal().map((r) => `<option value="${esc(r.bhid)}">`).join("");
   return rencanaLokal();
@@ -1987,6 +2105,7 @@ const DATASETS = {
   kepatuhan: { t: "Rekap operator harian", v: "v_kepatuhan_harian", order: ["tanggal", "nama"], bh: null },
   logging: { t: "Status Form Logging per lubang", v: "v_logging_lubang", order: ["bhid"], bh: "bhid" },
   koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
+  profil: { t: "Profil bor (ketebalan zona per lubang)", v: "v_profil_bor", order: ["bhid", "dari_m"], bh: "bhid" },
   marking: { t: "Marking koordinat (semua pembacaan + akurasi)", v: "v_survey_marking", order: ["tanggal", "bhid", "ke"], bh: "bhid" },
   corefile: { t: "Foto core (file)", v: "core_photo", sel: "id,bhid,box_no,depth_from,depth_to,photo_type,photo_path,status,sop_ok,ditolak,alasan_tolak,captured_at,created_at,project", order: ["bhid", "depth_from"], bh: "bhid" },
   scanfile: { t: "Scan Form Logging (file)", v: "scan_job", sel: "id,form_type,bhid_hint,page_no,status,photo_path,sumber,file_name,captured_at,created_at,reviewed_at,review_note,project", order: ["created_at"], bh: "bhid_hint" },
@@ -2192,9 +2311,9 @@ async function petaView(v) {
   let L = [], LAY = [];
   const muatLubang = async () => {
     if (!online()) { L = JSON.parse(localStorage.getItem("petaLubang") || "[]"); return; }
-    const { data, error } = await sb.from("v_peta_lubang").select("*"); if (error) { L = JSON.parse(localStorage.getItem("petaLubang") || "[]"); return; }
+    const { data, error } = await ambilLubangPeta(); if (error) { L = JSON.parse(localStorage.getItem("petaLubang") || "[]"); return; }
     L = (data ?? []).map((r) => { const ll = r.x != null ? UTM.dari(r.x, r.y) : [r.lon, r.lat];
-      return { type: "Feature", properties: { bhid: r.bhid, status: r.status, dalam: r.di_dalam_iup !== false, kd: r.kedalaman, rk: r.rencana_kedalaman, rig: r.rig ?? "", pos: r.sumber_posisi, warna: WARNA_STATUS[r.status] ?? "#999" }, geometry: { type: "Point", coordinates: ll } }; })
+      return { type: "Feature", properties: { bhid: r.bhid, status: r.status, dalam: r.di_dalam_iup !== false, kd: r.kedalaman, rk: r.rencana_kedalaman, rig: r.rig ?? "", pos: r.sumber_posisi, dip: r.dip, az: r.azimuth, warna: WARNA_STATUS[r.status] ?? "#999" }, geometry: { type: "Point", coordinates: ll } }; })
       .filter((f) => f.geometry.coordinates.every(Number.isFinite));
     localStorage.setItem("petaLubang", JSON.stringify(L));
   };
@@ -2319,7 +2438,9 @@ async function petaView(v) {
     };
   };
   const popLubang = (f) => { const p = f.properties, c = f.geometry.coordinates, u = UTM.ke(c[0], c[1]);
-    const pop = new maplibregl.Popup({ offset: 10 }).setLngLat(c).setHTML(`<b>${esc(p.bhid)}</b> · ${esc(LABEL_STATUS[p.status] ?? p.status)}<br>${p.kd != null ? `Kedalaman ${esc(p.kd)} m` : ""}${p.rk != null ? ` · rencana ${esc(p.rk)} m` : ""}${p.rig ? `<br>${esc(p.rig)}` : ""}<br>E ${u[0].toFixed(1)} N ${u[1].toFixed(1)} <span class="muted">(${esc(p.pos)})</span>${p.dalam ? "" : `<br><b style="color:#c00">DI LUAR IUP</b>`}${isClient() ? "" : `<br><button class="sec" data-pakai="${esc(p.bhid)}" style="width:auto;padding:3px 10px;margin-top:6px">Pakai Hole ID ini di Progres bor</button>`}`).addTo(map);
+    const pop = new maplibregl.Popup({ offset: 10 }).setLngLat(c).setHTML(`<b>${esc(p.bhid)}</b> · ${esc(LABEL_STATUS[p.status] ?? p.status)}<br>${p.kd != null ? `Kedalaman ${esc(p.kd)} m` : ""}${p.rk != null ? ` · rencana ${esc(p.rk)} m` : ""}${p.rig ? `<br>${esc(p.rig)}` : ""}${p.dip != null ? `<br>Dip ${esc(p.dip)}° · azimuth ${esc(p.az)}°` : ""}<br>E ${u[0].toFixed(1)} N ${u[1].toFixed(1)} <span class="muted">(${esc(p.pos)})</span>${p.dalam ? "" : `<br><b style="color:#c00">DI LUAR IUP</b>`}${isClient() ? "" : `<br><button class="sec" data-pakai="${esc(p.bhid)}" style="width:auto;padding:3px 10px;margin-top:6px">Pakai Hole ID ini di Progres bor</button>`}`).addTo(map);
+    pop.getElement().insertAdjacentHTML("beforeend", `<button class="sec" data-prof style="margin-top:4px;width:auto;padding:6px 10px">📊 Profil bor</button>`);
+    pop.getElement().querySelector("[data-prof]").addEventListener("click", () => profilModal(p.bhid));
     pop.getElement().querySelector("[data-pakai]")?.addEventListener("click", (e) => { localStorage.setItem("bhid", e.target.dataset.pakai); document.body.style.overflow = ""; tab = "prog"; localStorage.setItem("tab", tab); render(); }); };
   const gambarLubang = () => {
     LBL.lubang.forEach((mk) => mk.remove());
@@ -2471,7 +2592,7 @@ async function dbView(v) {
     try {
       const X = await import("./vendor/xlsx.js"); const wb = X.utils.book_new();
       const got = {};
-      for (const k of dsAllowed() ?? ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "jam", "bbm", "lubang", "kinerja", "logging", "kepatuhan", "marking", "corefile", "scanfile", "arsipfoto"]) {
+      for (const k of dsAllowed() ?? ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "jam", "bbm", "lubang", "kinerja", "logging", "kepatuhan", "profil", "marking", "corefile", "scanfile", "arsipfoto"]) {
         const rows = (await tambahLink(k, await fetchAll(DATASETS[k], { ...f, bad: false }))).map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (Array.isArray(o[c])) o[c] = o[c].join("; "); return o; }); got[k] = rows;
         X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), DATASETS[k].t.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
       }
