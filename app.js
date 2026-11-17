@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.11";
+const APP_VERSION = "2026-11-17.12";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -745,10 +745,11 @@ async function usersView(v) {
   const link = new URL("daftar.html", location.href).href;
   const opt = (sel) => ["driller", "geologist", "verifier", "admin", "client"].map((r) => `<option ${r === sel ? "selected" : ""}>${r}</option>`).join("");
   const row = (r, pending) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>${esc(r.full_name)}</b> · ${esc(r.email)}<br><span class="muted">${esc(r.position ?? "")} · ${esc(r.company ?? "")} · ${esc(r.phone ?? "")}${r.reason ? " · " + esc(r.reason) : ""}<br>
-      ${pending ? `minta: ${esc(r.requested_role)} · daftar ${new Date(r.created_at).toLocaleString("id-ID")}` : `status: ${roleOf[r.user_id] ? "AKTIF (" + roleOf[r.user_id] + ")" : r.status === "REJECTED" ? "DITOLAK/NONAKTIF" : r.status}${r.decision_note ? " · " + esc(r.decision_note) : ""}`}</span></span>
-      <select data-role="${r.user_id}" style="flex:0;width:auto">${opt(roleOf[r.user_id] ?? r.requested_role)}</select>
-      <button data-ok="${r.user_id}" style="flex:0">${pending ? "Setujui" : roleOf[r.user_id] ? "Ubah peran" : "Aktifkan"}</button>
-      ${pending || roleOf[r.user_id] ? `<button class="danger" data-no="${r.user_id}" style="flex:0">${pending ? "Tolak" : "Nonaktifkan"}</button>` : ""}</li>`;
+      ${pending ? `minta: ${esc(r.requested_role)} · daftar ${new Date(r.created_at).toLocaleString("id-ID")}` : `status: ${roleOf[r.user_id] === "nonaktif" ? "<b style='color:#C8281F'>NONAKTIF</b>" : roleOf[r.user_id] ? "AKTIF (" + roleOf[r.user_id] + ")" : r.status === "REJECTED" ? "DITOLAK" : r.status}${r.decision_note ? " · " + esc(r.decision_note) : ""}`}</span></span>
+      <select data-role="${r.user_id}" style="flex:0;width:auto">${opt(roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif" ? roleOf[r.user_id] : r.requested_role)}</select>
+      <button data-ok="${r.user_id}" style="flex:0">${pending ? "Setujui" : roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif" ? "Ubah peran" : "Aktifkan"}</button>
+      ${pending || (roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif") ? `<button class="danger" data-no="${r.user_id}" style="flex:0">${pending ? "Tolak" : "Nonaktifkan"}</button>` : ""}
+      ${r.user_id === session?.user?.id ? "" : `<button class="danger" data-del="${r.user_id}" data-nm="${esc(r.full_name)}" style="flex:0" title="Hapus permanen (hanya akun yang belum pernah mengirim data)">Hapus</button>`}</li>`;
   v.innerHTML = `<div class="card"><h2>Pengguna</h2>
     <p>Link pendaftaran untuk dibagikan: <b>${esc(link)}</b> <button class="sec" id="cp" style="padding:4px 10px">Salin</button></p>
     <p class="muted">Pendaftar tidak bisa melihat atau mengirim data sampai disetujui. Periksa nama, perusahaan dan nomor HP sebelum menyetujui — email belum diverifikasi otomatis.</p></div>
@@ -765,6 +766,14 @@ async function usersView(v) {
   };
   v.querySelectorAll("[data-ok]").forEach((b) => (b.onclick = () => act(b.dataset.ok, v.querySelector(`[data-role="${b.dataset.ok}"]`).value)));
   v.querySelectorAll("[data-no]").forEach((b) => (b.onclick = () => act(b.dataset.no, null)));
+  // Hapus permanen: server menolak bila akun pernah mengirim data (pakai Nonaktifkan agar riwayat utuh)
+  v.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => {
+    const { error: e1 } = await sb.rpc("admin_hapus_pengguna", { p_user: b.dataset.del, p_konfirmasi: false });
+    if (e1) return alert(e1.message);
+    if (!confirm(`Hapus PERMANEN akun “${b.dataset.nm}”?\n\nAkun, pendaftaran dan penugasannya dihapus dan tidak bisa dipulihkan. Orang ini harus mendaftar ulang bila ingin masuk lagi.`)) return;
+    const { error } = await sb.rpc("admin_hapus_pengguna", { p_user: b.dataset.del, p_konfirmasi: true });
+    if (error) alert(error.message); else usersView(v);
+  }));
 }
 
 // ---------- utilitas bersama ----------
