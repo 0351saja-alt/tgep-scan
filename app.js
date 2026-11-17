@@ -75,7 +75,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-17.35";
+const APP_VERSION = "2026-11-17.36";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1379,6 +1379,27 @@ async function petaSVG(L, o = {}) {
       if (idx) { const mid = c[Math.floor(c.length / 2)]; if (inBox(mid)) g += `<text x="${X(mid[0])}" y="${Y(mid[1])}" font-size="8" fill="#6b4a2b" stroke="#fff" stroke-width="2" paint-order="stroke">${f.properties.z}</text>`; } }
   } catch {}
   for (const w of Wl) if ((w.titik ?? []).length) g += `<polygon points="${w.titik.map((t) => P([t.lon, t.lat])).join(" ")}" fill="none" stroke="#d00" stroke-width="2" stroke-dasharray="7 4"/>`;
+  if (o.grafik) { // grafik per lubang menempel di lokasinya (kolom zona, atau batang kedalaman vs rencana)
+    const PR = o.grafik, maxD = Math.max(5, ...PR.map((r) => +r.sampai_m), ...pts.map((p) => +p.kedalaman || 0)), gh = o.gh ?? 70, gw = 13;
+    const ada = pts.filter((p) => p.status !== "RENCANA" || PR.some((r) => r.bhid === p.bhid)), boxH = gh + 32, boxW = gw + 50;
+    // kotak grafik disusun di kolom kiri/kanan peta (tidak saling menumpuk), dihubungkan garis ke titiknya
+    const tata = (L2, kiri) => { const xs = kiri ? 70 : W - boxW - 14, maxY = kiri ? H - 40 : H - 100, n = Math.max(1, L2.length);
+      const tinggi = Math.min(boxH + 8, (maxY - (kiri ? 64 : 26)) / n); L2.sort((a, b) => Y(a.ll[1]) - Y(b.ll[1]));
+      let yk = kiri ? 64 : 26; const pos = L2.map((p) => { const ideal = Math.max(yk, Math.min(maxY - tinggi, Y(p.ll[1]) - tinggi / 2)); yk = ideal + tinggi; return ideal; });
+      for (let k = pos.length - 1, bawah = maxY; k >= 0; k--) { pos[k] = Math.min(pos[k], bawah - tinggi); bawah = pos[k]; }
+      return L2.map((p, k) => ({ p, gx: xs + 3, gy: pos[k] + 16, kiri, sk: Math.min(1, (tinggi - 8) / boxH) })); };
+    const kiriL = ada.filter((p) => X(p.ll[0]) < W / 2), kananL = ada.filter((p) => X(p.ll[0]) >= W / 2);
+    [...tata(kiriL, true), ...tata(kananL, false)].forEach(({ p, gx, gy: gy0, kiri, sk }) => {
+      const x = X(p.ll[0]), y = Y(p.ll[1]), gh = (o.gh ?? 70) * sk, gy = gy0;
+      g += `<line x1="${x}" y1="${y}" x2="${kiri ? gx + boxW - 3 : gx - 3}" y2="${gy + gh / 2}" stroke="#111" stroke-width=".9"/><rect x="${gx - 3}" y="${gy - 14}" width="${boxW}" height="${gh + 22}" rx="5" fill="#fff" opacity=".93" stroke="#777" stroke-width=".6"/>`;
+      const R = PR.filter((r) => r.bhid === p.bhid), sy = gh / maxD;
+      if (R.length) for (const r of R) g += `<rect x="${gx}" y="${gy + r.dari_m * sy}" width="${gw}" height="${Math.max(0.8, (r.sampai_m - r.dari_m) * sy)}" fill="${esc(r.warna)}" stroke="#222" stroke-width=".3"><title>${esc(r.nama_zona)} ${r.tebal_m} m</title></rect>`;
+      else { const kd = +p.kedalaman || 0, rk = +p.rencana_kedalaman || 0; if (rk) g += `<rect x="${gx}" y="${gy}" width="${gw}" height="${rk * sy}" fill="none" stroke="#999" stroke-dasharray="2 2"/>`;
+        g += `<rect x="${gx}" y="${gy}" width="${gw}" height="${Math.max(1, kd * sy)}" fill="${WARNA_STATUS[p.status] ?? "#999"}" stroke="#222" stroke-width=".4"/>`; }
+      const d = R.length ? Math.max(...R.map((r) => +r.sampai_m)) : +p.kedalaman || 0;
+      g += `<text x="${gx - 1}" y="${gy - 4}" font-size="8.5" font-weight="700">${esc(p.bhid)}</text><text x="${gx + gw + 3}" y="${gy + 9}" font-size="8">${d ? d.toFixed(1) + " m" : "–"}</text>${p.rencana_kedalaman ? `<text x="${gx + gw + 3}" y="${gy + 19}" font-size="7.5" fill="#666">/${p.rencana_kedalaman} m</text>` : ""}`;
+    });
+  }
   for (const p of pts) { const r = p.status === "RENCANA" ? 5 : 7, x = X(p.ll[0]), y = Y(p.ll[1]);
     g += `<circle cx="${x}" cy="${y}" r="${r}" fill="${WARNA_STATUS[p.status] ?? "#999"}" stroke="${p.di_dalam_iup === false ? "#e00" : "#111"}" stroke-width="${p.di_dalam_iup === false ? 3 : 1.4}"/>
       <text x="${x + r + 3}" y="${y + 3}" font-size="10" font-weight="700" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(p.bhid)}</text>`; }
@@ -1439,6 +1460,10 @@ async function presentasiHTML(D) {
     ${card(hit("PROGRES"), "Lubang sedang dibor", "", "#E0A100")}${card(hit("RENCANA"), "Titik rencana tersisa", "", "#6b7a72")}</div>
     <div class="cat"><h3>Catatan utama</h3><ul>${notes.slice(0, 5).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`));
   S.push(slide("Peta pemboran", `<div class="peta">${peta}</div><div class="leg3"><span><i style="background:#fff"></i>Rencana <b>${hit("RENCANA")}</b></span><span><i style="background:${WARNA_STATUS.PROGRES}"></i>Progres <b>${hit("PROGRES")}</b></span><span><i style="background:${WARNA_STATUS.EOH}"></i>EOH / STB <b>${hit("EOH")}</b></span><span><i style="background:none;border:2px dashed #d00"></i>Batas IUP</span></div>`, `${LB.length} titik`));
+  const petaGraf = await petaSVG(LB, { w: 1180, h: 610, grafik: prof ?? [], gh: 74 }).catch(() => "");
+  const tiga = await blok3D(LB, prof, { w: 1180, h: 560, fit: 520 }).catch((e) => `<p class="kosong">Tampilan 3D gagal: ${esc(e.message)}</p>`);
+  S.push(slide("Peta & grafik per lubang", `<div class="peta">${petaGraf}</div>`, "kolom zona / kedalaman vs rencana di lokasi tiap lubang"));
+  S.push(slide("Tampilan 3D pemboran", `<div class="tiga">${tiga}</div>`, "topografi DEMNAS dilihat dari samping"));
   S.push(slide("Status titik bor", `<div class="dua">${tTitik(bar2.slice(0, half))}${tTitik(bar2.slice(half))}</div>`, "kedalaman aktual vs rencana"));
   S.push(slide("Produktivitas pemboran", `${grafik}${rigRows.length ? `<table class="t" style="margin-top:10px"><tr><th>Rig</th><th>Hari aktif</th><th>Meter</th><th>Run</th><th>m/jam</th><th>m/hari aktif</th><th>Standby (jam)</th></tr>${rigRows.map((r) => `<tr><td><b>${esc(r[0])}</b></td>${[1, 2, 3, 4, 5, 6].map((i) => `<td class="r">${esc(r[i])}</td>`).join("")}</tr>`).join("")}</table>` : ""}`, "meter per hari & per rig"));
   S.push(slide("Profil bor & ketebalan zona", (prof ?? []).length ? `<div class="pf"><div>${profilSVG(prof, { h: 330, fit: 420 })}</div><div><table class="t"><tr><th>Zona</th><th>Tebal rata-rata</th><th>Lubang</th></tr>${zonaRows}</table><p class="ket">Tebal rata-rata = jumlah tebal zona ÷ jumlah lubang yang menembus zona itu. Hanya lubang dengan Form Logging yang sudah disetujui.</p></div></div>` : `<p class="kosong">Profil bor tampil otomatis setelah Form Logging lubang disetujui verifier.</p>`, "dari Form Logging terverifikasi"));
@@ -1454,7 +1479,7 @@ async function presentasiHTML(D) {
   .kpi{border:1px solid #e3e8e1;border-radius:14px;padding:14px 16px;background:#f7faf8}.kpi .v{font:800 34px Arial;line-height:1.1}.kpi .l{font-size:14px;color:#3d4f46;margin-top:4px}.kpi .s{font-size:12px;color:#6b7a72;margin-top:4px}
   .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.cat{margin-top:16px;background:#12251E;color:#fff;border-radius:14px;padding:12px 20px}.cat h3{margin:0 0 6px;color:#7CE0B0;font-size:16px}.cat ul{margin:0;padding-left:20px;font-size:15px;line-height:1.5}
   .bar{height:10px;background:#e3e8e1;border-radius:6px;overflow:hidden;margin-top:6px}.bar span{display:block;height:100%;border-radius:6px}
-  .peta{display:flex;justify-content:center}.peta svg{height:118mm;width:auto;max-width:100%;border-radius:8px}.peta>div:last-child{display:none}.leg3{display:flex;gap:26px;justify-content:center;font-size:15px;margin-top:6px}.leg3 i{display:inline-block;width:14px;height:14px;border-radius:50%;border:1.5px solid #111;margin-right:6px;vertical-align:-2px}
+  .tiga svg{display:block;margin:0 auto;border-radius:8px}.peta{display:flex;justify-content:center}.peta svg{height:118mm;width:auto;max-width:100%;border-radius:8px}.peta>div:last-child{display:none}.leg3{display:flex;gap:26px;justify-content:center;font-size:15px;margin-top:6px}.leg3 i{display:inline-block;width:14px;height:14px;border-radius:50%;border:1.5px solid #111;margin-right:6px;vertical-align:-2px}
   .t{width:100%;border-collapse:collapse;font-size:13.5px}.t th{background:#12251E;color:#fff;text-align:left;padding:6px 8px;font-weight:600}.t td{padding:5px 8px;border-bottom:1px solid #e3e8e1}.t th,.t.st td:nth-child(-n+2){white-space:nowrap}.t tr:nth-child(even) td{background:#f7faf8}.r{text-align:right}
   .dot{display:inline-block;width:11px;height:11px;border-radius:50%;border:1px solid #111;margin-right:6px;vertical-align:-1px}.sw{display:inline-block;width:16px;height:12px;border:1px solid #222;margin-right:8px;vertical-align:-1px}
   .dua{display:grid;grid-template-columns:1fr 1fr;gap:22px}.dua h3{margin:0 0 8px;font-size:17px}.tl{margin:0;padding-left:20px;font-size:15px;line-height:1.55}
@@ -1462,6 +1487,64 @@ async function presentasiHTML(D) {
   @media print{body{background:#fff}.bar0{display:none}.sl{margin:0;box-shadow:none}}`;
   return `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Presentasi Pemboran ${esc(nama)} ${st.from}–${st.to}</title><style>${css}</style></head><body>
     <div class="bar0"><button onclick="print()">Simpan PDF / cetak (16:9)</button><button onclick="try{opener._lapDL()}catch(e){alert('Buka ulang dari Dashboard untuk mengunduh Excel.')}">Unduh Excel data</button></div>${S.join("")}</body></html>`;
+}
+// ---------- Blok diagram 3D (topografi DEMNAS + lubang bor), dilihat miring dari samping ----------
+async function blok3D(L, prof, o = {}) {
+  const W = o.w ?? 1100, H = o.h ?? 560, az = ((o.az ?? 62) * Math.PI) / 180, tilt = ((o.tilt ?? 30) * Math.PI) / 180, VE = o.ve ?? 1.5;
+  const pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat)).map((x) => ({ ...x, ll: x.x != null ? UTM.dari(+x.x, +x.y) : [+x.lon, +x.lat] }));
+  if (!pts.length) return "<p>Belum ada titik bor untuk tampilan 3D.</p>";
+  const lc = pts.reduce((s, p) => s + p.ll[1], 0) / pts.length, kx = 111320 * Math.cos((lc * Math.PI) / 180), ky = 110574, padM = o.pad ?? 450;
+  let x0 = Math.min(...pts.map((p) => p.ll[0])) - padM / kx, x1 = Math.max(...pts.map((p) => p.ll[0])) + padM / kx, y0 = Math.min(...pts.map((p) => p.ll[1])) - padM / ky, y1 = Math.max(...pts.map((p) => p.ll[1])) + padM / ky;
+  const NX = o.nx ?? 64, NY = Math.max(16, Math.round((NX * (y1 - y0) * ky) / ((x1 - x0) * kx))), Z = [];
+  for (let j = 0; j <= NY; j++) { Z[j] = []; for (let i = 0; i <= NX; i++) Z[j][i] = await tinggiDi(x0 + ((x1 - x0) * i) / NX, y0 + ((y1 - y0) * j) / NY).catch(() => null); }
+  const flat = Z.flat().filter((v) => v != null); if (!flat.length) return "<p>Data DEMNAS tidak tersedia untuk area ini.</p>";
+  const zMin = Math.min(...flat), zMax = Math.max(...flat), fill = (v) => (v == null ? zMin : v);
+  const cx = ((x1 - x0) * kx) / 2, cy = ((y1 - y0) * ky) / 2, zBase = zMin - (zMax - zMin) * 0.25 - 30;
+  const maxDepth = Math.max(5, ...pts.map((p) => +p.kedalaman || +p.rencana_kedalaman || 0), ...(prof ?? []).map((r) => +r.sampai_m));
+  const HE = o.he ?? Math.max(1, Math.round(((zMax - zMin) * VE * 0.55) / maxDepth)); // perbesaran kedalaman lubang agar terlihat
+  const P3 = (mx, my, z) => { const x = mx - cx, y = my - cy, xr = x * Math.cos(az) - y * Math.sin(az), yr = x * Math.sin(az) + y * Math.cos(az);
+    return [xr, -(z - zMin) * VE * Math.cos(tilt) - yr * Math.sin(tilt), yr]; };
+  const gm = (i, j, z) => P3(((x1 - x0) * kx * i) / NX, ((y1 - y0) * ky * j) / NY, z);
+  // skala ke layar
+  const sample = []; for (const [i, j] of [[0, 0], [NX, 0], [0, NY], [NX, NY]]) { sample.push(gm(i, j, fill(Z[j][i]))); sample.push(gm(i, j, zBase)); sample.push(gm(i, j, zMax)); }
+  const sxs = sample.map((p) => p[0]), sys = sample.map((p) => p[1]), sc = Math.min((W - 60) / (Math.max(...sxs) - Math.min(...sxs)), (H - 70) / (Math.max(...sys) - Math.min(...sys)));
+  const ox = 30 - Math.min(...sxs) * sc, oy = 40 - Math.min(...sys) * sc, S = (p) => [p[0] * sc + ox, p[1] * sc + oy];
+  const I = await (await fetch("peta/kontur/index.json")).json().catch(() => null), stops = I?.elev_stops ?? [[0, [38, 115, 77]], [1100, [245, 245, 245]]];
+  const warna = (v, sh) => { let a = stops[0], b = stops[stops.length - 1]; for (let k = 0; k < stops.length - 1; k++) if (v >= stops[k][0] && v <= stops[k + 1][0]) { a = stops[k]; b = stops[k + 1]; }
+    const t = b[0] === a[0] ? 0 : (v - a[0]) / (b[0] - a[0]); return `rgb(${[0, 1, 2].map((c) => Math.round((a[1][c] + (b[1][c] - a[1][c]) * t) * sh)).join(",")})`; };
+  const quads = [], cellX = ((x1 - x0) * kx) / NX, cellY = ((y1 - y0) * ky) / NY;
+  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+    const z00 = fill(Z[j][i]), z10 = fill(Z[j][i + 1]), z01 = fill(Z[j + 1][i]), z11 = fill(Z[j + 1][i + 1]);
+    const dzx = ((z10 + z11 - z00 - z01) / 2) * VE / cellX, dzy = ((z01 + z11 - z00 - z10) / 2) * VE / cellY, nl = Math.hypot(dzx, dzy, 1);
+    const sh = Math.max(0.45, Math.min(1.15, 0.75 + 0.45 * ((-dzx * -0.6 + -dzy * 0.6 + 0.6) / nl)));   // cahaya dari barat laut
+    const c = [gm(i, j, z00), gm(i + 1, j, z10), gm(i + 1, j + 1, z11), gm(i, j + 1, z01)];
+    quads.push({ d: (c[0][2] + c[2][2]) / 2, pts: c.map(S), col: warna((z00 + z10 + z01 + z11) / 4, sh) });
+  }
+  quads.sort((a, b) => b.d - a.d);
+  // dinding blok (sisi yang menghadap pengamat)
+  let walls = ""; const sisi = [[(t) => [t, 0], NX], [(t) => [NX, t], NY], [(t) => [t, NY], NX], [(t) => [0, t], NY]];
+  for (const [f, nn] of sisi) { const a = f(0), b = f(nn), mid = gm((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, zMin), ctr = gm(NX / 2, NY / 2, zMin);
+    if (mid[2] > ctr[2]) continue; // sisi belakang tidak digambar
+    const atas = [], bawah = []; for (let t = 0; t <= nn; t++) { const [i, j] = f(t); atas.push(S(gm(i, j, fill(Z[j][i])))); bawah.unshift(S(gm(i, j, zBase))); }
+    walls += `<polygon points="${[...atas, ...bawah].map((p) => p.join(",")).join(" ")}" fill="url(#tanah)" stroke="#5b4636" stroke-width=".6"/>`; }
+  let g = walls + quads.map((q) => `<polygon points="${q.pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}" fill="${q.col}" stroke="${q.col}" stroke-width=".4"/>`).join("");
+  // lubang bor
+  const hz = async (p) => fill(await tinggiDi(p.ll[0], p.ll[1]).catch(() => null)), PRF = prof ?? [];
+  const lub = []; for (const p of pts) { const mx = (p.ll[0] - x0) * kx, my = (p.ll[1] - y0) * ky, z = await hz(p); lub.push({ p, mx, my, z, d: P3(mx, my, z)[2] }); }
+  lub.sort((a, b) => b.d - a.d);
+  for (const h of lub) { const top = S(P3(h.mx, h.my, h.z)), R = PRF.filter((r) => r.bhid === h.p.bhid), seg = (a, b) => [S(P3(h.mx, h.my, h.z - a * HE / VE)), S(P3(h.mx, h.my, h.z - b * HE / VE))];
+    if (R.length) for (const r of R) { const [a, b] = seg(+r.dari_m, +r.sampai_m); g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${esc(r.warna)}" stroke-width="10" stroke-linecap="butt"><title>${esc(h.p.bhid)} ${esc(r.nama_zona)} ${r.dari_m}–${r.sampai_m} m</title></line>`; }
+    else if (+h.p.kedalaman) { const [a, b] = seg(0, +h.p.kedalaman); g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${WARNA_STATUS[h.p.status] ?? "#999"}" stroke-width="9"/>`; }
+    if (+h.p.rencana_kedalaman && h.p.status !== "EOH" && h.p.status !== "STB") { const [a, b] = seg(0, +h.p.rencana_kedalaman); g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#111" stroke-width="1" stroke-dasharray="3 3" opacity=".6"/>`; }
+    const tiang = S(P3(h.mx, h.my, h.z + ((zMax - zMin) * (0.07 + 0.06 * (lub.indexOf(h) % 3))) / VE));   // tiang label berselang tinggi agar tidak bertumpuk
+    g += `<line x1="${top[0]}" y1="${top[1]}" x2="${tiang[0]}" y2="${tiang[1]}" stroke="#111" stroke-width=".8"/><circle cx="${top[0]}" cy="${top[1]}" r="4" fill="${WARNA_STATUS[h.p.status] ?? "#999"}" stroke="#111" stroke-width="1.2"/>
+      <text x="${tiang[0]}" y="${tiang[1] - 3}" font-size="10" font-weight="700" text-anchor="middle" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(h.p.bhid)}</text>`; }
+  // panah utara (proyeksi arah utara di permukaan)
+  const u0 = S(P3(cx, cy, zMin)), u1 = S(P3(cx, cy + 1, zMin)), ang = Math.atan2(u1[1] - u0[1], u1[0] - u0[0]);
+  g += `<g transform="translate(${W - 46},48) rotate(${(ang * 180) / Math.PI + 90})"><polygon points="0,-20 7,6 0,0 -7,6" fill="#111"/></g><text x="${W - 46}" y="84" font-size="12" font-weight="700" text-anchor="middle">U</text>`;
+  const Zs = [...new Map(PRF.map((r) => [r.zona, r])).values()];
+  const leg = `<div style="font-size:11px;color:#333;margin-top:4px">Topografi DEMNAS, tinggi ${zMin.toFixed(0)}–${zMax.toFixed(0)} m, perbesaran vertikal ${VE}× · <b>panjang lubang bor diperbesar ${HE}×</b> agar terlihat · garis putus = kedalaman rencana · dilihat dari arah ${["utara", "timur laut", "timur", "tenggara", "selatan", "barat daya", "barat", "barat laut"][Math.round((((o.az ?? 62) + 180) % 360) / 45) % 8]} · ${Zs.map((r) => `<span style="display:inline-block;width:12px;height:10px;background:${esc(r.warna)};border:1px solid #222;vertical-align:-1px"></span> ${esc(r.nama_zona)}`).join(" ")}</div>`;
+  return `<svg width="${o.fit ? "100%" : W}" viewBox="0 0 ${W} ${H}" style="background:linear-gradient(#eaf2f7,#fff);font-family:Arial,sans-serif;${o.fit ? `max-height:${o.fit}px;` : ""}"><defs><linearGradient id="tanah" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b98b62"/><stop offset=".55" stop-color="#8b5e3c"/><stop offset="1" stop-color="#5b4636"/></linearGradient></defs>${g}</svg>${leg}`;
 }
 async function laporanProgres(st) {
   if (!online()) return alert("Laporan perlu sinyal internet.");
@@ -1490,6 +1573,8 @@ async function laporanProgres(st) {
     await muatZona();
     const { data: prof } = await sb.from("v_profil_bor").select("*").in("bhid", LB.map((x) => x.bhid).length ? LB.map((x) => x.bhid) : ["-"]).order("bhid").order("dari_m");
     const petaGbr = await petaSVG(LB, { w: 960, h: 600 }).catch((e) => `<p>Peta gagal dibuat: ${esc(e.message)}</p>`);
+    const petaGrafik = await petaSVG(LB, { w: 960, h: 600, grafik: prof ?? [] }).catch(() => "");
+    const gbr3D = await blok3D(LB, prof, { w: 960, h: 500 }).catch((e) => `<p>Tampilan 3D gagal: ${esc(e.message)}</p>`);
     const titikRows = LB.map((x) => [x.bhid, LABEL_STATUS[x.status] ?? x.status, x.rig ?? "", x.kedalaman ?? "", x.rencana_kedalaman ?? "", x.dip ?? "", x.azimuth ?? "", x.di_dalam_iup === false ? "DI LUAR IUP" : "dalam IUP"]);
     const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p.project]));
     const kp = (kp0 ?? []).filter((r) => !st.proj || P[r.user_id] === st.proj);
@@ -1577,6 +1662,8 @@ async function laporanProgres(st) {
     <h2>3. Progres per rig</h2>${tbl(T.rig)}
     <h2>4. Meter bor harian</h2>${svg}${tbl(T.harian)}
     <h2>5. Status lubang</h2>${klien ? tbl(clientGeo() ? [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Conto", "Limonit (m)", "Saprolit (m)", "Recovery %", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.conto, h.tl == null ? "" : +f1(h.tl), h.ts == null ? "" : +f1(h.ts), h.rec == null ? "" : Math.round(h.rec), h.selesai ? "SELESAI" : "BERJALAN"])] : [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.selesai ? "SELESAI" : "BERJALAN"])]) : tbl(T.lubang, { col: 1 })}<p style="color:#555">SELESAI = tanggal selesai terisi atau kedalaman ≥ target/total depth di DDR. Kedalaman dari foto RUN aplikasi${klien ? "" : "; tebal zona dan recovery dari Form Logging yang sudah disetujui"}.</p>
+    <h2>Peta & grafik per lubang</h2>${petaGrafik}
+    <h2>Tampilan 3D pemboran</h2>${gbr3D}
     <h2>Profil bor (ketebalan zona)</h2>${(prof ?? []).length ? profilSVG(prof) : "<p>Belum ada data logging yang masuk database untuk lubang-lubang ini.</p>"}
     <h2>6. Penyebab standby & perbaikan</h2>${sbRows.length ? tbl(T.standby) : "<p>Tidak ada standby/perbaikan tercatat.</p>"}
     ${klien ? "" : `<h2>7. Kepatuhan pengiriman operator</h2>${opRows.length ? tbl(T.operator, { col: 1 }) : "<p>Belum ada data operator.</p>"}
