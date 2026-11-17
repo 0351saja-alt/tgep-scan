@@ -44,7 +44,7 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 // ---------- jaringan ----------
 function netBadge() { const n = $("#net"); n.textContent = navigator.onLine ? "online" : "offline"; n.className = navigator.onLine ? "" : "off"; }
 addEventListener("online", () => { netBadge(); sync(); }); addEventListener("offline", netBadge); netBadge();
-const APP_VERSION = "2026-11-17.3";
+const APP_VERSION = "2026-11-17.4";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1483,7 +1483,7 @@ async function rekapView(v) {
   v.innerHTML = `<div class="card"><h2>Rekap & pelacakan operator</h2>
     <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div>${proyekSelect()}<button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button></div>
     <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. Form Logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.</p></div>
-    <div id="rs" class="card">Memuat…</div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rp" class="card"></div><div id="rpj" class="card"></div>` : ""}`;
+    <div id="rs" class="card">Memuat…</div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rab" class="card"></div><div id="rp" class="card"></div><div id="rpj" class="card"></div>` : ""}`;
   $("#rgo").onclick = () => { sessionStorage.setItem("rekapTgl", $("#rt").value); sessionStorage.setItem("filterProyek", $("#fproj").value); rekapView(v); };
   if (!online()) return ($("#rs").textContent = "Rekap perlu sinyal internet.");
   const from14 = new Date(Date.parse(tgl) - 13 * 864e5).toISOString().slice(0, 10);
@@ -1511,6 +1511,7 @@ async function rekapView(v) {
     const csv = [cols.join(","), ...(all ?? []).map((r) => cols.map((c) => `"${String(Array.isArray(r[c]) ? r[c].join("; ") : r[c] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })); a.download = `TGEP_Rekap_Operator_${from14}_${tgl}.csv`; a.click(); };
   if (me?.role === "admin") {
+    absensiGaji($("#rab"));
     proyekAdmin($("#rpj"));
     const [{ data: us }, { data: pn }, { data: pj }] = await Promise.all([sb.from("app_user").select("user_id,full_name,role,company").in("role", ["driller", "geologist"]).order("full_name"), sb.from("penugasan").select("*"), sb.from("project").select("code,nama,rigs,aktif").order("nama")]);
     const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p]));
@@ -1537,6 +1538,72 @@ async function logLubang(box) {
     <div class="tw"><table><tr><th>BHID</th><th>Rig</th><th>Bor (m)</th><th>Logging (m)</th><th>Belum (m)</th><th>Conto</th><th>Scan menunggu</th><th>Belum sejak</th><th>Status</th></tr>
     ${rows.map((l) => `<tr><td><b>${esc(l.bhid)}</b></td><td>${esc(l.rig ?? "")}</td><td>${l.kedalaman_bor ?? ""}</td><td>${l.kedalaman_logging}</td><td>${l.belum_logging_m}</td><td>${l.jumlah_conto}</td><td>${l.scan_menunggu}</td><td>${l.belum_sejak ? `${fmtT(l.belum_sejak).slice(0, 10)} (${l.umur_hari} hr)` : "-"}</td><td style="background:${col[l.status] ?? "#fff"}">${esc(l.status)}</td></tr>`).join("") || `<tr><td colspan="9" class="muted">Belum ada lubang dengan foto RUN.</td></tr>`}</table></div>`;
   box.querySelector("#gs")?.addEventListener("click", async () => { const { error: e } = await sb.from("qc_param").update({ value: Number(box.querySelector("#gd").value) }).eq("name", "LOGGING_GRACE_DAYS"); if (e) return alert(e.message); logLubang(box); });
+}
+// ---------- Absensi & penggajian (admin): dari daftar personil Masuk/Keluar shift di Progres bor ----------
+const levenshtein = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; };
+async function absensiGaji(box) {
+  const t = todayWIB(), awal = t.slice(0, 8) + "01", st = JSON.parse(sessionStorage.getItem("absGaji") || "null") ?? { from: awal, to: t, rig: "", jab: "" };
+  const rigs = [...new Set(JSON.parse(localStorage.getItem("projects") || "[]").flatMap((p) => p.rigs ?? []))].sort();
+  box.innerHTML = `<h3>Absensi & penggajian (admin)</h3><p class="muted">Dari daftar personil di <b>Masuk shift</b> dan <b>Keluar shift</b> (Progres bor). Satu shift dihitung bila nama ada di foto masuk; jam kerja dihitung bila nama juga ada di foto keluar. Shift malam yang lewat tengah malam dihitung ke tanggal mulai shift. Data ini tidak terlihat oleh client.</p>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="agF" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="agT" type="date" value="${st.to}"></div>
+    <div><label>Rig</label><select id="agR"><option value="">Semua</option>${rigs.map((r) => `<option ${st.rig === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></div>
+    <div><label>Jabatan</label><select id="agJ"><option value="">Semua</option>${JABATAN.map((j) => `<option ${st.jab === j ? "selected" : ""}>${j}</option>`).join("")}</select></div>
+    <button id="agG" style="flex:0">Tampilkan</button><button class="sec" id="agX" style="flex:0;white-space:nowrap">Unduh Excel</button></div><div id="agO" class="muted" style="margin-top:8px"></div>`;
+  let D = null;
+  const ambil = async () => {
+    Object.assign(st, { from: $("#agF").value, to: $("#agT").value, rig: $("#agR").value, jab: $("#agJ").value }); sessionStorage.setItem("absGaji", JSON.stringify(st));
+    let q = sb.from("v_absensi_personil").select("*").gte("tanggal", st.from).lte("tanggal", st.to).order("tanggal").order("shift").order("rig").limit(10000);
+    let q2 = sb.from("v_personil_shift").select("*").gte("tanggal", st.from).lte("tanggal", st.to).order("tanggal").order("shift").order("rig").limit(5000);
+    if (st.rig) { q = q.eq("rig", st.rig); q2 = q2.eq("rig", st.rig); } if (st.jab) q = q.eq("jabatan", st.jab);
+    const [{ data: rows, error }, { data: sh, error: e2 }] = await Promise.all([q, q2]); if (error || e2) throw new Error((error ?? e2).message);
+    const P = {};
+    for (const r of rows ?? []) { const k = r.nama_kunci || String(r.nama).toUpperCase(), o = (P[k] ??= { kunci: k, ejaan: {}, jab: {}, rig: new Set(), tgl: new Set(), shift: 0, pagi: 0, malam: 0, lengkap: 0, belum: 0, tanpaMasuk: 0, jam: 0, hari: {} });
+      o.ejaan[r.nama] = (o.ejaan[r.nama] ?? 0) + 1; o.jab[r.jabatan] = (o.jab[r.jabatan] ?? 0) + 1; o.rig.add(r.rig);
+      if (r.status === "TIDAK FOTO MASUK") { o.tanpaMasuk++; continue; }
+      o.tgl.add(r.tanggal); o.shift++; r.shift === "PAGI" ? o.pagi++ : o.malam++; r.status === "LENGKAP" ? o.lengkap++ : o.belum++;
+      o.jam += Number(r.durasi_jam) || 0; o.hari[r.tanggal] = (o.hari[r.tanggal] ?? "") + (r.shift === "PAGI" ? "P" : "M"); }
+    const top = (m) => Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+    const orang = Object.values(P).map((o) => ({ ...o, nama: top(o.ejaan), jabatan: top(o.jab), ejaanLain: Object.keys(o.ejaan).length > 1 ? Object.keys(o.ejaan) : [] }))
+      .sort((a, b) => JABATAN.indexOf(a.jabatan) - JABATAN.indexOf(b.jabatan) || a.nama.localeCompare(b.nama));
+    const mirip = []; for (let i = 0; i < orang.length; i++) for (let j = i + 1; j < orang.length; j++) { const a = orang[i].kunci, b = orang[j].kunci;
+      if (levenshtein(a, b) <= (Math.min(a.length, b.length) <= 6 ? 1 : 2) || a.startsWith(b + " ") || b.startsWith(a + " ")) mirip.push([orang[i].nama, orang[j].nama]); }
+    const tanggal = []; for (let d = new Date(st.from + "T00:00:00Z"); d <= new Date(st.to + "T00:00:00Z"); d = new Date(d.getTime() + 864e5)) tanggal.push(d.toISOString().slice(0, 10));
+    return { rows: rows ?? [], sh: sh ?? [], orang, mirip, tanggal };
+  };
+  const tampil = async () => {
+    $("#agO").textContent = "Memuat…";
+    try { D = await ambil(); } catch (e) { return ($("#agO").innerHTML = `<span class="err">${esc(e.message)}</span>`); }
+    const { orang, mirip, sh, tanggal } = D, j1 = (x) => (Math.round(x * 10) / 10).toLocaleString("id-ID");
+    const shKurang = sh.filter((x) => (x.kurang ?? []).length);
+    $("#agO").innerHTML = `<p style="color:inherit"><b>${orang.length}</b> orang · <b>${sh.length}</b> shift rig · ${tanggal.length} hari</p>
+      ${mirip.length ? `<div class="card" style="background:#FBE6D0;margin:6px 0"><b>Periksa nama mirip sebelum penggajian</b> — bisa jadi orang yang sama ditulis berbeda (dihitung terpisah):<br>${mirip.map(([a, b]) => `${esc(a)} ↔ ${esc(b)}`).join("<br>")}</div>` : ""}
+      ${shKurang.length ? `<p class="err" style="margin:6px 0">${shKurang.length} shift rig bermasalah (crew kurang, tanpa driller, belum foto keluar, dll.) — lihat sheet “Per shift rig” di Excel.</p>` : ""}
+      <div class="tw"><table><tr><th>Nama</th><th>Jabatan</th><th>Rig</th><th>Hari kerja</th><th>Shift</th><th>Pagi</th><th>Malam</th><th>Jam kerja</th><th>Belum foto keluar</th>${tanggal.map((d) => `<th>${d.slice(8)}</th>`).join("")}</tr>
+      ${orang.map((o) => `<tr><td style="padding:4px 6px;white-space:nowrap"><b>${esc(o.nama)}</b>${o.ejaanLain.length ? `<br><span class="muted">ditulis: ${o.ejaanLain.map(esc).join(" / ")}</span>` : ""}</td><td style="padding:4px 6px">${esc(o.jabatan)}</td><td style="padding:4px 6px">${esc([...o.rig].join(", "))}</td>
+        <td style="padding:4px 6px;text-align:right"><b>${o.tgl.size}</b></td><td style="padding:4px 6px;text-align:right">${o.shift}</td><td style="padding:4px 6px;text-align:right">${o.pagi}</td><td style="padding:4px 6px;text-align:right">${o.malam}</td>
+        <td style="padding:4px 6px;text-align:right">${j1(o.jam)}</td><td style="padding:4px 6px;text-align:right;${o.belum ? "color:var(--red)" : ""}">${o.belum || ""}</td>
+        ${tanggal.map((d) => `<td style="padding:4px 3px;text-align:center">${o.hari[d] ?? ""}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="9" class="muted" style="padding:6px">Belum ada data personil pada periode ini.</td></tr>`}</table></div>
+      <p class="muted">P = shift pagi (06–18), M = shift malam (18–06). Jam kerja hanya dari shift yang punya foto masuk dan keluar dengan nama yang sama.</p>`;
+  };
+  $("#agG").onclick = tampil;
+  $("#agX").onclick = async () => {
+    try { if (!D) D = await ambil(); const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new(), { orang, rows, sh, mirip, tanggal } = D;
+      const add = (data, nm) => X.utils.book_append_sheet(wb, data.length ? X.utils.json_to_sheet(data) : X.utils.aoa_to_sheet([["(kosong)"]]), nm);
+      add(orang.map((o) => ({ Nama: o.nama, Jabatan: o.jabatan, Rig: [...o.rig].join(", "), "Hari kerja": o.tgl.size, "Jumlah shift": o.shift, "Shift pagi": o.pagi, "Shift malam": o.malam,
+        "Jam kerja": Math.round(o.jam * 100) / 100, "Shift lengkap (masuk+keluar)": o.lengkap, "Belum foto keluar": o.belum, "Hanya di foto keluar": o.tanpaMasuk, "Ejaan lain": o.ejaanLain.join(" / ") })), "Rekap per orang");
+      add(orang.map((o) => Object.fromEntries([["Nama", o.nama], ["Jabatan", o.jabatan], ...tanggal.map((d) => [d, o.hari[d] ?? ""]), ["Hari kerja", o.tgl.size]])), "Kehadiran harian");
+      add(rows.map((r) => ({ Tanggal: r.tanggal, Shift: r.shift, Rig: r.rig, Nama: r.nama, Jabatan: r.jabatan, "Jam masuk": (r.jam_masuk ?? "").replace("T", " ").slice(0, 16), "Jam keluar": (r.jam_keluar ?? "").replace("T", " ").slice(0, 16),
+        "Durasi (jam)": r.durasi_jam, Status: r.status, "Alasan (crew kurang dll.)": r.alasan_masuk ?? "", "Dicatat oleh": r.dicatat_oleh ?? "" })), "Detail per shift");
+      add(sh.map((x) => ({ Tanggal: x.tanggal, Shift: x.shift, Rig: x.rig, "Jam masuk": (x.jam_masuk ?? "").replace("T", " ").slice(0, 16), "Jam keluar": (x.jam_keluar ?? "").replace("T", " ").slice(0, 16),
+        WSG: x.wsg, Driller: x.driller, Crew: x.crew, "Jumlah crew (tanpa WSG)": x.jumlah_crew, "Crew minimum": x.crew_min, Kekurangan: (x.kurang ?? []).join("; ") })), "Per shift rig");
+      add([{ Keterangan: `Periode ${st.from} s.d. ${st.to}${st.rig ? " · " + st.rig : ""}${st.jab ? " · " + st.jab : ""}` }, { Keterangan: "Sumber: daftar personil Masuk/Keluar shift (Progres bor), foto bergeotag & berjam." },
+        { Keterangan: "Hari kerja = jumlah tanggal shift berbeda; shift malam 18–06 dihitung ke tanggal mulai shift." }, { Keterangan: "Jam kerja hanya dari shift dengan foto masuk dan keluar berisi nama yang sama." },
+        ...mirip.map(([a, b]) => ({ Keterangan: `PERIKSA nama mirip: ${a} ↔ ${b}` })), { Keterangan: `Diunduh ${new Date().toLocaleString("id-ID")} oleh ${me?.full_name ?? ""}` }], "Catatan");
+      X.writeFile(wb, `TGEP_Absensi_Gaji_${st.from}_${st.to}${st.rig ? "_" + st.rig.replace(/\s/g, "") : ""}.xlsx`);
+    } catch (e) { alert(e.message); }
+  };
+  tampil();
 }
 async function folderView(v, uid, nama) {
   const to = sessionStorage.getItem("rekapTgl") || todayWIB(), from = new Date(Date.parse(to) - 29 * 864e5).toISOString().slice(0, 10);
