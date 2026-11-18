@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.14";
+const APP_VERSION = "2026-11-18.15";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3795,7 +3795,7 @@ async function keuForm(trx = null, selesai = () => {}, pre = null) {
     ${ai ? `<div class="card" style="background:#DCEFE4;margin:6px 0"><b>Dibaca otomatis:</b> ${esc(KEU_JENIS[ai.jenis_dokumen] ?? ai.jenis_dokumen)} · <b>${ai.arah === "MASUK" ? "uang MASUK" : "uang KELUAR"}</b>${ai.alasan_arah ? ` <small class="muted">(${esc(ai.alasan_arah)})</small>` : ""}<br><small>Periksa isian bertanda kuning. Semua isian boleh diubah bila aplikasi salah membaca.</small>
       ${(ai.peringatan ?? []).length ? `<ul style="margin:4px 0 0 18px;color:#8A1C12;font-size:13px">${ai.peringatan.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}${ai.catatan ? `<div class="muted" style="font-size:12px;margin-top:4px">Catatan baca: ${esc(ai.catatan)}</div>` : ""}
       ${(ai.barang ?? []).length ? `<details style="margin-top:4px"><summary style="font-size:13px">Rincian barang terbaca (${ai.barang.length})</summary><table style="font-size:12px;margin-top:4px">${ai.barang.map((x) => `<tr><td style="padding:2px 6px;border:0">${esc(x.nama)}</td><td style="padding:2px 6px;border:0">${esc(x.qty ?? "")}</td><td style="padding:2px 6px;border:0;text-align:right">${x.subtotal ? fmtRp(x.subtotal) : ""}</td></tr>`).join("")}</table></details>` : ""}</div>`
-      : pre?.galat ? `<div class="card" style="background:#FBE6D0;margin:6px 0">${esc(pre.galat)}</div>` : ""}
+      : pre?.galat ? `<div class="card" style="background:#FBE6D0;margin:6px 0">${esc(pre.galat)}${pre.foto ? `<br><button class="sec" id="kUlang" style="width:auto;padding:6px 12px;margin-top:6px">🔄 Baca ulang foto ini</button>` : ""}</div>` : ""}
     <label>Uang${tanda("arah")}</label><div class="row"><label style="flex:1;margin:0"><input type="radio" name="kArah" value="KELUAR" ${v0.arah === "KELUAR" ? "checked" : ""} style="width:auto"> Keluar (beli / bayar / transfer ke orang lain)</label><label style="flex:1;margin:0"><input type="radio" name="kArah" value="MASUK" ${v0.arah === "MASUK" ? "checked" : ""} style="width:auto"> Masuk (dana diterima)</label></div>
     <div class="row"><div><label>Tanggal${tanda("tanggal")}</label><input id="kTg" type="date" value="${esc(v0.tanggal)}" style="${gaya("tanggal")}"></div><div><label>Jumlah (Rp)${tanda("jumlah")}</label><input id="kJm" inputmode="numeric" placeholder="mis. 250.000" value="${v0.jumlah ? Math.round(v0.jumlah).toLocaleString("id-ID") : ""}" style="font-weight:700;${gaya("jumlah")}"></div></div>
     <label>Jenis bukti${tanda("jenis_dokumen")}</label><select id="kJn">${Object.entries(KEU_JENIS).map(([k, t]) => `<option value="${k}" ${jenis === k ? "selected" : ""}>${t}</option>`).join("")}</select>
@@ -3816,6 +3816,8 @@ async function keuForm(trx = null, selesai = () => {}, pre = null) {
     const ganti = async (kamera) => { const f = await pilihFile(kamera); if (!f) return; const h = await potongNota(f, "Potong nota / bukti"); if (h) { foto = h; tampilFoto(); } };
     F.querySelector("#kGf") && (F.querySelector("#kGf").onclick = () => ganti(true)); F.querySelector("#kGg") && (F.querySelector("#kGg").onclick = () => ganti(false)); };
   tampilFoto();
+  m.querySelector("#kUlang")?.addEventListener("click", async (ev) => { const b = ev.target; b.disabled = true; b.textContent = "Membaca…";
+    try { const hasil = await bacaNota(foto.potong); m.remove(); keuForm(null, selesai, { foto, ai: hasil }); } catch (e) { b.disabled = false; b.textContent = "🔄 Baca ulang foto ini"; alert(e.message); } });
   m.querySelector("#kX").onclick = () => m.remove();
   m.querySelector("#kOk").onclick = async () => {
     const arah = m.querySelector('[name="kArah"]:checked').value, jumlah = Number(jm.value.replace(/\D/g, "")), uraian = m.querySelector("#kUr").value.trim(), e = m.querySelector("#kE");
