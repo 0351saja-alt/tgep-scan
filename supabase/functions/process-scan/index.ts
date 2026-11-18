@@ -115,12 +115,12 @@ function toolFor(form: string) {
     required: fs.map((f) => f.key),
   });
   if (form === "HEADER") {
-    return { name: "submit_form", description: "Kirim transkripsi formulir", input_schema: {
+    return { name: "submit_form", description: "WAJIB dipanggil tepat satu kali: kirim transkripsi formulir", input_schema: {
       type: "object", properties: { form_code: { type: "string" }, header: strObj(HDR), notes: { type: "string" } },
       required: ["form_code", "header"] } };
   }
   const rowFields = rowsOf(form);
-  return { name: "submit_form", description: "Kirim transkripsi formulir", input_schema: {
+  return { name: "submit_form", description: "WAJIB dipanggil tepat satu kali: kirim transkripsi formulir", input_schema: {
     type: "object",
     properties: {
       form_code: { type: "string", description: "Kode di kanan atas, mis. F-BOR" },
@@ -136,15 +136,23 @@ ATURAN: tulis PERSIS seperti yang tertulis di kertas, jangan menebak, jangan men
 Desimal di kertas memakai koma; salin apa adanya (mis. "0,40"). Sel kosong = "". Tulisan yang tidak terbaca = "?" (boleh sebagian, mis. "1,?5").
 Bila ada coretan, ambil nilai pengganti yang ditulis di sampingnya. Kode geologi biasanya 1–3 huruf (mis. TP, RL, YL, ES, RS, PT, KC, Gt).
 Bila gambar bukan formulir ini, terpotong, atau terlalu buram, JANGAN mengarang isi: kosongkan isian yang tidak terlihat dan tulis alasannya di notes.`;
+const WAJIB_ALAT = `\nKIRIM HASIL HANYA dengan memanggil alat submit_form tepat satu kali. Jangan menulis jawaban sebagai teks biasa.`;
 function promptA(form: string) {
   return COMMON + (form === "HEADER"
     ? `\nBaca formulir header (F01-HDR) kotak demi kotak dari kiri atas. Untuk pilihan centang, isi dengan teks pilihan yang dicentang (mis. "NQ", "SINGLE", "WC", "REGULAR DRILLING", "25 × 25", "FLAT", "DRY", "BUSH", "PDT").`
-    : `\nBaca tabel BARIS DEMI BARIS dari atas ke bawah; untuk tiap baris baca sel dari kiri ke kanan.`);
+    : `\nBaca tabel BARIS DEMI BARIS dari atas ke bawah; untuk tiap baris baca sel dari kiri ke kanan.`) + WAJIB_ALAT;
 }
 function promptB(form: string) {
   return COMMON + (form === "HEADER"
     ? `\nBaca formulir header dimulai dari bagian pilihan centang di bawah, lalu kotak isian dari kanan bawah ke kiri atas. Untuk pilihan centang isi teks pilihan yang dicentang.`
-    : `\nBaca tabel KOLOM DEMI KOLOM: baca seluruh kolom NO CONTO dari atas ke bawah, lalu kolom berikutnya, dst. Setelah selesai, susun hasilnya per baris sesuai nomor baris tercetak.`);
+    : `\nBaca tabel KOLOM DEMI KOLOM: baca seluruh kolom NO CONTO dari atas ke bawah, lalu kolom berikutnya, dst. Setelah selesai, susun hasilnya per baris sesuai nomor baris tercetak.`) + WAJIB_ALAT;
+}
+// Cadangan: bila model menjawab dengan teks, ambil objek JSON pertama dari teks itu.
+function jsonDariTeks(j: { content?: { type: string; text?: string }[] }) {
+  const teks = (j.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
+  const a = teks.indexOf("{"), z = teks.lastIndexOf("}");
+  if (a < 0 || z <= a) return null;
+  try { const o = JSON.parse(teks.slice(a, z + 1)); return o && typeof o === "object" ? o : null; } catch { return null; }
 }
 
 async function extract(model: string, prompt: string, form: string, b64: string, mime: string) {
@@ -152,7 +160,7 @@ async function extract(model: string, prompt: string, form: string, b64: string,
     method: "POST",
     headers: { "x-api-key": ANTHROPIC_KEY!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
-      model, max_tokens: 8000, tools: [toolFor(form)], tool_choice: { type: "tool", name: "submit_form" },
+      model, max_tokens: 8000, tools: [toolFor(form)], tool_choice: { type: "auto" },
       messages: [{ role: "user", content: [
         { type: "image", source: { type: "base64", media_type: mime, data: b64 } },
         { type: "text", text: prompt },
@@ -168,8 +176,9 @@ async function extract(model: string, prompt: string, form: string, b64: string,
   }
   const j = await r.json();
   const tu = (j.content ?? []).find((c: { type: string }) => c.type === "tool_use");
-  if (!tu) throw new Error(`Model ${model} tidak mengembalikan hasil terstruktur`);
-  return tu.input;
+  const o = tu?.input ?? jsonDariTeks(j);
+  if (!o) throw new Error(`Model ${model} tidak mengembalikan hasil terstruktur`);
+  return o;
 }
 
 type Lookup = Record<string, Map<string, string>>;

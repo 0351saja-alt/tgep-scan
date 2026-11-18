@@ -3926,7 +3926,7 @@ async function keuForm(trx = null, selesai = () => {}, pre = null) {
   const proj = trx?.project ?? proyekKeu(); if (!proj) return alert("Akun ini belum punya proyek. Minta admin menetapkan proyek.");
   const ai = pre?.ai ?? null, y = ai?.keyakinan ?? {};
   const v0 = { arah: trx?.arah ?? ai?.arah ?? "KELUAR", tanggal: trx?.tanggal ?? (ai?.tanggal || todayWIB()), jumlah: trx?.jumlah ?? (ai?.jumlah || ""), kategori: trx?.kategori ?? ai?.kategori,
-    uraian: trx?.uraian ?? ai?.uraian ?? "", pihak: trx?.pihak ?? ai?.pihak ?? "", metode: trx?.metode ?? ai?.metode ?? "TUNAI", no_ref: trx?.no_ref ?? ai?.no_ref ?? "", rig: trx?.rig ?? "" };
+    uraian: trx?.uraian ?? ai?.uraian ?? "", pihak: trx?.pihak ?? ai?.pihak ?? "", metode: trx?.metode ?? ai?.metode ?? "TUNAI", no_ref: trx?.no_ref ?? ai?.no_ref ?? "", rig: trx?.rig ?? "", keterangan: trx?.keterangan ?? ai?.keterangan ?? "" };
   const rigs = (JSON.parse(localStorage.getItem("projects") || "[]").find((p) => p.code === proj)?.rigs) ?? myTugas?.rigs ?? [];
   let foto = pre?.foto ?? null, jenis = ai?.jenis_dokumen && KEU_JENIS[ai.jenis_dokumen] ? ai.jenis_dokumen : "NOTA";
   const bolehFoto = !trx || !(trx.bukti ?? []).length;
@@ -3944,6 +3944,7 @@ async function keuForm(trx = null, selesai = () => {}, pre = null) {
     <label>Jenis bukti${tanda("jenis_dokumen")}</label><select id="kJn">${Object.entries(KEU_JENIS).map(([k, t]) => `<option value="${k}" ${jenis === k ? "selected" : ""}>${t}</option>`).join("")}</select>
     <label>Kategori${tanda("kategori")}</label><select id="kKt" style="${gaya("kategori")}"></select>
     <label>Uraian</label><input id="kUr" placeholder="mis. Solar 40 L untuk rig 1" value="${esc(v0.uraian)}">
+    <label>Keterangan (opsional)</label><textarea id="kKet" rows="2" maxlength="500" placeholder="mis. berita transfer, untuk keperluan apa, siapa yang meminta, catatan lain">${esc(v0.keterangan)}</textarea>
     <div class="row"><div><label id="kPhL">Toko / penerima${tanda("pihak")}</label><input id="kPh" value="${esc(v0.pihak)}" style="${gaya("pihak")}"></div><div><label>Cara bayar</label><select id="kMt">${["TUNAI", "TRANSFER", "QRIS", "LAINNYA"].map((x) => `<option ${v0.metode === x ? "selected" : ""}>${x}</option>`).join("")}</select></div></div>
     <div class="row"><div><label>No. nota / ref. transfer</label><input id="kRf" value="${esc(v0.no_ref)}"></div><div><label>Rig (opsional)</label><select id="kRg"><option value="">—</option>${rigs.map((r) => `<option ${v0.rig === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></div></div>
     <div id="kE" class="err"></div><div class="row" style="margin-top:10px;position:sticky;bottom:0;background:inherit;padding:8px 0;z-index:2"><button id="kOk">Simpan</button><button class="sec" id="kX">Batal</button></div>`);
@@ -3967,12 +3968,12 @@ async function keuForm(trx = null, selesai = () => {}, pre = null) {
     if (!jumlah) return (e.textContent = "Isi jumlah uang."); if (!uraian) return (e.textContent = "Isi uraian singkat (untuk apa uangnya).");
     if (!trx && !foto && arah === "KELUAR" && !confirm("Pengeluaran tanpa foto bukti. Tetap simpan? (foto bisa ditambahkan nanti lewat Ubah)")) return;
     const row = { project: proj, tanggal: m.querySelector("#kTg").value || todayWIB(), arah, kategori: m.querySelector("#kKt").value, uraian, pihak: m.querySelector("#kPh").value.trim() || null, jumlah,
-      metode: m.querySelector("#kMt").value, no_ref: m.querySelector("#kRf").value.trim() || null, rig: m.querySelector("#kRg").value || null };
+      metode: m.querySelector("#kMt").value, no_ref: m.querySelector("#kRf").value.trim() || null, rig: m.querySelector("#kRg").value || null, keterangan: m.querySelector("#kKet").value.trim() || null };
     jenis = m.querySelector("#kJn").value;
     if (ai && !trx) { const banding = { arah: ai.arah, tanggal: ai.tanggal, jumlah: ai.jumlah, kategori: ai.kategori, pihak: ai.pihak ?? null, jenis: ai.jenis_dokumen };
       row.diubah_dari_ai = Object.keys(banding).filter((k) => String((k === "jenis" ? jenis : row[k]) ?? "") !== String(banding[k] ?? ""));
       row.baca_ai = { jenis_dokumen: ai.jenis_dokumen, arah: ai.arah, alasan_arah: ai.alasan_arah, tanggal: ai.tanggal, jumlah: ai.jumlah, biaya_admin: ai.biaya_admin, pihak: ai.pihak, no_ref: ai.no_ref,
-        metode: ai.metode, kategori: ai.kategori, uraian: ai.uraian, barang: ai.barang, keyakinan: ai.keyakinan, peringatan: ai.peringatan, catatan: ai.catatan, model: ai.model }; }
+        metode: ai.metode, kategori: ai.kategori, uraian: ai.uraian, keterangan: ai.keterangan, barang: ai.barang, keyakinan: ai.keyakinan, peringatan: ai.peringatan, catatan: ai.catatan, model: ai.model }; }
     m.querySelector("#kOk").disabled = true;
     const pos = trx ? null : await Promise.race([getPos(), new Promise((r) => setTimeout(() => r(null), 4000))]);
     const B = foto ? [{ client_uuid: crypto.randomUUID(), jenis, potong: foto.potong, asli: foto.asli, thumb: foto.thumb, urutan: 1, captured_at: new Date().toISOString() }] : [];
@@ -4050,7 +4051,7 @@ async function keuView(v) {
     ${tanpaBukti ? `<p class="err">${tanpaBukti} pengeluaran belum ada foto buktinya.</p>` : ""}
     <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>Tanggal</th><th>Uraian</th><th>Kategori</th><th>Masuk</th><th>Keluar</th><th>Saldo</th><th>Bukti</th><th>Status</th><th></th></tr></thead><tbody>
     ${rows.map((r) => { const [stT, stB, stF] = KEU_STATUS[r.status] ?? [r.status, "#eee", "#333"], saya = r.created_by === session.user.id, bisaUbah = adm || (saya && r.status !== "DISETUJUI");
-      return `<tr><td style="padding:4px 6px;white-space:nowrap">${esc(r.tanggal)}</td><td style="padding:4px 6px">${esc(r.uraian)}${r.pihak ? `<br><small class="muted">${esc(r.pihak)}${r.no_ref ? " · " + esc(r.no_ref) : ""}</small>` : ""}${r.catatan_admin ? `<br><small style="color:#8A1C12">Admin: ${esc(r.catatan_admin)}</small>` : ""}${r.baca_ai ? `<br><small class="muted" title="Dibaca otomatis dari foto">🤖${(r.diubah_dari_ai ?? []).length ? ` diubah: ${esc(r.diubah_dari_ai.join(", "))}` : " sesuai bacaan"}</small>` : ""}</td>
+      return `<tr><td style="padding:4px 6px;white-space:nowrap">${esc(r.tanggal)}</td><td style="padding:4px 6px">${esc(r.uraian)}${r.pihak ? `<br><small class="muted">${esc(r.pihak)}${r.no_ref ? " · " + esc(r.no_ref) : ""}</small>` : ""}${r.keterangan ? `<br><small>Ket: ${esc(r.keterangan)}</small>` : ""}${r.catatan_admin ? `<br><small style="color:#8A1C12">Admin: ${esc(r.catatan_admin)}</small>` : ""}${r.baca_ai ? `<br><small class="muted" title="Dibaca otomatis dari foto">🤖${(r.diubah_dari_ai ?? []).length ? ` diubah: ${esc(r.diubah_dari_ai.join(", "))}` : " sesuai bacaan"}</small>` : ""}</td>
         <td style="padding:4px 6px">${esc(r.kategori)}${r.rig ? `<br><small class="muted">${esc(r.rig)}</small>` : ""}</td><td style="padding:4px 6px;text-align:right;white-space:nowrap">${r.arah === "MASUK" ? fmtRp(r.jumlah) : ""}</td>
         <td style="padding:4px 6px;text-align:right;white-space:nowrap">${r.arah === "KELUAR" ? fmtRp(r.jumlah) : ""}</td><td style="padding:4px 6px;text-align:right;white-space:nowrap">${fmtRp(r.saldo)}</td>
         <td style="padding:4px 6px;white-space:nowrap">${r.bukti.map((b, i) => `<a href="#" data-bk="${r.id}|${i}">${b.jenis === "NOTA" ? "🧾" : b.jenis === "TRANSFER" ? "🏦" : "💳"}</a>`).join(" ") || `<span style="color:var(--red)">—</span>`}</td>
@@ -4086,12 +4087,12 @@ async function keuExcel(rows, o) {
   // tautan antar-lembar lewat rumus HYPERLINK (terbaca di Excel, Excel HP dan LibreOffice)
   const lnkDalam = (sh, sel, teks) => { const t = String(teks).replace(/"/g, "'").slice(0, 250); return { formula: `HYPERLINK("#'${sh}'!${sel}","${t}")`, result: t }; };
   const hijau = { type: "pattern", pattern: "solid", fgColor: { argb: "FF12251E" } }, garis = { top: { style: "thin", color: { argb: "FFBFC8C2" } }, left: { style: "thin", color: { argb: "FFBFC8C2" } }, bottom: { style: "thin", color: { argb: "FFBFC8C2" } }, right: { style: "thin", color: { argb: "FFBFC8C2" } } };
-  L.columns = [6, 12, 40, 24, 24, 11, 18, 9, 16, 16, 17, 15, 16, 22].map((w) => ({ width: w }));
-  L.mergeCells("A1:N1"); L.getCell("A1").value = "LAPORAN PENGGUNAAN UANG LAPANGAN"; L.getCell("A1").font = { bold: true, size: 14 };
+  L.columns = [6, 12, 40, 32, 24, 24, 11, 18, 9, 16, 16, 17, 15, 16, 22].map((w) => ({ width: w }));
+  L.mergeCells("A1:O1"); L.getCell("A1").value = "LAPORAN PENGGUNAAN UANG LAPANGAN"; L.getCell("A1").font = { bold: true, size: 14 };
   L.getCell("A2").value = `Proyek: ${pjNama}`; L.getCell("A3").value = `Periode: ${o.dari} s.d. ${o.sampai}`; L.getCell("A4").value = `Dibuat: ${new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} oleh ${me?.full_name ?? ""} (X-Terra)`;
-  const H = ["No", "Tanggal", "Uraian", "Kategori", "Toko / penerima / pengirim", "Cara bayar", "No. nota / ref", "Rig", "Masuk (Rp)", "Keluar (Rp)", "Saldo (Rp)", "Status", "Bukti (lembar Bukti)", "File asli (Google Drive)"];
+  const H = ["No", "Tanggal", "Uraian", "Keterangan", "Kategori", "Toko / penerima / pengirim", "Cara bayar", "No. nota / ref", "Rig", "Masuk (Rp)", "Keluar (Rp)", "Saldo (Rp)", "Status", "Bukti (lembar Bukti)", "File asli (Google Drive)"];
   const hr = L.getRow(6); H.forEach((t, i) => { const c = hr.getCell(i + 1); c.value = t; c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = hijau; c.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; c.border = garis; }); hr.height = 30;
-  const r0 = 7; L.getRow(r0).values = ["", "", "Saldo awal periode", "", "", "", "", "", "", "", o.saldoAwal]; L.getRow(r0).font = { italic: true };
+  const r0 = 7; L.getRow(r0).values = ["", "", "Saldo awal periode", "", "", "", "", "", "", "", "", o.saldoAwal]; L.getRow(r0).font = { italic: true };
   // lembar Bukti: susun foto per transaksi, kembalikan baris tujuan untuk hyperlink
   Bk.columns = Array.from({ length: 16 }, () => ({ width: 11 })); Bk.getCell("A1").value = "FOTO NOTA & BUKTI TRANSAKSI"; Bk.getCell("A1").font = { bold: true, size: 14 };
   Bk.getCell("A2").value = `Proyek: ${pjNama} · Periode ${o.dari} s.d. ${o.sampai} · klik judul untuk kembali ke Laporan`;
@@ -4101,11 +4102,11 @@ async function keuExcel(rows, o) {
   for (const [i, r] of rows.entries()) {
     const rr = r0 + 1 + i, row = L.getRow(rr), driveUrl = r.bukti.find((b) => b.drive_url)?.drive_url ?? r.bukti.find((b) => b.drive_url_asli)?.drive_url_asli;
     const [ty, tm, td] = r.tanggal.split("-").map(Number);
-    row.values = [i + 1, new Date(Date.UTC(ty, tm - 1, td)), r.uraian, r.kategori, r.pihak ?? "", r.metode, r.no_ref ?? "", r.rig ?? "", r.arah === "MASUK" ? +r.jumlah : null, r.arah === "KELUAR" ? +r.jumlah : null,
-      { formula: `K${rr - 1}+N(I${rr})-N(J${rr})` }, KEU_STATUS[r.status]?.[0] ?? r.status];
-    row.getCell(2).numFmt = "dd/mm/yyyy"; row.getCell(3).alignment = { wrapText: true, vertical: "top" };
+    row.values = [i + 1, new Date(Date.UTC(ty, tm - 1, td)), r.uraian, r.keterangan ?? "", r.kategori, r.pihak ?? "", r.metode, r.no_ref ?? "", r.rig ?? "", r.arah === "MASUK" ? +r.jumlah : null, r.arah === "KELUAR" ? +r.jumlah : null,
+      { formula: `L${rr - 1}+N(J${rr})-N(K${rr})` }, KEU_STATUS[r.status]?.[0] ?? r.status];
+    row.getCell(2).numFmt = "dd/mm/yyyy"; row.getCell(3).alignment = { wrapText: true, vertical: "top" }; row.getCell(4).alignment = { wrapText: true, vertical: "top" };
     if (r.bukti.length) { tujuan[r.id] = br;
-      row.getCell(13).value = lnkDalam("Bukti", `A${br}`, `Lihat ${r.bukti.length} bukti →`); row.getCell(13).font = { color: { argb: "FF1D4ED8" }, underline: true };
+      row.getCell(14).value = lnkDalam("Bukti", `A${br}`, `Lihat ${r.bukti.length} bukti →`); row.getCell(14).font = { color: { argb: "FF1D4ED8" }, underline: true };
       // judul blok bukti + tautan balik
       Bk.mergeCells(`A${br}:P${br}`); const jc = Bk.getCell(`A${br}`);
       jc.value = lnkDalam("Laporan", `A${rr}`, `No. ${i + 1} · ${r.tanggal} · ${r.uraian} · ${r.arah === "MASUK" ? "Masuk" : "Keluar"} ${fmtRp(r.jumlah)} · ${r.kategori}  (← kembali ke Laporan)`);
@@ -4120,18 +4121,18 @@ async function keuExcel(rows, o) {
         else { Bk.getCell(ket + 1, kol + 1).value = "(foto tidak tersedia di server; buka di Drive)"; tinggiMaks = Math.max(tinggiMaks, 40); }
         kol += 5; }
       br = ket + 1 + Math.ceil(tinggiMaks / 20) + 2; }
-    else if (r.arah === "KELUAR") { row.getCell(13).value = "BELUM ADA BUKTI"; row.getCell(13).font = { color: { argb: "FFB91C1C" }, bold: true }; }
-    if (driveUrl) { row.getCell(14).value = { text: "Buka di Drive", hyperlink: driveUrl }; row.getCell(14).font = { color: { argb: "FF1D4ED8" }, underline: true }; }
-    else if (r.bukti.length) row.getCell(14).value = "menunggu salinan Drive (±10 menit)";
+    else if (r.arah === "KELUAR") { row.getCell(14).value = "BELUM ADA BUKTI"; row.getCell(14).font = { color: { argb: "FFB91C1C" }, bold: true }; }
+    if (driveUrl) { row.getCell(15).value = { text: "Buka di Drive", hyperlink: driveUrl }; row.getCell(15).font = { color: { argb: "FF1D4ED8" }, underline: true }; }
+    else if (r.bukti.length) row.getCell(15).value = "menunggu salinan Drive (±10 menit)";
   }
-  const rt = r0 + rows.length + 1; L.getRow(rt).values = ["", "", "TOTAL PERIODE", "", "", "", "", "", { formula: `SUM(I${r0 + 1}:I${rt - 1})` }, { formula: `SUM(J${r0 + 1}:J${rt - 1})` }, { formula: `K${rt - 1}` }];
+  const rt = r0 + rows.length + 1; L.getRow(rt).values = ["", "", "TOTAL PERIODE", "", "", "", "", "", "", { formula: `SUM(J${r0 + 1}:J${rt - 1})` }, { formula: `SUM(K${r0 + 1}:K${rt - 1})` }, { formula: `L${rt - 1}` }];
   L.getRow(rt).font = { bold: true }; L.getRow(rt).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEEF3F0" } };
-  for (let r = 6; r <= rt; r++) for (let c = 1; c <= 14; c++) { const cell = L.getRow(r).getCell(c); cell.border = garis; if (c >= 9 && c <= 11 && r > 6) cell.numFmt = '#,##0;[Red]-#,##0'; }
+  for (let r = 6; r <= rt; r++) for (let c = 1; c <= 15; c++) { const cell = L.getRow(r).getCell(c); cell.border = garis; if (c >= 10 && c <= 12 && r > 6) cell.numFmt = '#,##0;[Red]-#,##0'; }
   // ringkasan per kategori (rumus, ikut berubah bila angka disunting)
   let rk = rt + 2; L.getCell(`C${rk}`).value = "Pengeluaran per kategori"; L.getCell(`C${rk}`).font = { bold: true };
   const kats = [...new Set(rows.filter((r) => r.arah === "KELUAR").map((r) => r.kategori))];
-  for (const k of kats) { rk++; L.getCell(`C${rk}`).value = k; L.getCell(`J${rk}`).value = { formula: `SUMIF(D${r0 + 1}:D${rt - 1},C${rk},J${r0 + 1}:J${rt - 1})` }; L.getCell(`J${rk}`).numFmt = "#,##0"; }
-  L.autoFilter = { from: "A6", to: `N${rt - 1}` };
+  for (const k of kats) { rk++; L.getCell(`C${rk}`).value = k; L.getCell(`K${rk}`).value = { formula: `SUMIF(E${r0 + 1}:E${rt - 1},C${rk},K${r0 + 1}:K${rt - 1})` }; L.getCell(`K${rk}`).numFmt = "#,##0"; }
+  L.autoFilter = { from: "A6", to: `O${rt - 1}` };
   o.onProg?.("Menyimpan Excel…");
   const buf = await wb.xlsx.writeBuffer(), stamp = new Date().toLocaleString("sv-SE", { timeZone: "Asia/Jakarta" }).replace(/[-: ]/g, "").slice(0, 12);
   return { blob: new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), nama: `Rekap_Keuangan_${o.proj}_${o.dari}_sd_${o.sampai}_${stamp}.xlsx`, adaBukti: adaB.length };

@@ -30,7 +30,7 @@ function tool(type: string) {
   const items = ITEMS.filter((i) => !i.belahOnly || type === "BELAH");
   return {
     name: "submit_check",
-    description: "Hasil pemeriksaan foto core terhadap standar SOP",
+    description: "WAJIB dipanggil tepat satu kali: hasil pemeriksaan foto core terhadap standar SOP",
     input_schema: {
       type: "object",
       properties: {
@@ -47,6 +47,13 @@ function tool(type: string) {
       required: [...items.map((i) => i.key), "bhid_terbaca", "kedalaman_terbaca"],
     },
   };
+}
+// Cadangan: bila model menjawab dengan teks, ambil objek JSON pertama dari teks itu.
+function jsonDariTeks(j: { content?: { type: string; text?: string }[] }) {
+  const teks = (j.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
+  const a = teks.indexOf("{"), z = teks.lastIndexOf("}");
+  if (a < 0 || z <= a) return null;
+  try { const o = JSON.parse(teks.slice(a, z + 1)); return o && typeof o === "object" ? o : null; } catch { return null; }
 }
 
 async function run(id: string) {
@@ -75,11 +82,11 @@ async function run(id: string) {
     if (error || !blob) throw new Error("Foto tidak bisa diunduh: " + error?.message);
     const buf = new Uint8Array(await blob.arrayBuffer());
     let bin = ""; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-    const prompt = `Anda pemeriksa mutu foto core bor nikel laterit PT Terra Grapindo Eco Prima. Foto ini diklaim sebagai foto core ${p.photo_type === "BELAH" ? "BELAH (half core)" : "UTUH (whole core)"} lubang ${p.bhid}, kotak ${p.box_no ?? "?"}, kedalaman ${p.depth_from}–${p.depth_to} m.\nStandar: satu foto berisi tepat satu corebox; satu corebox boleh memuat beberapa baris core dengan total paling banyak 5 m.\nPeriksa setiap butir standar foto SOP secara ketat dan jujur. Gunakan "TIDAK PASTI" bila foto tidak cukup jelas untuk memutuskan; jangan menebak lolos.\nAlasan singkat (maks 15 kata), dalam bahasa Indonesia, menyebut apa yang terlihat. Salin BHID, kedalaman dan nomor kotak yang tertulis di corebox persis seperti tertulis.`;
+    const prompt = `Anda pemeriksa mutu foto core bor nikel laterit PT Terra Grapindo Eco Prima. Foto ini diklaim sebagai foto core ${p.photo_type === "BELAH" ? "BELAH (half core)" : "UTUH (whole core)"} lubang ${p.bhid}, kotak ${p.box_no ?? "?"}, kedalaman ${p.depth_from}–${p.depth_to} m.\nStandar: satu foto berisi tepat satu corebox; satu corebox boleh memuat beberapa baris core dengan total paling banyak 5 m.\nPeriksa setiap butir standar foto SOP secara ketat dan jujur. Gunakan "TIDAK PASTI" bila foto tidak cukup jelas untuk memutuskan; jangan menebak lolos.\nAlasan singkat (maks 15 kata), dalam bahasa Indonesia, menyebut apa yang terlihat. Salin BHID, kedalaman dan nomor kotak yang tertulis di corebox persis seperti tertulis.\nKIRIM HASIL HANYA dengan memanggil alat submit_check tepat satu kali. Jangan menulis jawaban sebagai teks biasa.`;
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 2000, tools: [tool(p.photo_type)], tool_choice: { type: "tool", name: "submit_check" },
+      body: JSON.stringify({ model: MODEL, max_tokens: 4000, tools: [tool(p.photo_type)], tool_choice: { type: "auto" },
         messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: btoa(bin) } }, { type: "text", text: prompt }] }] }),
     });
     if (!r.ok) {
@@ -89,7 +96,8 @@ async function run(id: string) {
     }
     // hanya pemeriksaan yang berhasil (dan ditagih) yang dihitung
     await admin.from("core_photo").update({ ai_kali: (p.ai_kali ?? 0) + 1 }).eq("id", id);
-    const out = ((await r.json()).content ?? []).find((c: { type: string }) => c.type === "tool_use")?.input;
+    const jr = await r.json();
+    const out = (jr.content ?? []).find((c: { type: string }) => c.type === "tool_use")?.input ?? jsonDariTeks(jr);
     if (!out) throw new Error("Model tidak mengembalikan hasil terstruktur");
 
     const issues: string[] = [], tolak: string[] = [];
