@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.17";
+const APP_VERSION = "2026-11-18.18";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -595,7 +595,7 @@ async function coreView(v) {
    <p id="cl" class="muted"></p>
    <div class="row"><div><label>Kotak ke-</label><input id="cx" inputmode="numeric"></div><div><label>FROM (m)</label><input id="cf" inputmode="decimal"></div><div><label>TO (m)</label><input id="ct" inputmode="decimal"></div></div>
    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="crt" style="width:auto"> Foto ulang kotak yang sudah pernah dikirim (mis. karena ditolak)</label>
-   <p class="muted">Template SOP: 1 corebox per foto (maks. 6 m core), resolusi minimal 3508 px sisi panjang (setara 300 dpi pada cetak A4) — pakai resolusi kamera tertinggi, jangan mode hemat/kecil; teduh, meteran 0–100 cm, papan Hole ID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
+   <p class="muted">Template SOP: 1 corebox per foto (maks. 5 m core), resolusi minimal 3508 px sisi panjang (setara 300 dpi pada cetak A4) — pakai resolusi kamera tertinggi, jangan mode hemat/kecil; teduh, meteran 0–100 cm, papan Hole ID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
    <div class="big"><button id="cgo">📷 Ambil foto corebox</button></div>
    <input id="cfile" type="file" accept="image/*" capture="environment" class="hide"><div id="lc"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean foto core (${qd.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
@@ -617,7 +617,7 @@ async function coreView(v) {
     if (!$("#cb").value.trim()) return ($("#e").textContent = "Isi Hole ID.");
     if (!(box > 0)) return ($("#e").textContent = "Isi nomor kotak.");
     if (!(isFinite(f) && isFinite(to) && to > f)) return ($("#e").textContent = "Isi FROM dan TO kotak ini (TO > FROM).");
-    if (to - f > 6.0001) return ($("#e").textContent = `Ditolak: satu foto = satu corebox, maksimal 6 m core per foto (isian ${fmtD(to - f)} m). Pisahkan menjadi beberapa foto/kotak.`);
+    if (to - f > 5.0001) return ($("#e").textContent = `Ditolak: satu foto = satu corebox (isi 5 m), maksimal 5 m core per foto (isian ${fmtD(to - f)} m). Pisahkan menjadi beberapa foto/kotak.`);
     if (!retake) {
       if (box !== nx.box) return ($("#e").textContent = `Ditolak: kotak ${box} tidak melanjutkan kotak terakhir (${nx.lastBox}). Seharusnya kotak ${nx.box}. Bila ini foto ulang, centang “Foto ulang”.`);
       if (Math.abs(f - nx.from) > 0.02) return ($("#e").textContent = `Ditolak: FROM ${fmtD(f)} m tidak menyambung dengan TO kotak sebelumnya (${fmtD(nx.from)} m).`);
