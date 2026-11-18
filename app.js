@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.16";
+const APP_VERSION = "2026-11-18.17";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -573,6 +573,14 @@ async function localCheck(bmp) {
   if (Math.abs(cast) > 0.35) warnings.push(cast > 0 ? "Warna kemerahan/oranye (pantulan tenda?)" : "Warna kebiruan (pantulan tenda/bayangan?)");
   return { sharpness: +sharp.toFixed(0), brightness: +mean.toFixed(0), clipped_pct: +(clip / n * 100).toFixed(1), cast: +cast.toFixed(2), width: bmp.width, height: bmp.height, warnings };
 }
+// standar foto core: sisi panjang ≥ 3508 px = 300 dpi bila dicetak selebar A4 lanskap (11,69 in); file ditandai 300 dpi (JFIF)
+const FOTO_CORE_MIN_PX = 3508;
+async function dpi300(blob) {
+  const b = new Uint8Array(await blob.arrayBuffer());
+  // JFIF APP0: FF D8 FF E0 len(2) 'JFIF\0' ver(2) units(1) Xd(2) Yd(2)
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff && b[3] === 0xe0 && String.fromCharCode(...b.slice(6, 10)) === "JFIF") { b[13] = 1; b[14] = 1; b[15] = 44; b[16] = 1; b[17] = 44; return new Blob([b], { type: "image/jpeg" }); }
+  return blob;
+}
 async function toJpeg(bmp, max, q) {
   const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
   const c = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) });
@@ -587,7 +595,7 @@ async function coreView(v) {
    <p id="cl" class="muted"></p>
    <div class="row"><div><label>Kotak ke-</label><input id="cx" inputmode="numeric"></div><div><label>FROM (m)</label><input id="cf" inputmode="decimal"></div><div><label>TO (m)</label><input id="ct" inputmode="decimal"></div></div>
    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="crt" style="width:auto"> Foto ulang kotak yang sudah pernah dikirim (mis. karena ditolak)</label>
-   <p class="muted">Template SOP: 1 corebox per foto, teduh, meteran 0–100 cm, papan Hole ID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
+   <p class="muted">Template SOP: 1 corebox per foto (maks. 6 m core), resolusi minimal 3508 px sisi panjang (setara 300 dpi pada cetak A4) — pakai resolusi kamera tertinggi, jangan mode hemat/kecil; teduh, meteran 0–100 cm, papan Hole ID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
    <div class="big"><button id="cgo">📷 Ambil foto corebox</button></div>
    <input id="cfile" type="file" accept="image/*" capture="environment" class="hide"><div id="lc"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean foto core (${qd.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
@@ -609,7 +617,7 @@ async function coreView(v) {
     if (!$("#cb").value.trim()) return ($("#e").textContent = "Isi Hole ID.");
     if (!(box > 0)) return ($("#e").textContent = "Isi nomor kotak.");
     if (!(isFinite(f) && isFinite(to) && to > f)) return ($("#e").textContent = "Isi FROM dan TO kotak ini (TO > FROM).");
-    if (to - f > 1.6) return ($("#e").textContent = "Ditolak: satu foto = satu corebox; rentang lebih dari 1,6 m tidak sesuai template.");
+    if (to - f > 6.0001) return ($("#e").textContent = `Ditolak: satu foto = satu corebox, maksimal 6 m core per foto (isian ${fmtD(to - f)} m). Pisahkan menjadi beberapa foto/kotak.`);
     if (!retake) {
       if (box !== nx.box) return ($("#e").textContent = `Ditolak: kotak ${box} tidak melanjutkan kotak terakhir (${nx.lastBox}). Seharusnya kotak ${nx.box}. Bila ini foto ulang, centang “Foto ulang”.`);
       if (Math.abs(f - nx.from) > 0.02) return ($("#e").textContent = `Ditolak: FROM ${fmtD(f)} m tidak menyambung dengan TO kotak sebelumnya (${fmtD(nx.from)} m).`);
@@ -620,11 +628,12 @@ async function coreView(v) {
     const file = ev.target.files[0]; if (!file) return; ev.target.value = "";
     const bmp = await createImageBitmap(file); const lc = await localCheck(bmp);
     const bhid = bakuBH($("#cb").value), type = $("#cty").value, f = num($("#cf").value), to = num($("#ct").value), box = parseInt($("#cx").value) || null;
+    if (Math.max(lc.width, lc.height) < FOTO_CORE_MIN_PX) return ($("#e").textContent = `Ditolak sebelum dikirim: resolusi foto ${lc.width}×${lc.height} px kurang dari standar ${FOTO_CORE_MIN_PX} px sisi panjang (300 dpi pada cetak A4). Atur kamera HP ke resolusi tertinggi (bukan mode kecil/hemat/zoom digital) lalu foto ulang.`);
     if (lc.sharpness < 25 || lc.brightness < 45) return ($("#e").textContent = `Ditolak sebelum dikirim: ${lc.sharpness < 25 ? "foto terlalu buram" : "foto terlalu gelap"}. Ambil ulang di tempat teduh yang terang dan HP tidak bergoyang.`);
     const save = async () => {
       const fn = `${bhid}_K${box}_${fmtD(f)}-${fmtD(to)}_${type}.jpg`;
       await qPut({ kind: "core", client_uuid: crypto.randomUUID(), bhid, box_no: box, depth_from: f, depth_to: to, photo_type: type, file_name: fn,
-        blob: await toJpeg(bmp, 4000, 0.9), preview: await toJpeg(bmp, 1600, 0.85), local_check: lc, captured_at: new Date().toISOString() });
+        blob: await dpi300(await toJpeg(bmp, 4961, 0.92)), preview: await toJpeg(bmp, 1600, 0.85), local_check: { ...lc, dpi: 300, cetak_a4_dpi: Math.round(Math.min(4961, Math.max(lc.width, lc.height)) / 11.69) }, captured_at: new Date().toISOString() });
       const H = JSON.parse(localStorage.getItem("coreHist") || "{}"), k = `${type}|${bhid}`;
       H[k] = { box: Math.max(H[k]?.box ?? 0, box ?? 0), to: Math.max(Number(H[k]?.to ?? 0), to) }; localStorage.setItem("coreHist", JSON.stringify(H));
       localStorage.setItem("bhid", bhid); render(); sync();
