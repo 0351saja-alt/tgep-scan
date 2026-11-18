@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.20";
+const APP_VERSION = "2026-11-18.21";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -684,7 +684,7 @@ async function coreView(v) {
    <p class="muted" style="margin:6px 0 0">Setiap kotak hanya <b>2 kali</b> diperiksa otomatis. Setelah itu foto terbaik diunggah <b>dari galeri</b> dan diperiksa verifier secara manual.</p>
    <input id="cfile" type="file" accept="image/*" capture="environment" class="hide"><input id="cfileG" type="file" accept="image/*" class="hide"><div id="lc"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean foto core (${qd.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
-   <ul class="list">${qd.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.file_name)}${x.local_check.warnings.length ? `<br><span class="err">${x.local_check.warnings.map(esc).join(" · ")}</span>` : ""}${x.error ? `<br><span class="err">${esc(x.error)}</span>` : ""}</span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
+   <ul class="list">${qd.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.file_name)}${x.local_check.warnings.length ? `<br><span class="err">${x.local_check.warnings.map(esc).join(" · ")}</span>` : ""}${x.error ? `<br><span class="err">${esc(x.error)}</span>` : ""}${!(Number(x.depth_to) > Number(x.depth_from)) || x.error ? `<br><span class="muted">Kotak ${x.box_no ?? "?"} · ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m</span><br><button class="sec" data-qfix="${x.client_uuid}" style="flex:0;padding:4px 10px;margin-top:4px">Perbaiki FROM–TO</button> <button class="sec" data-qdel="${x.client_uuid}" style="flex:0;padding:4px 10px;margin-top:4px">Hapus dari antrean</button>` : ""}</span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
    <div class="card"><h3>Kelengkapan & kesesuaian SOP</h3><div class="row"><input id="kb" value="${esc(bh)}"><button id="kg" style="flex:0">Cek</button></div><div id="ko"></div></div>`;
   const num = (s) => Number(String(s).replace(",", "."));
   let nx = { lastBox: 0, lastTo: 0, box: 1, from: 0 };
@@ -697,6 +697,7 @@ async function coreView(v) {
   $("#cb").onchange = isi; $("#cty").onchange = () => { localStorage.setItem("coreType", $("#cty").value); isi(); };
   $("#crt").onchange = () => { if (!$("#crt").checked) isi(); else { $("#cx").value = ""; $("#cf").value = ""; $("#ct").value = ""; $("#cx").focus(); } };
   await isi();
+  let ambil = null; // nilai dikunci saat tombol ditekan; form bisa ter-reset (onchange Hole ID) saat kamera terbuka
   let pakaiGaleri = false;
   $("#cgg").onclick = () => { pakaiGaleri = true; $("#cgo").onclick(); };
   $("#cgo").onclick = async () => {
@@ -710,11 +711,11 @@ async function coreView(v) {
       if (box !== nx.box) return ($("#e").textContent = `Ditolak: kotak ${box} tidak melanjutkan kotak terakhir (${nx.lastBox}). Seharusnya kotak ${nx.box}. Bila ini foto ulang, centang “Foto ulang”.`);
       if (Math.abs(f - nx.from) > 0.02) return ($("#e").textContent = `Ditolak: FROM ${fmtD(f)} m tidak menyambung dengan TO kotak sebelumnya (${fmtD(nx.from)} m).`);
     } else if (box > nx.lastBox) return ($("#e").textContent = `Ditolak: kotak ${box} belum pernah dikirim, jadi bukan foto ulang. Hilangkan centang “Foto ulang”.`);
-    $("#e").textContent = "";
-    if (retake && online()) { // batas 2 kali pemeriksaan AI per kotak
-      const { data: cek } = await sb.from("core_photo").select("ai_kali").eq("bhid", bakuBH($("#cb").value)).eq("photo_type", $("#cty").value).eq("depth_from", f).eq("depth_to", to);
+    $("#e").textContent = ""; ambil = { bhid: bakuBH($("#cb").value), type: $("#cty").value, f, to, box };
+    if (retake && !galeri && online()) { // batas 2 kali pemeriksaan AI per kotak
+      const { data: cek } = await sb.from("core_photo").select("ai_kali").eq("bhid", ambil.bhid).eq("photo_type", ambil.type).eq("depth_from", f).eq("depth_to", to);
       const n = (cek ?? []).reduce((s, r) => s + (r.ai_kali ?? 0), 0);
-      if (n >= 2 && !galeri) { $("#e").textContent = "Kotak ini sudah 2 kali diperiksa otomatis. Unggah foto terbaik dari galeri (tombol 🖼️ Dari galeri); foto akan diperiksa verifier secara manual."; return; }
+      if (n >= 2) { $("#e").textContent = "Kotak ini sudah 2 kali diperiksa otomatis. Unggah foto terbaik dari galeri (tombol 🖼️ Dari galeri); foto akan diperiksa verifier secara manual."; return; }
     }
     (galeri ? $("#cfileG") : $("#cfile")).click();
   };
@@ -722,7 +723,9 @@ async function coreView(v) {
   $("#cfile").onchange = async (ev) => {
     const file = ev.target.files[0]; if (!file) return; ev.target.value = "";
     const bmp = await createImageBitmap(file); const lc = await localCheck(bmp);
-    const bhid = bakuBH($("#cb").value), type = $("#cty").value, f = num($("#cf").value), to = num($("#ct").value), box = parseInt($("#cx").value) || null;
+    if (!ambil) return ($("#e").textContent = "Isi Kotak, FROM dan TO lalu tekan tombol Ambil foto corebox.");
+    const { bhid, type, f, to, box } = ambil;
+    if (!(Number.isFinite(f) && Number.isFinite(to) && to > f && to - f <= 5.0001)) return ($("#e").textContent = `Foto tidak disimpan: FROM–TO tidak valid (${fmtD(f)}–${fmtD(to)} m). Isi ulang lalu foto lagi.`);
     const sisi = Math.max(lc.width, lc.height);
     if (sisi < FOTO_CORE_TOLAK_PX) return ($("#e").textContent = `Ditolak sebelum dikirim: resolusi foto ${lc.width}×${lc.height} px terlalu kecil (minimal ${FOTO_CORE_TOLAK_PX} px sisi panjang ≈ 5 MP); tulisan di corebox tidak akan terbaca bila di-zoom. Atur kamera HP ke resolusi tertinggi (bukan mode kecil/hemat/zoom digital) lalu foto ulang.`);
     if (sisi < FOTO_CORE_MIN_PX) lc.warnings.push(`Resolusi ${lc.width}×${lc.height} px di bawah standar ${FOTO_CORE_MIN_PX} px (300 dpi cetak A4), tetapi masih bisa dibaca bila di-zoom. Tetap simpan bila HP tidak bisa lebih tinggi.`);
@@ -742,6 +745,20 @@ async function coreView(v) {
     $("#ks").onclick = save;
   };
   $("#sy").onclick = sync;
+  v.querySelectorAll("[data-qdel]").forEach((b) => (b.onclick = async () => { if (!confirm("Hapus foto ini dari antrean? Foto belum terkirim dan akan hilang dari HP.")) return;
+    const it = (await qAll()).find((x) => x.client_uuid === b.dataset.qdel), H = JSON.parse(localStorage.getItem("coreHist") || "{}"), k = it && `${it.photo_type}|${it.bhid}`;
+    if (it && H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); }
+    await qDel(b.dataset.qdel); render(); }));
+  v.querySelectorAll("[data-qfix]").forEach((b) => (b.onclick = async () => {
+    const it = (await qAll()).find((x) => x.client_uuid === b.dataset.qfix); if (!it) return render();
+    const fs = prompt(`FROM (m) untuk ${it.bhid} kotak ${it.box_no ?? "?"}:`, fmtD(it.depth_from)); if (fs == null) return;
+    const ts = prompt("TO (m):", Number(it.depth_to) > Number(it.depth_from) ? fmtD(it.depth_to) : ""); if (ts == null) return;
+    const f = num(fs), to = num(ts);
+    if (!(Number.isFinite(f) && Number.isFinite(to) && to > f)) return alert("TO harus lebih besar dari FROM.");
+    if (to - f > 5.0001) return alert("Maksimal 5 m per foto (satu corebox).");
+    const H = JSON.parse(localStorage.getItem("coreHist") || "{}"), k = `${it.photo_type}|${it.bhid}`; if (H[k]) { H[k].to = Math.max(Number(H[k].to) || 0, to); localStorage.setItem("coreHist", JSON.stringify(H)); }
+    await qPut({ ...it, depth_from: f, depth_to: to, file_name: `${it.bhid}_K${it.box_no}_${fmtD(f)}-${fmtD(to)}_${it.photo_type}.jpg`, error: null }); render(); sync();
+  }));
   $("#kg").onclick = () => coverage($("#kb").value.trim().toUpperCase());
   if (bh && navigator.onLine) coverage(bh);
 }
