@@ -3753,21 +3753,22 @@ function potongNota(file, judul = "Potong nota") {
   return new Promise(async (res) => {
     let img = await keKanvas(file), det = deteksiSudut(img), S = det.sudut.map((p) => [...p]), tanpa = false;
     const m = modal(`<h3>${esc(judul)}</h3><p class="muted" style="margin:0 0 6px">${det.yakin ? "Tepi nota terdeteksi otomatis. Geser titik bulat bila kurang pas." : "Tepi nota tidak terbaca jelas — geser keempat titik ke sudut nota."}</p>
-      <div id="pnW" style="position:relative;touch-action:none;user-select:none;background:#111;border-radius:10px;overflow:hidden"><canvas id="pnC" style="width:100%;display:block"></canvas></div>
+      <div id="pnW" style="position:relative;user-select:none;background:#111;border-radius:10px;overflow:hidden;padding:4px 0"><canvas id="pnC" style="touch-action:none;display:block;margin:auto;max-width:100%;max-height:48vh;width:auto;height:auto"></canvas></div>
+      <p class="muted" style="margin:4px 0 0;font-size:12px">Geser layar di luar area foto (bagian gelap / teks) untuk menggulir ke bawah.</p>
       <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0"><input type="checkbox" id="pnJ" checked style="width:auto"> Perjelas tulisan (kontras & ketajaman)</label>
       <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="sec" id="pnR" style="flex:0;white-space:nowrap">⟳ Putar</button><button class="sec" id="pnA" style="flex:0;white-space:nowrap">Deteksi ulang</button><button class="sec" id="pnT" style="flex:0;white-space:nowrap">Tanpa potong (screenshot)</button></div>
       <div id="pnP" style="margin-top:8px"></div>
-      <div class="row" style="margin-top:8px"><button id="pnOk">✓ Pakai hasil ini</button><button class="sec" id="pnX">Batal</button></div>`);
-    const cv = m.querySelector("#pnC"), g = cv.getContext("2d"), W = m.querySelector("#pnW");
+      <div class="row" style="margin-top:8px;position:sticky;bottom:0;background:inherit;padding:8px 0;z-index:2"><button id="pnOk">✓ Pakai hasil ini</button><button class="sec" id="pnX">Batal</button></div>`);
+    const cv = m.querySelector("#pnC"), g = cv.getContext("2d"), W = cv;
     const gambar = () => { cv.width = img.width; cv.height = img.height; g.drawImage(img, 0, 0); if (tanpa) return;
       const r = Math.max(10, img.width / 45); g.lineWidth = Math.max(3, img.width / 260); g.strokeStyle = "#22c55e"; g.fillStyle = "rgba(34,197,94,.18)";
       g.beginPath(); S.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.fill(); g.stroke();
       S.forEach((p) => { g.beginPath(); g.arc(p[0], p[1], r, 0, 7); g.fillStyle = "#fff"; g.fill(); g.strokeStyle = "#16a34a"; g.stroke(); }); };
-    let pratTimer = null; const prat = () => { clearTimeout(pratTimer); pratTimer = setTimeout(() => { const o = tanpa ? kecilkan(img, 700) : luruskan(img, S, m.querySelector("#pnJ").checked, 700); o.style.cssText = "max-width:100%;max-height:38vh;border:1px solid #ccc;border-radius:8px;display:block;margin:auto";
+    let pratTimer = null; const prat = () => { clearTimeout(pratTimer); pratTimer = setTimeout(() => { const o = tanpa ? kecilkan(img, 700) : luruskan(img, S, m.querySelector("#pnJ").checked, 700); o.style.cssText = "max-width:100%;max-height:26vh;border:1px solid #ccc;border-radius:8px;display:block;margin:auto";
       const P = m.querySelector("#pnP"); P.innerHTML = `<div class="muted" style="margin-bottom:4px">Pratinjau hasil:</div>`; P.appendChild(o); }, 120); };
     gambar(); prat();
     let aktif = -1; const titik = (e) => { const b = cv.getBoundingClientRect(), t = e.touches?.[0] ?? e; return [((t.clientX - b.left) / b.width) * img.width, ((t.clientY - b.top) / b.height) * img.height]; };
-    const turun = (e) => { if (tanpa) return; const p = titik(e); let dmin = Infinity; S.forEach((q, i) => { const dd = Math.hypot(q[0] - p[0], q[1] - p[1]); if (dd < dmin) { dmin = dd; aktif = i; } }); if (dmin > img.width / 6) aktif = -1; e.preventDefault(); };
+    const turun = (e) => { if (tanpa) return; const p = titik(e); let dmin = Infinity; S.forEach((q, i) => { const dd = Math.hypot(q[0] - p[0], q[1] - p[1]); if (dd < dmin) { dmin = dd; aktif = i; } }); if (dmin > Math.max(img.width, img.height) / 6) aktif = -1; if (aktif >= 0) { e.preventDefault(); cv.setPointerCapture?.(e.pointerId); } };
     const gerak = (e) => { if (aktif < 0) return; const p = titik(e); S[aktif] = [Math.max(0, Math.min(img.width, p[0])), Math.max(0, Math.min(img.height, p[1]))]; gambar(); e.preventDefault(); };
     const naik = () => { if (aktif >= 0) prat(); aktif = -1; };
     W.addEventListener("pointerdown", turun); W.addEventListener("pointermove", gerak); addEventListener("pointerup", naik);
