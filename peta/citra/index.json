@@ -1,0 +1,16 @@
+[
+ {
+  "id": "lugas_14042026",
+  "nama": "Peta drone Blok 1 & rencana jetty (14-04-2026)",
+  "file": "peta/citra/lugas_14042026.webp",
+  "bbox": [
+   121.7372062,
+   -1.7629945,
+   121.8484464,
+   -1.615827
+  ],
+  "project": "TGEP",
+  "tampil": true,
+  "catatan": "Peta Lugas_14042026 (citra Esri + mosaik drone 100% Blok 1 & rencana jetty). Georeferensi ke 15 garis batas WIUP OP PT Luwuk Gas Sejati (koordinat SK), RMS ±5 m (maks ±8 m). Legenda & arah utara dihapus."
+ }
+]

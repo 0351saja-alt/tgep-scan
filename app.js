@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.08";
+const APP_VERSION = "2026-11-18.09";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3101,7 +3101,7 @@ async function petaView(v) {
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right"); map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
   // GPS: titik biru mengikuti posisi (GPS HP bekerja tanpa sinyal data)
   const geo = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showAccuracyCircle: true }); map.addControl(geo, "top-right");
-  let RK = null; const opRel = () => Number(localStorage.getItem("petaOpRel") || 0.65);
+  let RK = null, CT = []; const opRel = () => Number(localStorage.getItem("petaOpRel") || 0.65), opCt = () => Number(localStorage.getItem("petaOpCitra") || 1);
   const eks = () => Number($("#pmX").value), LBL = { iup: [], lubang: [] }, vis = JSON.parse(localStorage.getItem("petaVis") || "{}");
   const tampil = (k, def = true) => vis[k] ?? def, setVis = (k, on) => { vis[k] = on; localStorage.setItem("petaVis", JSON.stringify(vis)); };
   // Label HTML (tanpa font dari server → tetap tampil offline)
@@ -3137,6 +3137,7 @@ async function petaView(v) {
     if (k === "iup") return zoomKe(W.map((w) => w.titik.map((t) => [t.lon, t.lat])), "batas IUP");
     if (k === "track") return zoomKe(trk?.pts ?? [], "jejak yang sedang direkam");
     if (k.startsWith("st_")) { const st = k.slice(3); setVis(k, true); terapkanVis(); panel(); return zoomKe(L.filter((f) => f.properties.status === st).map((f) => f.geometry.coordinates), `lubang ${LABEL_STATUS[st]}`); }
+    if (k.startsWith("ct_")) { const c = CT.find((x) => "ct_" + x.id === k); if (!c) return; setVis(k, true); terapkanVis(); panel(); return zoomKe([[c.bbox[0], c.bbox[1]], [c.bbox[2], c.bbox[3]]], c.nama); }
     if (k === "lbl") return zoomKe(L.map((f) => f.geometry.coordinates), "semua lubang");
     if (k.startsWith("ly_")) { const ly = LAY.find((x) => "ly_" + x.id === k); if (!ly) return; setVis(k, true); terapkanVis(); panel(); return zoomKe(ly.geojson.features.filter((f) => f.geometry).map((f) => f.geometry.coordinates), ly.nama); }
     if (k.startsWith("tr_")) { const t = JSON.parse(localStorage.getItem("trackList") || "[]")[Number(k.slice(3))]; if (!t) return;
@@ -3152,6 +3153,8 @@ async function petaView(v) {
     const relief = RK ? `<div><b>Relief DEMNAS</b>${ck("kontur", `Kontur (${RK.kontur_interval} m, tebal tiap ${RK.kontur_indeks} m)`, false, "", false)}${ck("elev", "Warna elevasi", false, legElev, false)}${ck("lereng", "Kemiringan lereng", false, legLer, false)}
       <label style="font-size:12px;margin-top:4px">Kepekatan warna <input type="range" id="pmOp" min="0.2" max="1" step="0.05" value="${opRel()}" style="width:110px;vertical-align:middle"></label></div>` : "";
     $("#pmPanel").innerHTML = `<div class="row" style="flex-wrap:wrap;gap:18px;align-items:flex-start"><div><b>Dasar</b>${ck("hs", "Bayangan relief", true, "", false)}${ck("iup", "Batas IUP")}${ck("iupno", "Nomor titik IUP", true, "", false)}${ck("track", "Jejak GPS (lacak)")}</div>${relief}
+      ${CT.length ? `<div><b>Citra / peta drone</b>${CT.map((c) => ck("ct_" + c.id, esc(c.nama), c.tampil !== false, `<div class="muted" style="font-size:11px;max-width:230px;margin-left:22px">${esc(c.catatan ?? "")}</div>`)).join("")}
+      <label style="font-size:12px;margin-top:4px">Kepekatan citra <input type="range" id="pmOpC" min="0.2" max="1" step="0.05" value="${opCt()}" style="width:110px;vertical-align:middle"></label></div>` : ""}
       <div><b>Lubang bor</b>${Object.keys(LABEL_STATUS).filter((k) => k !== "SELESAI").map((k) => ck("st_" + k, LABEL_STATUS[k])).join("")}${ck("lbl", "Nama lubang")}</div>
       <div><b>Lapisan tambahan</b>${LAY.map((ly) => ck("ly_" + ly.id, `<span style="display:inline-block;width:12px;height:12px;background:${esc(ly.warna)};border-radius:3px"></span> ${esc(ly.nama)} <span class="muted">${ly.server ? "(server)" : "(HP ini)"}</span>`, true,
         (ly.server ? bisaTulis : true) ? ` <a href="#" data-del="${ly.id}" data-srv="${ly.server ? 1 : 0}" style="color:#c00">hapus</a>` : "")).join("") || `<span class="muted">Belum ada. Pakai “Impor file”.</span>`}</div>
@@ -3161,6 +3164,7 @@ async function petaView(v) {
       if (c.checked && (c.dataset.vk === "elev" || c.dataset.vk === "lereng")) { const lain = c.dataset.vk === "elev" ? "lereng" : "elev"; setVis(lain, false); const o = $("#pmPanel").querySelector(`[data-vk="${lain}"]`); if (o) o.checked = false; }
       terapkanVis(); }));
     const op = $("#pmOp"); if (op) op.oninput = () => { localStorage.setItem("petaOpRel", op.value); ["elev", "lereng"].forEach((id) => map.getLayer(id) && map.setPaintProperty(id, "raster-opacity", Number(op.value))); };
+    const opc = $("#pmOpC"); if (opc) opc.oninput = () => { localStorage.setItem("petaOpCitra", opc.value); CT.forEach((c) => map.getLayer("ct_" + c.id) && map.setPaintProperty("ct_" + c.id, "raster-opacity", Number(opc.value))); };
     $("#pmPanel").querySelectorAll("[data-zm]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); zoomLapisan(a.dataset.zm); }));
     $("#pmPanel").querySelectorAll("[data-del]").forEach((a) => (a.onclick = async (e) => { e.preventDefault(); if (!confirm("Hapus lapisan ini?")) return;
       if (a.dataset.srv === "1") { const { error } = await sb.from("peta_layer").update({ aktif: false }).eq("id", a.dataset.del); if (error) return alert(error.message); }
@@ -3176,6 +3180,7 @@ async function petaView(v) {
   const terapkanVis = () => {
     const sv = (id, on) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
     sv("hs", tampil("hs")); sv("kontur", tampil("kontur", false)); sv("elev", tampil("elev", false)); sv("lereng", tampil("lereng", false)); sv("iup-isi", tampil("iup")); sv("iup-garis", tampil("iup")); sv("trk", tampil("track"));
+    CT.forEach((c) => sv("ct_" + c.id, tampil("ct_" + c.id, c.tampil !== false)));
     pasangLabel("iup", tampil("iupno"));
     const stOn = new Set(Object.keys(LABEL_STATUS).filter((k) => tampil("st_" + k)));
     LBL.lubang.forEach((mk) => { if (stOn.has(mk._st)) mk.addTo(map); else mk.remove(); const nm = mk.getElement().querySelector("[data-nm]"); if (nm) nm.style.display = tampil("lbl") ? "" : "none"; });
@@ -3294,6 +3299,12 @@ async function petaView(v) {
       map.addLayer({ id: "kontur", type: "line", source: "kontur", layout: { visibility: "none", "line-join": "round" },
         paint: { "line-color": ["case", ["==", ["get", "i"], 1], "#5a2d0c", "#8a5a2b"], "line-width": ["case", ["==", ["get", "i"], 1], 1.6, 0.7], "line-opacity": 0.85 } });
     } catch (er) { console.warn("relief DEMNAS tidak dimuat", er); }
+    // Citra/peta bergeoreferensi (mis. mosaik drone) per proyek — file statis di peta/citra, ikut tersimpan offline
+    try { const pj = myTugas?.project; CT = (await (await fetch("peta/citra/index.json")).json()).filter((c) => !c.project || !pj || c.project === pj);
+      const kor = (b) => [[b[0], b[3]], [b[2], b[3]], [b[2], b[1]], [b[0], b[1]]];
+      for (const c of CT) { map.addSource("ct_" + c.id, { type: "image", url: c.file, coordinates: kor(c.bbox) });
+        map.addLayer({ id: "ct_" + c.id, type: "raster", source: "ct_" + c.id, layout: { visibility: "none" }, paint: { "raster-opacity": opCt(), "raster-fade-duration": 0 } }, map.getLayer("elev") ? "elev" : undefined); }
+    } catch (er) { console.warn("citra overlay tidak dimuat", er); }
     const fc = { type: "FeatureCollection", features: W.map((w) => ({ type: "Feature", properties: { nama: w.nama }, geometry: { type: "Polygon", coordinates: [[...w.titik.map((t) => [t.lon, t.lat]), [w.titik[0].lon, w.titik[0].lat]]] } })) };
     map.addSource("iup", { type: "geojson", data: fc });
     map.addLayer({ id: "iup-isi", type: "fill", source: "iup", paint: { "fill-color": "#ff2d2d", "fill-opacity": 0.06 } });
@@ -3361,9 +3372,10 @@ async function petaView(v) {
   $("#pmO").onclick = async () => {
     if (!online()) return alert("Perlu sinyal untuk menyimpan.");
     try { const idx = await (await fetch("peta/dem/index.json", { cache: "no-cache" })).json(), c = await caches.open("tgep-peta"),
-        U = ["vendor/maplibre-gl.js", "vendor/maplibre-gl.css", "vendor/three.module.min.js", "vendor/OrbitControls.js", "vendor/shp.min.js", "vendor/togeojson.umd.js", "vendor/jszip.min.js", "peta/dem/index.json", "peta/kontur/index.json", "peta/kontur/kontur.geojson", "peta/kontur/elevasi.png", "peta/kontur/lereng.png", ...idx.tiles];
+        ci = await (await fetch("peta/citra/index.json", { cache: "no-cache" })).json().catch(() => []),
+        U = ["vendor/maplibre-gl.js", "vendor/maplibre-gl.css", "vendor/three.module.min.js", "vendor/OrbitControls.js", "vendor/shp.min.js", "vendor/togeojson.umd.js", "vendor/jszip.min.js", "peta/dem/index.json", "peta/kontur/index.json", "peta/kontur/kontur.geojson", "peta/kontur/elevasi.png", "peta/kontur/lereng.png", "peta/citra/index.json", ...ci.map((x) => x.file), ...idx.tiles];
       let i = 0; for (const u of U) { await c.add(u); if (++i % 10 === 0) $("#pmInfo").textContent = `Menyimpan peta offline… ${i}/${U.length}`; }
-      $("#pmInfo").textContent = `Peta offline tersimpan (${U.length} file). Relief, GPS, batas IUP, lubang & lapisan tetap bisa dibuka tanpa sinyal; citra satelit tetap perlu sinyal.`;
+      $("#pmInfo").textContent = `Peta offline tersimpan (${U.length} file). Relief, citra drone, GPS, batas IUP, lubang & lapisan tetap bisa dibuka tanpa sinyal; citra satelit Esri tetap perlu sinyal.`;
     } catch (er) { $("#pmInfo").textContent = "Gagal menyimpan offline: " + er.message; }
   };
 }
