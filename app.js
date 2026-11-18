@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.18";
+const APP_VERSION = "2026-11-18.19";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -574,7 +574,7 @@ async function localCheck(bmp) {
   return { sharpness: +sharp.toFixed(0), brightness: +mean.toFixed(0), clipped_pct: +(clip / n * 100).toFixed(1), cast: +cast.toFixed(2), width: bmp.width, height: bmp.height, warnings };
 }
 // standar foto core: sisi panjang ≥ 3508 px = 300 dpi bila dicetak selebar A4 lanskap (11,69 in); file ditandai 300 dpi (JFIF)
-const FOTO_CORE_MIN_PX = 3508;
+const FOTO_CORE_MIN_PX = 3508, FOTO_CORE_TOLAK_PX = 2400; // ≥3508 standar 300 dpi A4 · 2400–3507 peringatan (masih terbaca di-zoom) · <2400 ditolak
 async function dpi300(blob) {
   const b = new Uint8Array(await blob.arrayBuffer());
   // JFIF APP0: FF D8 FF E0 len(2) 'JFIF\0' ver(2) units(1) Xd(2) Yd(2)
@@ -595,7 +595,7 @@ async function coreView(v) {
    <p id="cl" class="muted"></p>
    <div class="row"><div><label>Kotak ke-</label><input id="cx" inputmode="numeric"></div><div><label>FROM (m)</label><input id="cf" inputmode="decimal"></div><div><label>TO (m)</label><input id="ct" inputmode="decimal"></div></div>
    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="crt" style="width:auto"> Foto ulang kotak yang sudah pernah dikirim (mis. karena ditolak)</label>
-   <p class="muted">Template SOP: 1 corebox per foto (maks. 5 m core), resolusi minimal 3508 px sisi panjang (setara 300 dpi pada cetak A4) — pakai resolusi kamera tertinggi, jangan mode hemat/kecil; teduh, meteran 0–100 cm, papan Hole ID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
+   <p class="muted">Template SOP: 1 corebox per foto (maks. 5 m core), resolusi standar ≥ 3508 px sisi panjang (300 dpi cetak A4), di bawah 2400 px ditolak — pakai resolusi kamera tertinggi, jangan mode hemat/kecil; teduh, meteran 0–100 cm, papan Hole ID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
    <div class="big"><button id="cgo">📷 Ambil foto corebox</button></div>
    <input id="cfile" type="file" accept="image/*" capture="environment" class="hide"><div id="lc"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean foto core (${qd.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
@@ -628,7 +628,9 @@ async function coreView(v) {
     const file = ev.target.files[0]; if (!file) return; ev.target.value = "";
     const bmp = await createImageBitmap(file); const lc = await localCheck(bmp);
     const bhid = bakuBH($("#cb").value), type = $("#cty").value, f = num($("#cf").value), to = num($("#ct").value), box = parseInt($("#cx").value) || null;
-    if (Math.max(lc.width, lc.height) < FOTO_CORE_MIN_PX) return ($("#e").textContent = `Ditolak sebelum dikirim: resolusi foto ${lc.width}×${lc.height} px kurang dari standar ${FOTO_CORE_MIN_PX} px sisi panjang (300 dpi pada cetak A4). Atur kamera HP ke resolusi tertinggi (bukan mode kecil/hemat/zoom digital) lalu foto ulang.`);
+    const sisi = Math.max(lc.width, lc.height);
+    if (sisi < FOTO_CORE_TOLAK_PX) return ($("#e").textContent = `Ditolak sebelum dikirim: resolusi foto ${lc.width}×${lc.height} px terlalu kecil (minimal ${FOTO_CORE_TOLAK_PX} px sisi panjang ≈ 5 MP); tulisan di corebox tidak akan terbaca bila di-zoom. Atur kamera HP ke resolusi tertinggi (bukan mode kecil/hemat/zoom digital) lalu foto ulang.`);
+    if (sisi < FOTO_CORE_MIN_PX) lc.warnings.push(`Resolusi ${lc.width}×${lc.height} px di bawah standar ${FOTO_CORE_MIN_PX} px (300 dpi cetak A4), tetapi masih bisa dibaca bila di-zoom. Tetap simpan bila HP tidak bisa lebih tinggi.`);
     if (lc.sharpness < 25 || lc.brightness < 45) return ($("#e").textContent = `Ditolak sebelum dikirim: ${lc.sharpness < 25 ? "foto terlalu buram" : "foto terlalu gelap"}. Ambil ulang di tempat teduh yang terang dan HP tidak bergoyang.`);
     const save = async () => {
       const fn = `${bhid}_K${box}_${fmtD(f)}-${fmtD(to)}_${type}.jpg`;
