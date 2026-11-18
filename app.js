@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.12";
+const APP_VERSION = "2026-11-18.13";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -218,6 +218,9 @@ async function sync() {
       if (it.kind === "core") { await syncCore(it); continue; }
       if (it.kind === "event" || it.kind === "p2h") { await syncProg(it); continue; }
       if (it.kind === "ddr") { await syncDDR(it); continue; }
+      if (it.kind === "keu") { await syncKeu(it); continue; }
+      if (it.kind === "keubukti") { await syncKeuBukti(it); continue; }
+      if (it.kind === "absl") { await syncAbsl(it); continue; }
       if (it.kind === "arsip") { await syncArsip(it); continue; }
       if (it.kind === "marking") { const r = await sb.from("marking").upsert(it.row, { onConflict: "client_uuid", ignoreDuplicates: true });
         if (r.error) { it.error = r.error.message; await qPut(it); } else await qDel(it.client_uuid); continue; }
@@ -231,7 +234,7 @@ async function sync() {
       if (job) { await sb.functions.invoke("process-scan", { body: { job_id: job.id } }); tandaiScan(job.id); }
       await qDel(it.client_uuid);
     }
-  } finally { syncing = false; const n1 = (await qAll()).length; if (n0 > n1) toast(`✓ ${n0 - n1} data terkirim${n1 ? ` · ${n1} masih antre` : ""}`); cekAntreLama(); beat(true); loadLanjutan(); jadwalCekTolak(); if (["foto", "core", "prog", "ddr"].includes(tab)) render(); }
+  } finally { syncing = false; const n1 = (await qAll()).length; if (n0 > n1) toast(`✓ ${n0 - n1} data terkirim${n1 ? ` · ${n1} masih antre` : ""}`); cekAntreLama(); beat(true); loadLanjutan(); jadwalCekTolak(); if (["foto", "core", "prog", "ddr", "keu", "absl"].includes(tab)) render(); }
 }
 async function syncCore(it) {
   const base = `${session.user.id}/${it.bhid}/${it.client_uuid}`;
@@ -262,13 +265,15 @@ async function render() {
   }
   if (online() && !sessionStorage.getItem("tugasLoaded")) { sessionStorage.setItem("tugasLoaded", "1"); await loadTugas(); loadLanjutan(); }
   setTimeout(() => cekZonaBaru(), 1500);
-  if (!["client", "admin", "verifier"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
+  if (me?.role === "admin_lapangan" && !myTugas?.project) { app.innerHTML = `<div class="card"><h2>Belum ada proyek</h2><p>Akun admin lapangan ini belum ditetapkan ke proyek. Minta admin menetapkan proyek di menu Pengguna, lalu buka ulang aplikasi.</p><button class="sec" id="out">Keluar</button></div>`;
+    $("#out").onclick = () => { localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); sb.auth.signOut(); }; return; }
+  if (!["client", "admin", "verifier", "admin_lapangan"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
-    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["peta", "Peta"], ...(R === "admin" ? [["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
+  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
+    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
-  const PANDUAN = { driller: "driller", geologist: "geologist", verifier: "verifier", admin: "admin", client: "client" };
+  const PANDUAN = { driller: "driller", geologist: "geologist", verifier: "verifier", admin: "admin", client: "client", admin_lapangan: "admin_lapangan" };
   let pandu = document.getElementById("pandu");
   if (PANDUAN[R]) { if (!pandu) { pandu = Object.assign(document.createElement("a"), { id: "pandu", target: "_blank", rel: "noopener", textContent: "📖 Panduan", title: "Panduan penggunaan untuk peran Anda" });
       pandu.style.cssText = "color:#fff;text-decoration:none;font-size:13px;margin-right:10px;white-space:nowrap"; document.getElementById("net")?.before(pandu); }
@@ -299,6 +304,8 @@ async function render() {
   if (tab === "klien") return klienView($("#v"));
   if (tab === "fk") return fotoKlienView($("#v"));
   if (tab === "peta") return petaView($("#v"));
+  if (tab === "keu") return isKeu() ? keuView($("#v")) : null;
+  if (tab === "absl") return isKeu() ? abslView($("#v")) : null;
 }
 
 async function bukaLinkView(bucket, path) {
@@ -955,7 +962,7 @@ async function usersView(v) {
   const roleOf = Object.fromEntries((au ?? []).map((x) => [x.user_id, x.role]));
   const pend = rq.filter((r) => r.status === "PENDING"), rest = rq.filter((r) => r.status !== "PENDING");
   const link = new URL("daftar.html", location.href).href;
-  const opt = (sel) => ["driller", "geologist", "verifier", "admin", "client"].map((r) => `<option ${r === sel ? "selected" : ""}>${r}</option>`).join("");
+  const opt = (sel) => ["driller", "geologist", "verifier", "admin", "client", "admin_lapangan"].map((r) => `<option ${r === sel ? "selected" : ""}>${r}</option>`).join("");
   const row = (r, pending) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>${esc(r.full_name)}</b> · ${esc(r.email)}<br><span class="muted">${esc(r.position ?? "")} · ${esc(r.company ?? "")} · ${esc(r.phone ?? "")}${r.reason ? " · " + esc(r.reason) : ""}<br>
       ${pending ? `minta: ${esc(r.requested_role)} · daftar ${new Date(r.created_at).toLocaleString("id-ID")}` : `status: ${roleOf[r.user_id] === "nonaktif" ? "<b style='color:#C8281F'>NONAKTIF</b>" : roleOf[r.user_id] ? "AKTIF (" + roleOf[r.user_id] + ")" : r.status === "REJECTED" ? "DITOLAK" : r.status}${r.decision_note ? " · " + esc(r.decision_note) : ""}`}</span></span>
       <select data-role="${r.user_id}" style="flex:0;width:auto">${opt(roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif" ? roleOf[r.user_id] : r.requested_role)}</select>
@@ -2806,7 +2813,7 @@ async function dokView(v) {
       <label>File (PDF, Word, Excel; maks. 50 MB)</label><input id="uf" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
       <div class="row"><div><label>Judul *</label><input id="uj"></div><div style="flex:.6"><label>Kategori</label><select id="uk"><option>SOP</option><option>FORMULIR</option><option>PANDUAN</option><option>LAINNYA</option></select></div><div style="flex:.4"><label>Versi</label><input id="uv" placeholder="v1"></div></div>
       <label>Keterangan</label><input id="uket">
-      <label>Boleh diunduh oleh</label><div class="row">${["driller", "geologist", "verifier", "admin", "client"].map((r) => `<label style="flex:0;white-space:nowrap"><input type="checkbox" value="${r}" class="ur" ${r !== "driller" ? "checked" : ""}> ${r}</label>`).join("")}</div>
+      <label>Boleh diunduh oleh</label><div class="row">${["driller", "geologist", "verifier", "admin", "client", "admin_lapangan"].map((r) => `<label style="flex:0;white-space:nowrap"><input type="checkbox" value="${r}" class="ur" ${r !== "driller" && r !== "admin_lapangan" ? "checked" : ""}> ${r}</label>`).join("")}</div>
       <p class="muted">Dokumen yang diunggah di sini disimpan di database (privat) dan hanya bisa diunduh akun yang disetujui sesuai peran yang dicentang. Versi lama sebaiknya dinonaktifkan, bukan dihapus.</p>
       <button id="ub">Unggah</button><div id="ue" class="err"></div></div>` : ""}`;
   const get = (id) => list.find((d) => d.id === id);
@@ -3622,3 +3629,380 @@ sb.auth.onAuthStateChange(async (e, s) => {
 addEventListener("online", async () => { const { data } = await sb.auth.getSession(); if (data.session) { session = data.session; render(); sync(); } else if (session?.offline) { session = null; render(); } });
 const { data: s0 } = await sb.auth.getSession().catch(() => ({ data: { session: null } }));
 session = s0?.session ?? offlineSession(); await loadMe(); render(); sync();
+
+// =====================================================================================================
+// ---------- ADMIN LAPANGAN: keuangan lapangan (nota, bukti transfer/pembayaran) + absensi tim berangkat/pulang ----------
+// Data ini internal perusahaan: hanya admin_lapangan (proyeknya sendiri) dan admin (Jakarta). Tidak masuk Dashboard,
+// tidak terlihat client/verifier (dijaga RLS di server), dan salinan Drive masuk folder "Keuangan (internal)".
+// =====================================================================================================
+const KEU_KAT = { KELUAR: ["BBM", "Konsumsi / makan", "Akomodasi / sewa mes", "Transportasi & ojek", "Upah harian / tenaga lokal", "Sewa alat / kendaraan", "Material & consumable bor",
+  "Suku cadang & perbaikan", "Air & logistik", "ATK & cetak", "Kesehatan & K3", "Komunikasi / pulsa", "Retribusi & izin lokal", "Kasbon / uang muka", "Lain-lain"],
+  MASUK: ["Dana operasional dari kantor", "Pengembalian kasbon", "Lain-lain"] };
+const KEU_JENIS = { NOTA: "Nota / kuitansi", TRANSFER: "Bukti transfer", PEMBAYARAN: "Bukti pembayaran", LAINNYA: "Lainnya" };
+const KEU_STATUS = { DIAJUKAN: ["Diajukan", "#dfe7f5", "#1d3a7a"], DISETUJUI: ["Disetujui", "#DCEFE4", "#0F4F35"], PERLU_PERBAIKAN: ["Perlu perbaikan", "#F6C9C3", "#8A1C12"] };
+const fmtRp = (n) => "Rp " + Math.round(+n || 0).toLocaleString("id-ID");
+const isKeu = () => ["admin", "admin_lapangan"].includes(me?.role);
+const proyekKeu = () => (me?.role === "admin" ? sessionStorage.getItem("keuProyek") || myTugas?.project || JSON.parse(localStorage.getItem("projects") || "[]")[0]?.code || "" : myTugas?.project || "");
+const pilihProyekKeu = (id = "kp") => { if (me?.role !== "admin") return ""; const pj = JSON.parse(localStorage.getItem("projects") || "[]"), cur = proyekKeu();
+  return `<div><label>Proyek</label><select id="${id}">${pj.map((p) => `<option value="${esc(p.code)}" ${cur === p.code ? "selected" : ""}>${esc(p.nama)}</option>`).join("")}</select></div>`; };
+const awalBulan = () => todayWIB().slice(0, 8) + "01";
+
+// ---------- potong nota otomatis: deteksi kertas → 4 sudut (bisa digeser) → luruskan perspektif → perjelas ----------
+function deteksiSudut(img) {
+  const S = 420, k = Math.min(1, S / Math.max(img.width, img.height)), w = Math.max(8, Math.round(img.width * k)), h = Math.max(8, Math.round(img.height * k));
+  const c = Object.assign(document.createElement("canvas"), { width: w, height: h }), g = c.getContext("2d", { willReadFrequently: true });
+  g.filter = "blur(2px)"; g.drawImage(img, 0, 0, w, h); const d = g.getImageData(0, 0, w, h).data;
+  // skor "kertas": terang dan tidak berwarna
+  const sk = new Float32Array(w * h), hist = new Uint32Array(256);
+  for (let i = 0, j = 0; i < d.length; i += 4, j++) { const r = d[i], gg = d[i + 1], b = d[i + 2], mx = Math.max(r, gg, b), mn = Math.min(r, gg, b);
+    const v = Math.max(0, Math.min(255, 0.299 * r + 0.587 * gg + 0.114 * b - 0.6 * (mx - mn))); sk[j] = v; hist[v | 0]++; }
+  let sum = 0, sumB = 0, wB = 0, best = 0, th = 160; for (let t = 0; t < 256; t++) sum += t * hist[t];
+  for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = w * h - wB; if (!wF) break; sumB += t * hist[t];
+    const mB = sumB / wB, mF = (sum - sumB) / wF, bt = wB * wF * (mB - mF) ** 2; if (bt > best) { best = bt; th = t; } }
+  const m = new Uint8Array(w * h); for (let j = 0; j < m.length; j++) m[j] = sk[j] > th ? 1 : 0;
+  // komponen terang terbesar
+  const lab = new Int32Array(w * h).fill(-1), st = []; let bestId = -1, bestN = 0;
+  for (let j = 0; j < m.length; j++) { if (!m[j] || lab[j] >= 0) continue; const id = st.length, Q = [j]; lab[j] = id; let n = 0, tepi = 0;
+    while (Q.length) { const p = Q.pop(); n++; const x = p % w, y = (p / w) | 0; if (x === 0 || y === 0 || x === w - 1 || y === h - 1) tepi++;
+      for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1]) if (q >= 0 && m[q] && lab[q] < 0) { lab[q] = id; Q.push(q); } }
+    st.push(n); if (n > bestN) { bestN = n; bestId = id; } }
+  const luas = bestN / (w * h);
+  const def = [[0.03, 0.03], [0.97, 0.03], [0.97, 0.97], [0.03, 0.97]].map(([a, b]) => [a * img.width, b * img.height]);
+  if (bestId < 0 || luas < 0.08 || luas > 0.985) return { sudut: def, yakin: false };
+  // sudut = titik ekstrem komponen pada arah diagonal
+  let tl = [0, 0, Infinity], tr = [0, 0, -Infinity], br = [0, 0, -Infinity], bl = [0, 0, Infinity];
+  for (let p = 0; p < lab.length; p++) { if (lab[p] !== bestId) continue; const x = p % w, y = (p / w) | 0;
+    if (x + y < tl[2]) tl = [x, y, x + y]; if (x + y > br[2]) br = [x, y, x + y]; if (x - y > tr[2]) tr = [x, y, x - y]; if (x - y < bl[2]) bl = [x, y, x - y]; }
+  return { sudut: [tl, tr, br, bl].map(([x, y]) => [(x + 0.5) / k, (y + 0.5) / k]), yakin: true };
+}
+function homografi(src, dst) { // matriks 3x3 yang memetakan dst → src (untuk sampling)
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) { const [x, y] = dst[i], [u, v] = src[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u); A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v); }
+  for (let i = 0; i < 8; i++) { let p = i; for (let r = i + 1; r < 8; r++) if (Math.abs(A[r][i]) > Math.abs(A[p][i])) p = r; [A[i], A[p]] = [A[p], A[i]]; [b[i], b[p]] = [b[p], b[i]];
+    for (let r = 0; r < 8; r++) { if (r === i) continue; const f = A[r][i] / A[i][i]; for (let c2 = i; c2 < 8; c2++) A[r][c2] -= f * A[i][c2]; b[r] -= f * b[i]; } }
+  const hh = b.map((v, i) => v / A[i][i]); return [...hh, 1];
+}
+function luruskan(img, sudut, perjelas = true, maks = 2200) {
+  const jr = (a, b2) => Math.hypot(a[0] - b2[0], a[1] - b2[1]), [tl, tr, br, bl] = sudut;
+  let W = Math.max(jr(tl, tr), jr(bl, br)), H = Math.max(jr(tl, bl), jr(tr, br)); const k = Math.min(1, maks / Math.max(W, H)); W = Math.max(50, Math.round(W * k)); H = Math.max(50, Math.round(H * k));
+  const sc = Object.assign(document.createElement("canvas"), { width: img.width, height: img.height }), sg = sc.getContext("2d", { willReadFrequently: true }); sg.drawImage(img, 0, 0);
+  const S = sg.getImageData(0, 0, img.width, img.height).data, sw = img.width, shh = img.height;
+  const Hm = homografi(sudut, [[0, 0], [W, 0], [W, H], [0, H]]);
+  const out = Object.assign(document.createElement("canvas"), { width: W, height: H }), og = out.getContext("2d"), O = og.createImageData(W, H), D = O.data;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const X = x + 0.5, Y = y + 0.5, z = Hm[6] * X + Hm[7] * Y + 1, u = (Hm[0] * X + Hm[1] * Y + Hm[2]) / z - 0.5, v = (Hm[3] * X + Hm[4] * Y + Hm[5]) / z - 0.5;
+    const x0 = Math.max(0, Math.min(sw - 2, Math.floor(u))), y0 = Math.max(0, Math.min(shh - 2, Math.floor(v))), fx = Math.max(0, Math.min(1, u - x0)), fy = Math.max(0, Math.min(1, v - y0)), o = (y * W + x) * 4;
+    for (let ch = 0; ch < 3; ch++) { const a = S[(y0 * sw + x0) * 4 + ch], b2 = S[(y0 * sw + x0 + 1) * 4 + ch], c3 = S[((y0 + 1) * sw + x0) * 4 + ch], d2 = S[((y0 + 1) * sw + x0 + 1) * 4 + ch];
+      D[o + ch] = (a * (1 - fx) + b2 * fx) * (1 - fy) + (c3 * (1 - fx) + d2 * fx) * fy; } D[o + 3] = 255; }
+  if (perjelas) perjelasGambar(D, W, H);
+  og.putImageData(O, 0, 0); return out;
+}
+function perjelasGambar(D, W, H) { // regang kecerahan 1–99% lalu pertajam ringan; warna tetap
+  const hist = new Uint32Array(256); for (let i = 0; i < D.length; i += 4) hist[(0.299 * D[i] + 0.587 * D[i + 1] + 0.114 * D[i + 2]) | 0]++;
+  const n = W * H; let a = 0, lo = 0, hi = 255; for (let t = 0; t < 256; t++) { a += hist[t]; if (a > n * 0.01) { lo = t; break; } }
+  a = 0; for (let t = 255; t >= 0; t--) { a += hist[t]; if (a > n * 0.01) { hi = t; break; } }
+  const sk = 255 / Math.max(30, hi - lo); for (let i = 0; i < D.length; i += 4) for (let c = 0; c < 3; c++) D[i + c] = Math.max(0, Math.min(255, (D[i + c] - lo) * sk));
+  const C = new Uint8ClampedArray(D); const amt = 0.55;
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const o = (y * W + x) * 4;
+    for (let c = 0; c < 3; c++) { const bl = (C[o - 4 + c] + C[o + 4 + c] + C[o - W * 4 + c] + C[o + W * 4 + c]) / 4; D[o + c] = C[o + c] + amt * (C[o + c] - bl); } }
+}
+const keKanvas = async (blobOrFile, maks = 3200) => { const bmp = await createImageBitmap(blobOrFile), k = Math.min(1, maks / Math.max(bmp.width, bmp.height));
+  const c = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) }); c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height); return c; };
+const putar90 = (c) => { const o = Object.assign(document.createElement("canvas"), { width: c.height, height: c.width }), g = o.getContext("2d"); g.translate(o.width, 0); g.rotate(Math.PI / 2); g.drawImage(c, 0, 0); return o; };
+const kanvasBlob = (c, q = 0.85) => new Promise((r) => c.toBlob(r, "image/jpeg", q));
+const kecilkan = (c, maks) => { const k = Math.min(1, maks / Math.max(c.width, c.height)); if (k === 1) return c; const o = Object.assign(document.createElement("canvas"), { width: Math.round(c.width * k), height: Math.round(c.height * k) }); o.getContext("2d").drawImage(c, 0, 0, o.width, o.height); return o; };
+// Editor potong: hasil { potong, asli, thumb } (Blob JPEG) atau null bila batal
+function potongNota(file, judul = "Potong nota") {
+  return new Promise(async (res) => {
+    let img = await keKanvas(file), det = deteksiSudut(img), S = det.sudut.map((p) => [...p]), tanpa = false;
+    const m = modal(`<h3>${esc(judul)}</h3><p class="muted" style="margin:0 0 6px">${det.yakin ? "Tepi nota terdeteksi otomatis. Geser titik bulat bila kurang pas." : "Tepi nota tidak terbaca jelas — geser keempat titik ke sudut nota."}</p>
+      <div id="pnW" style="position:relative;touch-action:none;user-select:none;background:#111;border-radius:10px;overflow:hidden"><canvas id="pnC" style="width:100%;display:block"></canvas></div>
+      <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0"><input type="checkbox" id="pnJ" checked style="width:auto"> Perjelas tulisan (kontras & ketajaman)</label>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="sec" id="pnR" style="flex:0;white-space:nowrap">⟳ Putar</button><button class="sec" id="pnA" style="flex:0;white-space:nowrap">Deteksi ulang</button><button class="sec" id="pnT" style="flex:0;white-space:nowrap">Tanpa potong (screenshot)</button></div>
+      <div id="pnP" style="margin-top:8px"></div>
+      <div class="row" style="margin-top:8px"><button id="pnOk">✓ Pakai hasil ini</button><button class="sec" id="pnX">Batal</button></div>`);
+    const cv = m.querySelector("#pnC"), g = cv.getContext("2d"), W = m.querySelector("#pnW");
+    const gambar = () => { cv.width = img.width; cv.height = img.height; g.drawImage(img, 0, 0); if (tanpa) return;
+      const r = Math.max(10, img.width / 45); g.lineWidth = Math.max(3, img.width / 260); g.strokeStyle = "#22c55e"; g.fillStyle = "rgba(34,197,94,.18)";
+      g.beginPath(); S.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.fill(); g.stroke();
+      S.forEach((p) => { g.beginPath(); g.arc(p[0], p[1], r, 0, 7); g.fillStyle = "#fff"; g.fill(); g.strokeStyle = "#16a34a"; g.stroke(); }); };
+    let pratTimer = null; const prat = () => { clearTimeout(pratTimer); pratTimer = setTimeout(() => { const o = tanpa ? kecilkan(img, 700) : luruskan(img, S, m.querySelector("#pnJ").checked, 700); o.style.cssText = "max-width:100%;max-height:38vh;border:1px solid #ccc;border-radius:8px;display:block;margin:auto";
+      const P = m.querySelector("#pnP"); P.innerHTML = `<div class="muted" style="margin-bottom:4px">Pratinjau hasil:</div>`; P.appendChild(o); }, 120); };
+    gambar(); prat();
+    let aktif = -1; const titik = (e) => { const b = cv.getBoundingClientRect(), t = e.touches?.[0] ?? e; return [((t.clientX - b.left) / b.width) * img.width, ((t.clientY - b.top) / b.height) * img.height]; };
+    const turun = (e) => { if (tanpa) return; const p = titik(e); let dmin = Infinity; S.forEach((q, i) => { const dd = Math.hypot(q[0] - p[0], q[1] - p[1]); if (dd < dmin) { dmin = dd; aktif = i; } }); if (dmin > img.width / 6) aktif = -1; e.preventDefault(); };
+    const gerak = (e) => { if (aktif < 0) return; const p = titik(e); S[aktif] = [Math.max(0, Math.min(img.width, p[0])), Math.max(0, Math.min(img.height, p[1]))]; gambar(); e.preventDefault(); };
+    const naik = () => { if (aktif >= 0) prat(); aktif = -1; };
+    W.addEventListener("pointerdown", turun); W.addEventListener("pointermove", gerak); addEventListener("pointerup", naik);
+    m.querySelector("#pnJ").onchange = prat;
+    m.querySelector("#pnR").onclick = () => { img = putar90(img); det = deteksiSudut(img); S = det.sudut.map((p) => [...p]); gambar(); prat(); };
+    m.querySelector("#pnA").onclick = () => { tanpa = false; det = deteksiSudut(img); S = det.sudut.map((p) => [...p]); gambar(); prat(); };
+    m.querySelector("#pnT").onclick = () => { tanpa = !tanpa; m.querySelector("#pnT").textContent = tanpa ? "Potong lagi" : "Tanpa potong (screenshot)"; gambar(); prat(); };
+    const selesai = (v) => { removeEventListener("pointerup", naik); m.remove(); res(v); };
+    m.querySelector("#pnX").onclick = () => selesai(null);
+    m.querySelector("#pnOk").onclick = async () => { m.querySelector("#pnOk").disabled = true; m.querySelector("#pnOk").textContent = "Memproses…";
+      await new Promise((r) => setTimeout(r, 30));
+      const hasil = tanpa ? (m.querySelector("#pnJ").checked ? (() => { const c = kecilkan(img, 2200), x = c.getContext("2d"), D = x.getImageData(0, 0, c.width, c.height); perjelasGambar(D.data, c.width, c.height); x.putImageData(D, 0, 0); return c; })() : kecilkan(img, 2200)) : luruskan(img, S, m.querySelector("#pnJ").checked, 2200);
+      selesai({ potong: await kanvasBlob(hasil, 0.86), asli: await kanvasBlob(kecilkan(img, 2400), 0.82), thumb: await kanvasBlob(kecilkan(hasil, 1400), 0.74), w: hasil.width, h: hasil.height }); };
+  });
+}
+// pilih foto: kamera atau galeri (screenshot m-banking)
+const pilihFile = (kamera = true) => new Promise((res) => { const i = Object.assign(document.createElement("input"), { type: "file", accept: "image/*" }); if (kamera) i.capture = "environment";
+  i.onchange = () => res(i.files?.[0] ?? null); i.addEventListener("cancel", () => res(null)); i.click(); });
+
+// ---------- form transaksi (baru / perbaiki) ----------
+async function keuForm(trx = null, selesai = () => {}) {
+  const proj = trx?.project ?? proyekKeu(); if (!proj) return alert("Akun ini belum punya proyek. Minta admin menetapkan proyek.");
+  const arah0 = trx?.arah ?? "KELUAR", rigs = (JSON.parse(localStorage.getItem("projects") || "[]").find((p) => p.code === proj)?.rigs) ?? myTugas?.rigs ?? [];
+  const bukti = []; // {jenis, potong, asli, thumb, url}
+  const m = modal(`<h3>${trx ? "Perbaiki transaksi" : "Catat transaksi"} · ${esc(proj)}</h3>
+    ${trx?.catatan_admin ? `<div class="card" style="background:#F6C9C3;margin:0 0 8px"><b>Catatan admin:</b> ${esc(trx.catatan_admin)}</div>` : ""}
+    <div class="row"><label style="flex:1;margin:0"><input type="radio" name="kArah" value="KELUAR" ${arah0 === "KELUAR" ? "checked" : ""} style="width:auto"> Pengeluaran</label><label style="flex:1;margin:0"><input type="radio" name="kArah" value="MASUK" ${arah0 === "MASUK" ? "checked" : ""} style="width:auto"> Dana masuk</label></div>
+    <div class="row"><div><label>Tanggal</label><input id="kTg" type="date" value="${esc(trx?.tanggal ?? todayWIB())}"></div><div><label>Jumlah (Rp)</label><input id="kJm" inputmode="numeric" placeholder="mis. 250.000" value="${trx ? Math.round(trx.jumlah).toLocaleString("id-ID") : ""}"></div></div>
+    <label>Kategori</label><select id="kKt"></select>
+    <label>Uraian</label><input id="kUr" placeholder="mis. Solar 40 L untuk rig 1" value="${esc(trx?.uraian ?? "")}">
+    <div class="row"><div><label id="kPhL">Toko / penerima</label><input id="kPh" value="${esc(trx?.pihak ?? "")}"></div><div><label>Cara bayar</label><select id="kMt">${["TUNAI", "TRANSFER", "QRIS", "LAINNYA"].map((x) => `<option ${trx?.metode === x ? "selected" : ""}>${x}</option>`).join("")}</select></div></div>
+    <div class="row"><div><label>No. nota / ref. transfer</label><input id="kRf" value="${esc(trx?.no_ref ?? "")}"></div><div><label>Rig (opsional)</label><select id="kRg"><option value="">—</option>${rigs.map((r) => `<option ${trx?.rig === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></div></div>
+    <label>Bukti ${trx ? "tambahan" : ""}</label><div id="kBk" class="muted">Belum ada foto bukti.</div>
+    <div class="row" style="flex-wrap:wrap;margin-top:6px">${Object.entries(KEU_JENIS).slice(0, 3).map(([k, t]) => `<button class="sec" data-kb="${k}" style="flex:1;min-width:140px">📷 ${t}</button>`).join("")}<button class="sec" data-kg style="flex:1;min-width:140px">🖼 Dari galeri / screenshot</button></div>
+    <div id="kE" class="err"></div><div class="row" style="margin-top:10px"><button id="kOk">Simpan</button><button class="sec" id="kX">Batal</button></div>`);
+  const isiKat = () => { const a = m.querySelector('[name="kArah"]:checked').value; m.querySelector("#kKt").innerHTML = KEU_KAT[a].map((x) => `<option ${trx?.kategori === x ? "selected" : ""}>${esc(x)}</option>`).join("");
+    m.querySelector("#kPhL").textContent = a === "MASUK" ? "Dari (pengirim)" : "Toko / penerima"; };
+  m.querySelectorAll('[name="kArah"]').forEach((r) => (r.onchange = isiKat)); isiKat();
+  const jm = m.querySelector("#kJm"); jm.oninput = () => { const n = jm.value.replace(/\D/g, ""); jm.value = n ? Number(n).toLocaleString("id-ID") : ""; };
+  const tampil = () => { const B = m.querySelector("#kBk"); if (!bukti.length) return (B.textContent = "Belum ada foto bukti.");
+    B.innerHTML = bukti.map((b, i) => `<div style="display:inline-block;margin:4px;text-align:center;vertical-align:top"><img src="${b.url}" style="height:90px;border-radius:6px;border:1px solid #ccc"><br><small>${esc(KEU_JENIS[b.jenis])}</small> <a href="#" data-kh="${i}">hapus</a></div>`).join("");
+    B.querySelectorAll("[data-kh]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); URL.revokeObjectURL(bukti[+a.dataset.kh].url); bukti.splice(+a.dataset.kh, 1); tampil(); })); };
+  const tambah = async (jenis, kamera) => { const f = await pilihFile(kamera); if (!f) return;
+    if (!jenis) jenis = await new Promise((r) => { const q = modal(`<h3>Jenis bukti</h3>${Object.entries(KEU_JENIS).map(([k, t]) => `<button class="sec" data-j="${k}" style="margin:4px 0">${t}</button>`).join("")}`); q.querySelectorAll("[data-j]").forEach((b) => (b.onclick = () => { q.remove(); r(b.dataset.j); })); });
+    const h = await potongNota(f, `Potong ${KEU_JENIS[jenis].toLowerCase()}`); if (!h) return; bukti.push({ jenis, ...h, url: URL.createObjectURL(h.potong) }); tampil(); };
+  m.querySelectorAll("[data-kb]").forEach((b) => (b.onclick = () => tambah(b.dataset.kb, true))); m.querySelector("[data-kg]").onclick = () => tambah(null, false);
+  m.querySelector("#kX").onclick = () => m.remove();
+  m.querySelector("#kOk").onclick = async () => {
+    const arah = m.querySelector('[name="kArah"]:checked').value, jumlah = Number(jm.value.replace(/\D/g, "")), uraian = m.querySelector("#kUr").value.trim(), e = m.querySelector("#kE");
+    if (!jumlah) return (e.textContent = "Isi jumlah uang."); if (!uraian) return (e.textContent = "Isi uraian singkat (untuk apa uangnya).");
+    if (!trx && !bukti.length && arah === "KELUAR" && !confirm("Pengeluaran tanpa foto bukti. Tetap simpan? (bukti bisa ditambahkan nanti)")) return;
+    const row = { project: proj, tanggal: m.querySelector("#kTg").value || todayWIB(), arah, kategori: m.querySelector("#kKt").value, uraian, pihak: m.querySelector("#kPh").value.trim() || null, jumlah,
+      metode: m.querySelector("#kMt").value, no_ref: m.querySelector("#kRf").value.trim() || null, rig: m.querySelector("#kRg").value || null };
+    m.querySelector("#kOk").disabled = true;
+    const pos = await Promise.race([getPos(), new Promise((r) => setTimeout(() => r(null), 4000))]);
+    const B = bukti.map((b, i) => ({ client_uuid: crypto.randomUUID(), jenis: b.jenis, potong: b.potong, asli: b.asli, thumb: b.thumb, urutan: (trx?.bukti?.length ?? 0) + i + 1, captured_at: new Date().toISOString() }));
+    if (trx) { // perbaikan: perlu sinyal
+      if (!online()) { m.querySelector("#kOk").disabled = false; return (e.textContent = "Perbaikan transaksi perlu sinyal internet."); }
+      const { error } = await sb.from("keu_transaksi").update(row).eq("id", trx.id); if (error) { m.querySelector("#kOk").disabled = false; return (e.textContent = error.message); }
+      if (B.length) await qPut({ client_uuid: crypto.randomUUID(), kind: "keubukti", transaksi_id: trx.id, project: proj, tanggal: row.tanggal, bukti: B });
+    } else await qPut({ client_uuid: crypto.randomUUID(), kind: "keu", row: { ...row, lat: pos?.lat ?? null, lon: pos?.lon ?? null, captured_at: new Date().toISOString() }, bukti: B });
+    bukti.forEach((b) => URL.revokeObjectURL(b.url)); m.remove(); toast(online() ? "Tersimpan — mengirim…" : "Tersimpan di HP — terkirim otomatis saat ada sinyal"); await sync(); selesai();
+  };
+}
+async function unggahBuktiKeu(proj, tanggal, trxKey, B) {
+  const base = `${session.user.id}/${proj}/${String(tanggal).slice(0, 7)}`;
+  for (const b of B) { b.path = `${base}/${trxKey}_${b.urutan}_${b.jenis.toLowerCase()}_potong.jpg`; b.path_asli = `${base}/${trxKey}_${b.urutan}_${b.jenis.toLowerCase()}_asli.jpg`; b.thumb_path = `${base}/rekap/${trxKey}_${b.urutan}.jpg`;
+    for (const [p, bl] of [[b.path, b.potong], [b.path_asli, b.asli], [b.thumb_path, b.thumb]]) { if (!bl) continue;
+      const up = await sb.storage.from("keuangan").upload(p, bl, { contentType: "image/jpeg", upsert: false }); if (up.error && !/exists|Duplicate/i.test(up.error.message)) throw new Error(up.error.message); } }
+}
+async function syncKeu(it) {
+  try {
+    const row = { ...it.row, client_uuid: it.client_uuid };
+    const ins = await sb.from("keu_transaksi").upsert(row, { onConflict: "client_uuid", ignoreDuplicates: true }); if (ins.error) throw new Error(ins.error.message);
+    const { data: t, error } = await sb.from("keu_transaksi").select("id").eq("client_uuid", it.client_uuid).single(); if (error) throw new Error(error.message);
+    await unggahBuktiKeu(it.row.project, it.row.tanggal, it.client_uuid.slice(0, 8), it.bukti ?? []);
+    if ((it.bukti ?? []).length) { const r = await sb.from("keu_bukti").upsert(it.bukti.map((b) => ({ client_uuid: b.client_uuid, transaksi_id: t.id, jenis: b.jenis, path: b.path, path_asli: b.path_asli, thumb_path: b.thumb_path, urutan: b.urutan, captured_at: b.captured_at })),
+      { onConflict: "client_uuid", ignoreDuplicates: true }); if (r.error) throw new Error(r.error.message); }
+    await qDel(it.client_uuid);
+  } catch (e) { it.error = e.message; await qPut(it); }
+}
+async function syncKeuBukti(it) {
+  try { await unggahBuktiKeu(it.project, it.tanggal, it.transaksi_id.slice(0, 8), it.bukti);
+    const r = await sb.from("keu_bukti").upsert(it.bukti.map((b) => ({ client_uuid: b.client_uuid, transaksi_id: it.transaksi_id, jenis: b.jenis, path: b.path, path_asli: b.path_asli, thumb_path: b.thumb_path, urutan: b.urutan, captured_at: b.captured_at })),
+      { onConflict: "client_uuid", ignoreDuplicates: true }); if (r.error) throw new Error(r.error.message); await qDel(it.client_uuid);
+  } catch (e) { it.error = e.message; await qPut(it); }
+}
+// buka foto bukti: file di server (bila masih ada) atau salinan Google Drive
+async function bukaBuktiKeu(b) {
+  const L = [[b.path, b.drive_url], [b.path_asli, b.drive_url_asli]]; let html = "";
+  for (const [p, dv, nm] of L.map((x, i) => [...x, i ? "Foto asli (sebelum dipotong)" : "Hasil potong"])) { if (!p) continue;
+    const { data } = await sb.storage.from("keuangan").createSignedUrl(p, 3600);
+    html += `<h4 style="margin:8px 0 4px">${nm}</h4>${data?.signedUrl ? `<img src="${data.signedUrl}" style="max-width:100%;border-radius:8px">` : ""}
+      <p>${data?.signedUrl ? `<a href="${data.signedUrl}" target="_blank" rel="noopener">Unduh</a>` : `<span class="muted">File di server sudah dipindah ke Drive.</span>`}${dv ? ` · <a href="${esc(dv)}" target="_blank" rel="noopener">Buka di Google Drive</a>` : ""}</p>`; }
+  if (!/img/.test(html) && b.thumb_path) { const { data } = await sb.storage.from("keuangan").createSignedUrl(b.thumb_path, 3600); if (data?.signedUrl) html = `<img src="${data.signedUrl}" style="max-width:100%;border-radius:8px">` + html; }
+  const m = modal(`<h3>${esc(KEU_JENIS[b.jenis] ?? b.jenis)}</h3>${html}<button class="sec" id="bkX" style="margin-top:8px">Tutup</button>`); m.querySelector("#bkX").onclick = () => m.remove();
+}
+
+// ---------- halaman Keuangan ----------
+async function keuView(v) {
+  const dari = sessionStorage.getItem("keuDari") || awalBulan(), sampai = sessionStorage.getItem("keuSampai") || todayWIB(), adm = me?.role === "admin";
+  const antre = (await qAll()).filter((x) => x.kind === "keu" || x.kind === "keubukti");
+  v.innerHTML = `<div class="card"><h2>Keuangan lapangan</h2><p class="muted">Catat setiap uang keluar/masuk dengan foto nota, bukti transfer atau bukti pembayaran. Nota dipotong & dirapikan otomatis. Data ini hanya terlihat oleh admin lapangan dan admin kantor — tidak masuk Dashboard dan tidak terlihat client/verifier.</p>
+    <button id="kBaru">+ Catat transaksi</button>${antre.length ? `<p class="muted" style="margin-top:8px">⏳ ${antre.length} transaksi/bukti menunggu sinyal untuk dikirim.${antre.some((x) => x.error) ? ` Galat: ${esc(antre.find((x) => x.error).error)}` : ""}</p>` : ""}</div>
+    <div class="card"><div class="row" style="align-items:flex-end;flex-wrap:wrap">${pilihProyekKeu()}<div><label>Dari</label><input id="kD" type="date" value="${dari}"></div><div><label>Sampai</label><input id="kS" type="date" value="${sampai}"></div>
+      <div><label>Status</label><select id="kSt"><option value="">Semua</option>${Object.entries(KEU_STATUS).map(([k, [t]]) => `<option value="${k}" ${sessionStorage.getItem("keuSt") === k ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+      <button id="kGo" style="flex:0">Tampilkan</button></div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="sec" id="kXl" style="flex:0;white-space:nowrap">⬇ Unduh Excel (laporan + nota)</button><button class="sec" id="kDr" style="flex:0;white-space:nowrap">☁ Simpan rekap ke Google Drive</button></div>
+      <div id="kR" style="margin-top:10px">Memuat…</div></div>`;
+  $("#kBaru").onclick = () => keuForm(null, () => keuView(v));
+  $("#kGo").onclick = () => { sessionStorage.setItem("keuDari", $("#kD").value); sessionStorage.setItem("keuSampai", $("#kS").value); sessionStorage.setItem("keuSt", $("#kSt").value); if ($("#kp")) sessionStorage.setItem("keuProyek", $("#kp").value); keuView(v); };
+  if (!online()) return ($("#kR").innerHTML = `<p class="muted">Rekap perlu sinyal internet. Transaksi baru tetap bisa dicatat dan dikirim otomatis nanti.</p>`);
+  const proj = proyekKeu(), st = sessionStorage.getItem("keuSt") || "";
+  let q = sb.from("v_keu_transaksi").select("*").eq("project", proj).gte("tanggal", dari).lte("tanggal", sampai).order("tanggal").order("created_at"); if (st) q = q.eq("status", st);
+  const [{ data: R, error }, { data: pre }] = await Promise.all([q, sb.from("v_keu_transaksi").select("saldo").eq("project", proj).lt("tanggal", dari).order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(1)]);
+  if (error) return ($("#kR").innerHTML = `<p class="err">${esc(error.message)}</p>`);
+  const saldoAwal = +(pre?.[0]?.saldo ?? 0), rows = R ?? [];
+  const masuk = rows.filter((r) => r.arah === "MASUK").reduce((s, r) => s + +r.jumlah, 0), keluar = rows.filter((r) => r.arah === "KELUAR").reduce((s, r) => s + +r.jumlah, 0);
+  const perKat = {}; rows.filter((r) => r.arah === "KELUAR").forEach((r) => (perKat[r.kategori] = (perKat[r.kategori] ?? 0) + +r.jumlah));
+  const tanpaBukti = rows.filter((r) => r.arah === "KELUAR" && !r.bukti.length).length;
+  $("#kR").innerHTML = `<div class="row" style="flex-wrap:wrap;gap:8px">${[["Saldo awal", saldoAwal], ["Dana masuk", masuk], ["Pengeluaran", keluar], ["Saldo akhir", saldoAwal + masuk - keluar]].map(([t, n]) => `<div class="card" style="margin:0;flex:1;min-width:140px;padding:10px"><div class="muted">${t}</div><b style="font-size:17px">${fmtRp(n)}</b></div>`).join("")}</div>
+    ${tanpaBukti ? `<p class="err">${tanpaBukti} pengeluaran belum ada foto buktinya.</p>` : ""}
+    <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>Tanggal</th><th>Uraian</th><th>Kategori</th><th>Masuk</th><th>Keluar</th><th>Saldo</th><th>Bukti</th><th>Status</th><th></th></tr></thead><tbody>
+    ${rows.map((r) => { const [stT, stB, stF] = KEU_STATUS[r.status] ?? [r.status, "#eee", "#333"], saya = r.created_by === session.user.id, bisaUbah = adm || (saya && r.status !== "DISETUJUI");
+      return `<tr><td style="padding:4px 6px;white-space:nowrap">${esc(r.tanggal)}</td><td style="padding:4px 6px">${esc(r.uraian)}${r.pihak ? `<br><small class="muted">${esc(r.pihak)}${r.no_ref ? " · " + esc(r.no_ref) : ""}</small>` : ""}${r.catatan_admin ? `<br><small style="color:#8A1C12">Admin: ${esc(r.catatan_admin)}</small>` : ""}</td>
+        <td style="padding:4px 6px">${esc(r.kategori)}${r.rig ? `<br><small class="muted">${esc(r.rig)}</small>` : ""}</td><td style="padding:4px 6px;text-align:right;white-space:nowrap">${r.arah === "MASUK" ? fmtRp(r.jumlah) : ""}</td>
+        <td style="padding:4px 6px;text-align:right;white-space:nowrap">${r.arah === "KELUAR" ? fmtRp(r.jumlah) : ""}</td><td style="padding:4px 6px;text-align:right;white-space:nowrap">${fmtRp(r.saldo)}</td>
+        <td style="padding:4px 6px;white-space:nowrap">${r.bukti.map((b, i) => `<a href="#" data-bk="${r.id}|${i}">${b.jenis === "NOTA" ? "🧾" : b.jenis === "TRANSFER" ? "🏦" : "💳"}</a>`).join(" ") || `<span style="color:var(--red)">—</span>`}</td>
+        <td style="padding:4px 6px"><span class="pill" style="background:${stB};color:${stF}">${stT}</span>${r.diperiksa_oleh ? `<br><small class="muted">${esc(r.diperiksa_oleh)}</small>` : ""}</td>
+        <td style="padding:4px 6px;white-space:nowrap">${adm ? `<button class="sec" data-ok="${r.id}" style="padding:4px 8px">✓</button> <button class="sec" data-fix="${r.id}" style="padding:4px 8px">↩</button> ` : ""}${bisaUbah ? `<button class="sec" data-ed="${r.id}" style="padding:4px 8px">Ubah</button> <button class="sec" data-del="${r.id}" style="padding:4px 8px">✕</button>` : ""}</td></tr>`; }).join("") || `<tr><td colspan="9" style="padding:8px" class="muted">Belum ada transaksi pada periode ini.</td></tr>`}
+    </tbody></table></div>
+    ${Object.keys(perKat).length ? `<h3 style="margin-top:12px">Pengeluaran per kategori</h3><table>${Object.entries(perKat).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr><td style="padding:4px 8px">${esc(k)}</td><td style="padding:4px 8px;text-align:right">${fmtRp(n)}</td><td style="padding:4px 8px" class="muted">${((n / keluar) * 100).toFixed(0)}%</td></tr>`).join("")}</table>` : ""}
+    <p class="muted" style="margin-top:8px">🧾 nota · 🏦 bukti transfer · 💳 bukti pembayaran. ${adm ? "✓ = setujui, ↩ = minta perbaikan (dengan catatan)." : "Transaksi yang sudah disetujui admin tidak bisa diubah."}</p>`;
+  const cari = (id) => rows.find((r) => r.id === id);
+  $("#kR").querySelectorAll("[data-bk]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); const [id, i] = a.dataset.bk.split("|"); bukaBuktiKeu(cari(id).bukti[+i]); }));
+  $("#kR").querySelectorAll("[data-ed]").forEach((b) => (b.onclick = () => keuForm(cari(b.dataset.ed), () => keuView(v))));
+  $("#kR").querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { if (!confirm("Hapus transaksi ini dari laporan? (tetap tersimpan di arsip server)")) return;
+    const { error } = await sb.from("keu_transaksi").update({ dihapus_at: new Date().toISOString() }).eq("id", b.dataset.del); if (error) alert(error.message); keuView(v); }));
+  $("#kR").querySelectorAll("[data-ok]").forEach((b) => (b.onclick = async () => { const { error } = await sb.from("keu_transaksi").update({ status: "DISETUJUI", catatan_admin: null, diperiksa_by: session.user.id, diperiksa_at: new Date().toISOString() }).eq("id", b.dataset.ok); if (error) alert(error.message); keuView(v); }));
+  $("#kR").querySelectorAll("[data-fix]").forEach((b) => (b.onclick = async () => { const c = prompt("Apa yang perlu diperbaiki admin lapangan?"); if (!c) return;
+    const { error } = await sb.from("keu_transaksi").update({ status: "PERLU_PERBAIKAN", catatan_admin: c, diperiksa_by: session.user.id, diperiksa_at: new Date().toISOString() }).eq("id", b.dataset.fix); if (error) alert(error.message); keuView(v); }));
+  const buat = async (keDrive) => { const btn = keDrive ? $("#kDr") : $("#kXl"), t0 = btn.textContent; btn.disabled = true;
+    try { const { blob, nama } = await keuExcel(rows, { proj, dari, sampai, saldoAwal, onProg: (s) => (btn.textContent = s) });
+      if (keDrive) { const path = `${session.user.id}/${proj}/rekap_excel/${nama}`;
+        const up = await sb.storage.from("keuangan").upload(path, blob, { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: false }); if (up.error) throw new Error(up.error.message);
+        const { error } = await sb.from("keu_rekap_file").insert({ project: proj, dari, sampai, path, nama }); if (error) throw new Error(error.message);
+        toast("Rekap dikirim — tersalin ke Google Drive (folder Keuangan (internal)) dalam ±10 menit"); }
+      else { const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: nama }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+    } catch (e) { alert("Gagal membuat Excel: " + e.message); } finally { btn.disabled = false; btn.textContent = t0; } };
+  $("#kXl").onclick = () => buat(false); $("#kDr").onclick = () => buat(true);
+}
+// ---------- Excel: lembar 1 = laporan penggunaan uang (dengan link ke bukti), lembar 2 = foto nota/bukti tertempel ----------
+async function keuExcel(rows, o) {
+  await muatJS("vendor/exceljs.min.js", () => window.ExcelJS); const EJ = window.ExcelJS, wb = new EJ.Workbook(); wb.creator = "X-Terra"; wb.created = new Date();
+  const pjNama = JSON.parse(localStorage.getItem("projects") || "[]").find((p) => p.code === o.proj)?.nama ?? o.proj;
+  const L = wb.addWorksheet("Laporan", { views: [{ state: "frozen", ySplit: 6 }], pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } });
+  const Bk = wb.addWorksheet("Bukti");
+  // tautan antar-lembar lewat rumus HYPERLINK (terbaca di Excel, Excel HP dan LibreOffice)
+  const lnkDalam = (sh, sel, teks) => { const t = String(teks).replace(/"/g, "'").slice(0, 250); return { formula: `HYPERLINK("#'${sh}'!${sel}","${t}")`, result: t }; };
+  const hijau = { type: "pattern", pattern: "solid", fgColor: { argb: "FF12251E" } }, garis = { top: { style: "thin", color: { argb: "FFBFC8C2" } }, left: { style: "thin", color: { argb: "FFBFC8C2" } }, bottom: { style: "thin", color: { argb: "FFBFC8C2" } }, right: { style: "thin", color: { argb: "FFBFC8C2" } } };
+  L.columns = [6, 12, 40, 24, 24, 11, 18, 9, 16, 16, 17, 15, 16, 22].map((w) => ({ width: w }));
+  L.mergeCells("A1:N1"); L.getCell("A1").value = "LAPORAN PENGGUNAAN UANG LAPANGAN"; L.getCell("A1").font = { bold: true, size: 14 };
+  L.getCell("A2").value = `Proyek: ${pjNama}`; L.getCell("A3").value = `Periode: ${o.dari} s.d. ${o.sampai}`; L.getCell("A4").value = `Dibuat: ${new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} oleh ${me?.full_name ?? ""} (X-Terra)`;
+  const H = ["No", "Tanggal", "Uraian", "Kategori", "Toko / penerima / pengirim", "Cara bayar", "No. nota / ref", "Rig", "Masuk (Rp)", "Keluar (Rp)", "Saldo (Rp)", "Status", "Bukti (lembar Bukti)", "File asli (Google Drive)"];
+  const hr = L.getRow(6); H.forEach((t, i) => { const c = hr.getCell(i + 1); c.value = t; c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = hijau; c.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; c.border = garis; }); hr.height = 30;
+  const r0 = 7; L.getRow(r0).values = ["", "", "Saldo awal periode", "", "", "", "", "", "", "", o.saldoAwal]; L.getRow(r0).font = { italic: true };
+  // lembar Bukti: susun foto per transaksi, kembalikan baris tujuan untuk hyperlink
+  Bk.columns = Array.from({ length: 16 }, () => ({ width: 11 })); Bk.getCell("A1").value = "FOTO NOTA & BUKTI TRANSAKSI"; Bk.getCell("A1").font = { bold: true, size: 14 };
+  Bk.getCell("A2").value = `Proyek: ${pjNama} · Periode ${o.dari} s.d. ${o.sampai} · klik judul untuk kembali ke Laporan`;
+  let br = 4; const tujuan = {}, ambil = async (p) => { if (!p) return null; const { data } = await sb.storage.from("keuangan").download(p); if (!data) return null;
+    const bmp = await createImageBitmap(data).catch(() => null); const b64 = await new Promise((r) => { const f = new FileReader(); f.onload = () => r(String(f.result).split(",")[1]); f.readAsDataURL(data); }); return bmp ? { b64, w: bmp.width, h: bmp.height } : null; };
+  const adaB = rows.filter((r) => r.bukti.length); let nB = 0;
+  for (const [i, r] of rows.entries()) {
+    const rr = r0 + 1 + i, row = L.getRow(rr), driveUrl = r.bukti.find((b) => b.drive_url)?.drive_url ?? r.bukti.find((b) => b.drive_url_asli)?.drive_url_asli;
+    const [ty, tm, td] = r.tanggal.split("-").map(Number);
+    row.values = [i + 1, new Date(Date.UTC(ty, tm - 1, td)), r.uraian, r.kategori, r.pihak ?? "", r.metode, r.no_ref ?? "", r.rig ?? "", r.arah === "MASUK" ? +r.jumlah : null, r.arah === "KELUAR" ? +r.jumlah : null,
+      { formula: `K${rr - 1}+N(I${rr})-N(J${rr})` }, KEU_STATUS[r.status]?.[0] ?? r.status];
+    row.getCell(2).numFmt = "dd/mm/yyyy"; row.getCell(3).alignment = { wrapText: true, vertical: "top" };
+    if (r.bukti.length) { tujuan[r.id] = br;
+      row.getCell(13).value = lnkDalam("Bukti", `A${br}`, `Lihat ${r.bukti.length} bukti →`); row.getCell(13).font = { color: { argb: "FF1D4ED8" }, underline: true };
+      // judul blok bukti + tautan balik
+      Bk.mergeCells(`A${br}:P${br}`); const jc = Bk.getCell(`A${br}`);
+      jc.value = lnkDalam("Laporan", `A${rr}`, `No. ${i + 1} · ${r.tanggal} · ${r.uraian} · ${r.arah === "MASUK" ? "Masuk" : "Keluar"} ${fmtRp(r.jumlah)} · ${r.kategori}  (← kembali ke Laporan)`);
+      jc.font = { bold: true, color: { argb: "FF12251E" } }; jc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCEFE4" } };
+      let tinggiMaks = 0, kol = 0; const ket = br + 1;
+      for (const b of r.bukti) { o.onProg?.(`Menempel bukti ${++nB}…`);
+        const g = (await ambil(b.thumb_path)) ?? (await ambil(b.path)); const Wd = 330;
+        Bk.getCell(ket, kol + 1).value = b.drive_url || b.drive_url_asli ? { text: `${KEU_JENIS[b.jenis] ?? b.jenis} — buka di Drive`, hyperlink: b.drive_url || b.drive_url_asli } : KEU_JENIS[b.jenis] ?? b.jenis;
+        if (b.drive_url || b.drive_url_asli) Bk.getCell(ket, kol + 1).font = { color: { argb: "FF1D4ED8" }, underline: true };
+        if (g) { const hgt = Math.round((Wd * g.h) / g.w), id = wb.addImage({ base64: g.b64, extension: "jpeg" });
+          Bk.addImage(id, { tl: { col: kol, row: ket }, ext: { width: Wd, height: hgt }, editAs: "oneCell" }); tinggiMaks = Math.max(tinggiMaks, hgt); }
+        else { Bk.getCell(ket + 1, kol + 1).value = "(foto tidak tersedia di server; buka di Drive)"; tinggiMaks = Math.max(tinggiMaks, 40); }
+        kol += 5; }
+      br = ket + 1 + Math.ceil(tinggiMaks / 20) + 2; }
+    else if (r.arah === "KELUAR") { row.getCell(13).value = "BELUM ADA BUKTI"; row.getCell(13).font = { color: { argb: "FFB91C1C" }, bold: true }; }
+    if (driveUrl) { row.getCell(14).value = { text: "Buka di Drive", hyperlink: driveUrl }; row.getCell(14).font = { color: { argb: "FF1D4ED8" }, underline: true }; }
+    else if (r.bukti.length) row.getCell(14).value = "menunggu salinan Drive (±10 menit)";
+  }
+  const rt = r0 + rows.length + 1; L.getRow(rt).values = ["", "", "TOTAL PERIODE", "", "", "", "", "", { formula: `SUM(I${r0 + 1}:I${rt - 1})` }, { formula: `SUM(J${r0 + 1}:J${rt - 1})` }, { formula: `K${rt - 1}` }];
+  L.getRow(rt).font = { bold: true }; L.getRow(rt).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEEF3F0" } };
+  for (let r = 6; r <= rt; r++) for (let c = 1; c <= 14; c++) { const cell = L.getRow(r).getCell(c); cell.border = garis; if (c >= 9 && c <= 11 && r > 6) cell.numFmt = '#,##0;[Red]-#,##0'; }
+  // ringkasan per kategori (rumus, ikut berubah bila angka disunting)
+  let rk = rt + 2; L.getCell(`C${rk}`).value = "Pengeluaran per kategori"; L.getCell(`C${rk}`).font = { bold: true };
+  const kats = [...new Set(rows.filter((r) => r.arah === "KELUAR").map((r) => r.kategori))];
+  for (const k of kats) { rk++; L.getCell(`C${rk}`).value = k; L.getCell(`J${rk}`).value = { formula: `SUMIF(D${r0 + 1}:D${rt - 1},C${rk},J${r0 + 1}:J${rt - 1})` }; L.getCell(`J${rk}`).numFmt = "#,##0"; }
+  L.autoFilter = { from: "A6", to: `N${rt - 1}` };
+  o.onProg?.("Menyimpan Excel…");
+  const buf = await wb.xlsx.writeBuffer(), stamp = new Date().toLocaleString("sv-SE", { timeZone: "Asia/Jakarta" }).replace(/[-: ]/g, "").slice(0, 12);
+  return { blob: new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), nama: `Rekap_Keuangan_${o.proj}_${o.dari}_sd_${o.sampai}_${stamp}.xlsx`, adaBukti: adaB.length };
+}
+
+// ---------- Absensi tim lapangan (foto berangkat & pulang + nama), diuji silang dengan DDR dan Progres bor ----------
+const kunciAbsl = (proj, tgl, sh, rig) => `absl|${proj}|${tgl}|${sh}|${rig}`;
+async function syncAbsl(it) {
+  try { const base = `${session.user.id}/${it.row.project}/absensi/${it.row.tanggal.slice(0, 7)}`, row = { ...it.row, client_uuid: it.client_uuid };
+    for (const k of ["berangkat", "pulang"]) if (it[k]) { const p = `${base}/${it.row.tanggal}_${it.row.shift}_${it.row.rig}_${k}_${it.client_uuid.slice(0, 8)}.jpg`.replace(/\s+/g, "");
+      const up = await sb.storage.from("keuangan").upload(p, it[k], { contentType: "image/jpeg", upsert: false }); if (up.error && !/exists|Duplicate/i.test(up.error.message)) throw new Error(up.error.message); row[`foto_${k}`] = p; }
+    const r = await sb.from("absensi_lapangan").upsert(row, { onConflict: "project,tanggal,shift,rig" }); if (r.error) throw new Error(r.error.message); await qDel(it.client_uuid);
+  } catch (e) { it.error = e.message; await qPut(it); }
+}
+async function abslView(v) {
+  const proj = proyekKeu(), pj = JSON.parse(localStorage.getItem("projects") || "[]").find((p) => p.code === proj), rigs = pj?.rigs?.length ? pj.rigs : myTugas?.rigs ?? [];
+  const sNow = shiftDari(new Date()), dari = sessionStorage.getItem("abslDari") || new Date(Date.parse(todayWIB()) - 6 * 864e5).toISOString().slice(0, 10), sampai = sessionStorage.getItem("abslSampai") || todayWIB();
+  v.innerHTML = `<div class="card"><h2>Absensi tim lapangan</h2><p class="muted">Foto bersama tim <b>sebelum berangkat</b> dan <b>setelah pulang</b>, lalu isi nama-namanya (sama seperti foto crew di DDR). Jam dan GPS tercetak di foto. Daftar ini diuji silang dengan crew DDR dan Masuk/Keluar shift di Progres bor. Hanya untuk internal perusahaan.</p>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end">${pilihProyekKeu("ap")}<div><label>Tanggal shift</label><input id="aTg" type="date" value="${sNow.tanggal}"></div><div><label>Shift</label><select id="aSh"><option ${sNow.shift === "PAGI" ? "selected" : ""}>PAGI</option><option ${sNow.shift === "MALAM" ? "selected" : ""}>MALAM</option></select></div>
+      <div><label>Rig</label><select id="aRg">${rigs.map((r) => `<option ${localStorage.getItem("abslRig") === r ? "selected" : ""}>${esc(r)}</option>`).join("") || `<option value="">(proyek tanpa rig)</option>`}</select></div></div>
+    <div id="aSt" class="muted" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:8px"><button id="aB">📷 Foto tim BERANGKAT</button><button id="aP">📷 Foto tim PULANG</button></div>
+    <div id="aFt" style="margin-top:8px"></div><h3 style="margin:10px 0 4px">Nama tim</h3><div id="aNm"></div>
+    <div class="row" style="margin-top:10px"><button id="aOk">Simpan absensi</button></div><div id="aE" class="err"></div></div>
+    <div class="card"><h3>Uji silang dengan DDR & Progres bor</h3><div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Dari</label><input id="aD" type="date" value="${dari}"></div><div><label>Sampai</label><input id="aS" type="date" value="${sampai}"></div><button id="aGo" style="flex:0">Tampilkan</button><button class="sec" id="aXl" style="flex:0;white-space:nowrap">⬇ Excel</button></div><div id="aU" style="margin-top:8px">Memuat…</div></div>`;
+  if ($("#ap")) $("#ap").onchange = () => { sessionStorage.setItem("keuProyek", $("#ap").value); abslView(v); };
+  let foto = { berangkat: null, pulang: null }, ada = null;
+  const kunci = () => kunciAbsl(proyekKeu(), $("#aTg").value, $("#aSh").value, $("#aRg").value);
+  const muat = async () => { localStorage.setItem("abslRig", $("#aRg").value); foto = { berangkat: null, pulang: null }; $("#aFt").innerHTML = "";
+    ada = JSON.parse(localStorage.getItem(kunci()) || "null");
+    if (online()) { const { data } = await sb.from("absensi_lapangan").select("*").eq("project", proyekKeu()).eq("tanggal", $("#aTg").value).eq("shift", $("#aSh").value).eq("rig", $("#aRg").value).maybeSingle(); if (data) ada = { ...ada, ...data }; }
+    $("#aSt").innerHTML = ada ? `Sudah tercatat: berangkat ${ada.foto_berangkat_at ? "✓ " + fmtT(ada.foto_berangkat_at) : "—"} · pulang ${ada.foto_pulang_at ? "✓ " + fmtT(ada.foto_pulang_at) : "—"} · ${(ada.personil ?? []).length} nama` : "Belum ada absensi untuk rig/tanggal/shift ini.";
+    localStorage.setItem("rig", $("#aRg").value);
+    personilEditor($("#aNm"), (ada?.personil?.length ? ada.personil : resmiDi($("#aRg").value).map((p) => ({ nama: p.nama, jabatan: p.jabatan }))).map((x) => ({ ...x }))); };
+  ["#aTg", "#aSh", "#aRg"].forEach((s) => ($(s).onchange = muat)); await muat();
+  const ambil = async (k) => { const f = await pilihFile(true); if (!f) return; const pos = await Promise.race([getPos(), new Promise((r) => setTimeout(() => r(null), 8000))]), t = new Date();
+    const blob = await stampPhoto(f, [`${pj?.nama ?? proyekKeu()} · ${$("#aRg").value} · ${$("#aTg").value} ${$("#aSh").value}`, `TIM ${k.toUpperCase()} · ${fmtT(t)} WIB`,
+      pos ? `GPS ${pos.lat.toFixed(6)}, ${pos.lon.toFixed(6)} (±${pos.acc} m)` : "GPS tidak tersedia", `Admin lapangan: ${me?.full_name ?? ""}`]);
+    foto[k] = { blob, t: t.toISOString(), pos }; $("#aFt").innerHTML = Object.entries(foto).filter(([, x]) => x).map(([kk, x]) => `<div style="display:inline-block;margin:4px;text-align:center"><img src="${URL.createObjectURL(x.blob)}" style="height:110px;border-radius:8px"><br><small>${kk} ${fmtT(x.t)}</small></div>`).join(""); };
+  $("#aB").onclick = () => ambil("berangkat"); $("#aP").onclick = () => ambil("pulang");
+  $("#aOk").onclick = async () => { const L = ambilPersonil($("#aNm")), e = $("#aE"); e.textContent = "";
+    if (!$("#aRg").value) return (e.textContent = "Pilih rig."); if (!L.length) return (e.textContent = "Isi minimal satu nama.");
+    if (!foto.berangkat && !foto.pulang && !ada) return (e.textContent = "Ambil foto tim berangkat dulu.");
+    const row = { project: proyekKeu(), tanggal: $("#aTg").value, shift: $("#aSh").value, rig: $("#aRg").value, personil: L };
+    if (foto.berangkat) Object.assign(row, { foto_berangkat_at: foto.berangkat.t, lat_berangkat: foto.berangkat.pos?.lat ?? null, lon_berangkat: foto.berangkat.pos?.lon ?? null });
+    if (foto.pulang) Object.assign(row, { foto_pulang_at: foto.pulang.t, lat_pulang: foto.pulang.pos?.lat ?? null, lon_pulang: foto.pulang.pos?.lon ?? null });
+    await qPut({ client_uuid: crypto.randomUUID(), kind: "absl", row, berangkat: foto.berangkat?.blob ?? null, pulang: foto.pulang?.blob ?? null });
+    localStorage.setItem(kunci(), JSON.stringify({ ...(ada ?? {}), ...row, foto_berangkat_at: row.foto_berangkat_at ?? ada?.foto_berangkat_at, foto_pulang_at: row.foto_pulang_at ?? ada?.foto_pulang_at }));
+    simpanPersonilLokal($("#aRg").value, new Date(), "X", L);
+    toast(online() ? "Absensi tersimpan — mengirim…" : "Absensi tersimpan di HP — terkirim saat ada sinyal"); await sync(); abslView(v); };
+  $("#aGo").onclick = () => { sessionStorage.setItem("abslDari", $("#aD").value); sessionStorage.setItem("abslSampai", $("#aS").value); abslView(v); };
+  if (!online()) return ($("#aU").innerHTML = `<p class="muted">Uji silang perlu sinyal internet.</p>`);
+  const { data: U, error } = await sb.from("v_absensi_lapangan_cek").select("*").eq("project", proj).gte("tanggal", dari).lte("tanggal", sampai).order("tanggal", { ascending: false }).order("shift").order("rig").order("nama");
+  if (error) return ($("#aU").innerHTML = `<p class="err">${esc(error.message)}</p>`);
+  const grup = {}; (U ?? []).forEach((r) => (grup[`${r.tanggal}|${r.shift}|${r.rig}`] ??= []).push(r));
+  const warna = { COCOK: "#0F4F35", "TIDAK ADA DI ABSENSI ADMIN": "#8A1C12", "TIDAK ADA DI DDR / PROGRES BOR": "#B26B00", "ABSENSI ADMIN BELUM DIISI": "#6b7280" };
+  const jam = (t) => (t ? String(t).slice(11, 16) : "—"), cek = (b) => (b ? "✓" : "—");
+  $("#aU").innerHTML = Object.entries(grup).map(([k, L]) => { const [t, sh, rg] = k.split("|"), x = L[0], beda = L.filter((r) => r.status !== "COCOK").length;
+    return `<div style="border:1px solid #dde3dc;border-radius:10px;padding:8px;margin:6px 0"><b>${esc(t)} · ${sh === "PAGI" ? "Day" : "Night"} · ${esc(rg)}</b> <span class="muted">· berangkat ${jam(x.jam_berangkat)} / pulang ${jam(x.jam_pulang)} · DDR datang ${jam(x.ddr_jam_datang)} / pulang ${jam(x.ddr_jam_pulang)}</span>
+      ${beda ? `<span class="pill" style="background:#F6C9C3;color:#8A1C12;margin-left:6px">${beda} tidak cocok</span>` : `<span class="pill" style="background:#DCEFE4;color:#0F4F35;margin-left:6px">cocok semua</span>`}
+      <table style="width:100%;margin-top:4px"><tr><th>Nama</th><th>Jabatan</th><th>Absensi admin</th><th>DDR</th><th>Progres bor</th><th>Status</th></tr>${L.map((r) => `<tr><td style="padding:3px 6px">${esc(r.nama)}</td><td style="padding:3px 6px">${esc(r.jabatan ?? "")}</td><td style="padding:3px 6px;text-align:center">${cek(r.di_absensi_admin)}</td><td style="padding:3px 6px;text-align:center">${cek(r.di_ddr)}</td><td style="padding:3px 6px;text-align:center">${cek(r.di_progres)}</td><td style="padding:3px 6px;color:${warna[r.status] ?? "#333"};font-weight:600">${esc(r.status)}</td></tr>`).join("")}</table></div>`; }).join("") || `<p class="muted">Belum ada data pada periode ini.</p>`;
+  $("#aXl").onclick = async () => { const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
+    const { data: A } = await sb.from("absensi_lapangan").select("*").eq("project", proj).gte("tanggal", dari).lte("tanggal", sampai).order("tanggal");
+    X.utils.book_append_sheet(wb, X.utils.json_to_sheet((U ?? []).map((r) => ({ Tanggal: r.tanggal, Shift: r.shift, Rig: r.rig, Nama: r.nama, Jabatan: r.jabatan, "Absensi admin": r.di_absensi_admin ? "Ya" : "Tidak", DDR: r.di_ddr ? "Ya" : "Tidak",
+      "Progres bor": r.di_progres ? "Ya" : "Tidak", Status: r.status, "Jam berangkat": jam(r.jam_berangkat), "Jam pulang": jam(r.jam_pulang), "DDR jam datang": jam(r.ddr_jam_datang), "DDR jam pulang": jam(r.ddr_jam_pulang) }))), "Uji silang");
+    X.utils.book_append_sheet(wb, X.utils.json_to_sheet((A ?? []).flatMap((a) => (a.personil ?? []).map((p, i) => ({ Tanggal: a.tanggal, Shift: a.shift, Rig: a.rig, No: i + 1, Nama: p.nama, Jabatan: p.jabatan,
+      "Foto berangkat": a.foto_berangkat_at ? fmtT(a.foto_berangkat_at) : "", "Foto pulang": a.foto_pulang_at ? fmtT(a.foto_pulang_at) : "" })))), "Absensi admin");
+    X.writeFile(wb, `Absensi_Tim_Lapangan_${proj}_${dari}_sd_${sampai}.xlsx`); };
+}

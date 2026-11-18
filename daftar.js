@@ -17,13 +17,13 @@ sb.rpc("daftar_proyek").then(({ data }) => {
   isiRig();
 });
 $("#pj").onchange = isiRig;
-const aturPeran = () => { const kl = $("#rl").value === "client"; ["#rgLbl", "#rgBox", "#rgTip"].forEach((id) => ($(id).style.display = kl ? "none" : "")); isiRig(); };
+const aturPeran = () => { const kl = ["client", "admin_lapangan"].includes($("#rl").value); ["#rgLbl", "#rgBox", "#rgTip"].forEach((id) => ($(id).style.display = kl ? "none" : "")); isiRig(); };
 $("#rl").addEventListener("change", aturPeran); aturPeran();
 $("#go").onclick = async () => {
   const v = (id) => $(id).value.trim();
   const d = { full_name: v("#fn"), phone: v("#ph"), company: v("#co"), position: v("#po"), requested_role: $("#rl").value, reason: v("#rs") };
   if (PJ.length && !$("#pj").value) return ($("#e").textContent = "Pilih nama proyek tempat Anda bertugas. Bila proyek belum ada di daftar, hubungi admin.");
-  if ($("#pj").value) { d.project = $("#pj").value; d.rigs = $("#rl").value === "client" ? [] : [...document.querySelectorAll('[name="rg"]:checked')].map((x) => x.value); }
+  if ($("#pj").value) { d.project = $("#pj").value; d.rigs = ["client", "admin_lapangan"].includes($("#rl").value) ? [] : [...document.querySelectorAll('[name="rg"]:checked')].map((x) => x.value); }
   const email = v("#em").toLowerCase(), pw = $("#pw").value;
   if (!d.full_name || !email || !d.phone || !d.company || !d.position) return ($("#e").textContent = "Lengkapi semua kolom bertanda *.");
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return ($("#e").textContent = "Format email tidak benar.");
