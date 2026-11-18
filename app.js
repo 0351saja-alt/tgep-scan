@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.15";
+const APP_VERSION = "2026-11-18.16";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -711,10 +711,28 @@ async function syncProg(it) {
   if (ins.error) { it.error = ins.error.message; await qPut(it); return; }
   await qDel(it.client_uuid);
 }
+// Penampil foto nota: cubit dua jari / tombol + − untuk memperbesar, geser untuk melihat bagian lain.
+function lihatZoom(blob) {
+  const u = URL.createObjectURL(blob), v = document.createElement("div");
+  v.style.cssText = "position:fixed;inset:0;z-index:70;background:#000;display:flex;flex-direction:column";
+  v.innerHTML = `<div style="flex:1;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y pinch-zoom" id="zW"><img id="zI" src="${u}" style="display:block;width:100%;margin:auto"></div>
+    <div style="display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:#12251E">
+    <button class="sec" id="zK" style="flex:1">−</button><button class="sec" id="zP" style="flex:1">＋</button><button class="sec" id="zR" style="flex:1">Pas layar</button><button id="zX" style="flex:1.4">Tutup</button></div>`;
+  document.body.appendChild(v);
+  let k = 1; const I = v.querySelector("#zI"), set = (x) => { k = Math.min(5, Math.max(1, x)); I.style.width = `${k * 100}%`; };
+  v.querySelector("#zP").onclick = () => set(k * 1.5); v.querySelector("#zK").onclick = () => set(k / 1.5); v.querySelector("#zR").onclick = () => set(1);
+  let d0 = 0, k0 = 1; const W = v.querySelector("#zW");
+  W.addEventListener("touchstart", (e) => { if (e.touches.length === 2) { d0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); k0 = k; } }, { passive: true });
+  W.addEventListener("touchmove", (e) => { if (e.touches.length === 2 && d0) { e.preventDefault(); set(k0 * Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) / d0); } }, { passive: false });
+  W.addEventListener("touchend", () => { d0 = 0; });
+  v.querySelector("#zX").onclick = () => { v.remove(); URL.revokeObjectURL(u); };
+}
 function modal(html) {
   const m = document.createElement("div");
-  m.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:flex-end;justify-content:center";
-  m.innerHTML = `<div class="card" style="width:min(560px,100%);max-height:92vh;overflow:auto;margin:0;border-radius:16px 16px 0 0">${html}</div>`;
+  // Lapisan luar yang menggulir (bukan kartu di dalamnya): di HP form panjang tetap bisa digeser sampai tombol paling bawah,
+  // juga saat keyboard terbuka atau halaman di-zoom (cubit dua jari tetap diizinkan).
+  m.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;flex-direction:column;align-items:center;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-x pan-y pinch-zoom";
+  m.innerHTML = `<div class="card" style="width:min(560px,100%);margin:auto 0 0;padding-bottom:calc(14px + env(safe-area-inset-bottom));border-radius:16px 16px 0 0;flex:none">${html}</div>`;
   document.body.appendChild(m); return m;
 }
 // ---------- Personil hadir per shift (dicatat saat Masuk / Keluar shift di Progres bor) ----------
@@ -3765,7 +3783,8 @@ const blobB64 = (b) => new Promise((r) => { const f = new FileReader(); f.onload
 async function bacaNota(blob) {
   const c = kecilkan(await keKanvas(blob, 2000), 2000), b = await kanvasBlob(c, 0.85);
   const { data, error } = await sb.functions.invoke("baca-nota", { body: { image_b64: await blobB64(b), mime: "image/jpeg", rekening: localStorage.getItem("rekKas") || "" } });
-  if (error) { let m = error.message; try { m = (await error.context?.json())?.error ?? m; } catch {} throw new Error(m); }
+  if (error) { let m = error.message; try { const j = await error.context?.json(); m = j?.error ?? m;
+    if (j?.info?.pesan) m += ` [Rincian: ${j.info.secret ?? ""} HTTP ${j.info.status} — ${String(j.info.pesan).replace(/[{}"]/g, " ").slice(0, 160)}]`; } catch {} throw new Error(m); }
   if (!data?.ok) throw new Error(data?.error ?? "gagal membaca");
   return { ...data.hasil, peringatan: data.peringatan ?? [], model: data.model };
 }
@@ -3803,14 +3822,14 @@ async function keuForm(trx = null, selesai = () => {}, pre = null) {
     <label>Uraian</label><input id="kUr" placeholder="mis. Solar 40 L untuk rig 1" value="${esc(v0.uraian)}">
     <div class="row"><div><label id="kPhL">Toko / penerima${tanda("pihak")}</label><input id="kPh" value="${esc(v0.pihak)}" style="${gaya("pihak")}"></div><div><label>Cara bayar</label><select id="kMt">${["TUNAI", "TRANSFER", "QRIS", "LAINNYA"].map((x) => `<option ${v0.metode === x ? "selected" : ""}>${x}</option>`).join("")}</select></div></div>
     <div class="row"><div><label>No. nota / ref. transfer</label><input id="kRf" value="${esc(v0.no_ref)}"></div><div><label>Rig (opsional)</label><select id="kRg"><option value="">—</option>${rigs.map((r) => `<option ${v0.rig === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></div></div>
-    <div id="kE" class="err"></div><div class="row" style="margin-top:10px"><button id="kOk">Simpan</button><button class="sec" id="kX">Batal</button></div>`);
+    <div id="kE" class="err"></div><div class="row" style="margin-top:10px;position:sticky;bottom:0;background:inherit;padding:8px 0;z-index:2"><button id="kOk">Simpan</button><button class="sec" id="kX">Batal</button></div>`);
   const isiKat = () => { const a = m.querySelector('[name="kArah"]:checked').value, L = KEU_KAT[a], cur = m.querySelector("#kKt").value || v0.kategori;
     m.querySelector("#kKt").innerHTML = L.map((x) => `<option ${cur === x ? "selected" : ""}>${esc(x)}</option>`).join(""); m.querySelector("#kPhL").childNodes[0].textContent = a === "MASUK" ? "Dari (pengirim)" : "Toko / penerima"; };
   m.querySelectorAll('[name="kArah"]').forEach((r) => (r.onchange = isiKat)); isiKat();
   const jm = m.querySelector("#kJm"); jm.oninput = () => { const n = jm.value.replace(/\D/g, ""); jm.value = n ? Number(n).toLocaleString("id-ID") : ""; };
   const tampilFoto = () => { const F = m.querySelector("#kFt");
-    if (foto) { const u = URL.createObjectURL(foto.thumb); F.innerHTML = `<div style="text-align:center"><a href="#" id="kZm"><img src="${u}" style="max-height:34vh;max-width:100%;border-radius:8px;border:1px solid #ccc"></a><br>${bolehFoto ? `<button class="sec" id="kGf" style="width:auto;padding:4px 10px;margin-top:4px">Ganti foto</button>` : ""}</div>`;
-      F.querySelector("#kZm").onclick = (e) => { e.preventDefault(); const z = modal(`<img src="${URL.createObjectURL(foto.potong)}" style="width:100%"><button class="sec" style="margin-top:6px">Tutup</button>`); z.querySelector("button").onclick = () => z.remove(); }; }
+    if (foto) { const u = URL.createObjectURL(foto.thumb); F.innerHTML = `<div style="text-align:center"><a href="#" id="kZm"><img src="${u}" style="max-height:24vh;max-width:100%;border-radius:8px;border:1px solid #ccc"></a><br>${bolehFoto ? `<button class="sec" id="kGf" style="width:auto;padding:4px 10px;margin-top:4px">Ganti foto</button>` : ""}</div>`;
+      F.querySelector("#kZm").onclick = (e) => { e.preventDefault(); lihatZoom(foto.potong); }; }
     else if (bolehFoto) F.innerHTML = `<div class="row"><button class="sec" id="kGf" style="flex:1">📷 Foto nota / bukti</button><button class="sec" id="kGg" style="flex:1">🖼 Dari galeri</button></div>`;
     else F.innerHTML = `<p class="muted">Bukti sudah ada (${trx.bukti.length}).</p>`;
     const ganti = async (kamera) => { const f = await pilihFile(kamera); if (!f) return; const h = await potongNota(f, "Potong nota / bukti"); if (h) { foto = h; tampilFoto(); } };
