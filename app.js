@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.11";
+const APP_VERSION = "2026-11-18.12";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1529,6 +1529,60 @@ async function profilModal(bhid) {
   m.querySelector("#pfx").innerHTML = profilSVG(data, { h: 260 }) + `<table class="tbl" style="margin-top:8px"><tr><th>Zona</th><th>Tebal</th></tr>${ring}</table>`;
   cekZonaBaru(true);
 }
+// ---------- Citra drone + lapisan peta (dipakai peta statis, blok 3D, 3D bawah permukaan, Dashboard, laporan & unduhan) ----------
+const _imgCache = {}, _tileList = {};
+const muatGambar = (src) => (_imgCache[src] ??= new Promise((ok) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => ok(im); im.onerror = () => ok(null); im.src = src; }));
+async function daftarCitra() { try { const pj = myTugas?.project; return (await (await fetch("peta/citra/index.json")).json()).filter((c) => !c.project || !pj || c.project === pj); } catch { return []; } }
+async function daftarLapisan() {
+  let srv = JSON.parse(localStorage.getItem("petaLayerSrv") || "[]");
+  if (online()) try { const { data } = await sb.from("peta_layer").select("id,nama,warna,geojson,aktif").eq("aktif", true).order("created_at"); if (data) { srv = data; try { localStorage.setItem("petaLayerSrv", JSON.stringify(data)); } catch {} } } catch {}
+  return [...srv, ...JSON.parse(localStorage.getItem("petaLokal") || "[]")].filter((l) => l?.geojson);
+}
+const fiturGeo = (gj) => (gj?.type === "FeatureCollection" ? gj.features : gj?.type === "Feature" ? [gj] : gj?.type ? [{ geometry: gj }] : []).filter((f) => f?.geometry);
+// gambar lapisan (titik/garis/poligon) di kanvas; X/Y = lon/lat → piksel
+function kanvasLapisan(g, LAY, X, Y, lebar = 2) {
+  for (const ly of LAY) for (const f of fiturGeo(ly.geojson)) { const T = f.geometry.type, C = f.geometry.coordinates, w = ly.warna || "#00b7ff";
+    const ring = (r) => r.forEach((p, i) => (i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))));
+    g.strokeStyle = w; g.fillStyle = w; g.lineWidth = lebar; g.lineJoin = "round";
+    if (T === "Polygon" || T === "MultiPolygon") { g.beginPath(); (T === "Polygon" ? [C] : C).forEach((pl) => pl.forEach((r) => { ring(r); g.closePath(); })); g.globalAlpha = 0.12; g.fill("evenodd"); g.globalAlpha = 1; g.stroke(); }
+    else if (T === "LineString" || T === "MultiLineString") { g.beginPath(); (T === "LineString" ? [C] : C).forEach(ring); g.stroke(); }
+    else if (T === "Point" || T === "MultiPoint") (T === "Point" ? [C] : C).forEach((q) => { g.beginPath(); g.arc(X(q[0]), Y(q[1]), lebar * 2.2, 0, 7); g.fill(); g.lineWidth = Math.max(1, lebar * 0.5); g.strokeStyle = "#111"; g.stroke(); }); }
+}
+// lapisan sebagai SVG (untuk peta statis); P = [lon,lat] → "x,y"
+function svgLapisan(LAY, P, R = 4) {
+  let g = "";
+  for (const ly of LAY) for (const f of fiturGeo(ly.geojson)) { const T = f.geometry.type, C = f.geometry.coordinates, w = esc(ly.warna || "#00b7ff"), rg = (r) => r.map(P).join(" ");
+    if (T === "Polygon" || T === "MultiPolygon") g += `<path d="${(T === "Polygon" ? [C] : C).map((pl) => pl.map((r) => "M" + rg(r).replace(/ /g, " L") + " Z").join(" ")).join(" ")}" fill="${w}" fill-opacity=".12" fill-rule="evenodd" stroke="${w}" stroke-width="2"/>`;
+    else if (T === "LineString" || T === "MultiLineString") (T === "LineString" ? [C] : C).forEach((l) => (g += `<polyline points="${rg(l)}" fill="none" stroke="${w}" stroke-width="2"/>`));
+    else if (T === "Point" || T === "MultiPoint") (T === "Point" ? [C] : C).forEach((q) => { const [x, y] = P(q).split(","); g += `<circle cx="${x}" cy="${y}" r="${R}" fill="${w}" stroke="#111"/>`; }); }
+  return g;
+}
+// Kanvas citra drone terbaru (ortofoto tile + citra gambar) untuk kotak lon/lat bb, utara di atas; transparan di luar citra
+async function kanvasCitra(bb, Wp, Hp, o = {}) {
+  const [x0, y0, x1, y1] = bb, c = document.createElement("canvas"); c.width = Math.max(1, Math.round(Wp)); c.height = Math.max(1, Math.round(Hp)); const g = c.getContext("2d");
+  const X = (lon) => ((lon - x0) / (x1 - x0)) * c.width, Y = (lat) => ((y1 - lat) / (y1 - y0)) * c.height, cosl = Math.cos((((y0 + y1) / 2) * Math.PI) / 180);
+  c.nama = [];
+  for (const ct of o.citra === false ? [] : await daftarCitra()) {
+    const b = ct.bbox; if (b[2] < x0 || b[0] > x1 || b[3] < y0 || b[1] > y1) continue;
+    if (ct.tiles) {
+      const ax0 = Math.max(x0, b[0]), ax1 = Math.min(x1, b[2]), ay0 = Math.max(y0, b[1]), ay1 = Math.min(y1, b[3]), mpp = ((x1 - x0) * 111320 * cosl) / c.width;
+      if (ct.daftar && !_tileList[ct.daftar]) _tileList[ct.daftar] = fetch(ct.daftar).then((r) => r.json()).then((a) => new Set(a)).catch(() => null);
+      const ada = ct.daftar ? await _tileList[ct.daftar] : null;
+      let z = Math.max(ct.minzoom ?? 13, Math.min(ct.maxzoom ?? 18, Math.ceil(Math.log2((156543.03 * cosl) / mpp)))), T = [], n, tx, ty;
+      for (; z >= (ct.minzoom ?? 13); z--) { n = 2 ** z; tx = (lon) => ((lon + 180) / 360) * n; ty = (lat) => { const r = (lat * Math.PI) / 180; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n; };
+        T = []; for (let x = Math.floor(tx(ax0)); x <= Math.floor(tx(ax1)); x++) for (let y = Math.floor(ty(ay1)); y <= Math.floor(ty(ay0)); y++) { const u = ct.tiles.replace("{z}", z).replace("{x}", x).replace("{y}", y); if (!ada || ada.has(u)) T.push([x, y, u]); }
+        if (T.length <= (o.maksTile ?? 500)) break; }
+      const lon = (x) => (x / n) * 360 - 180, lat = (y) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI;
+      const ims = await Promise.all(T.map((t) => muatGambar(t[2]))); let k2 = 0;
+      T.forEach(([x, y], k) => { const im = ims[k]; if (!im) return; const px = X(lon(x)), py = Y(lat(y)); g.drawImage(im, px, py, X(lon(x + 1)) - px + 0.6, Y(lat(y + 1)) - py + 0.6); k2++; });
+      if (k2) c.nama.push(ct.nama);
+    } else { const im = await muatGambar(ct.file); if (im) { g.drawImage(im, X(b[0]), Y(b[3]), X(b[2]) - X(b[0]), Y(b[1]) - Y(b[3])); c.nama.push(ct.nama); } }
+  }
+  if (o.lapisan) { const LAY = await daftarLapisan(); kanvasLapisan(g, LAY, X, Y, o.lebar ?? Math.max(2, c.width / 700)); c.lapisan = LAY.map((l) => l.nama); }
+  if (o.iup) { const Wl = JSON.parse(localStorage.getItem("wilayah") || "[]"); g.strokeStyle = "#ff2d2d"; g.lineWidth = o.lebar ?? Math.max(2, c.width / 700);
+    for (const w of Wl) if ((w.titik ?? []).length) { g.beginPath(); w.titik.forEach((t, i) => (i ? g.lineTo(X(t.lon), Y(t.lat)) : g.moveTo(X(t.lon), Y(t.lat)))); g.closePath(); g.stroke(); } }
+  return c;
+}
 // ---------- Peta pemboran statis (SVG) untuk laporan/PDF ----------
 let _konturCache = null, _elevCache = null;
 async function petaSVG(L, o = {}) {
@@ -1553,6 +1607,12 @@ async function petaSVG(L, o = {}) {
     for (const f of _konturCache.features) { const c = f.geometry.coordinates; if (!c.some(inBox)) continue; const idx = f.properties.i === 1;
       g += `<polyline points="${c.map(P).join(" ")}" fill="none" stroke="${idx ? "#6b4a2b" : "#9a7b5c"}" stroke-width="${idx ? 0.9 : 0.4}" opacity=".7"/>`;
       if (idx) { const mid = c[Math.floor(c.length / 2)]; if (inBox(mid)) g += `<text x="${X(mid[0])}" y="${Y(mid[1])}" font-size="8" fill="#6b4a2b" stroke="#fff" stroke-width="2" paint-order="stroke">${f.properties.z}</text>`; } }
+  } catch {}
+  let catCitra = "";
+  try { // citra drone terbaru (ortofoto) di atas latar elevasi, lalu semua lapisan peta
+    const kc = await kanvasCitra([x0, y0, x1, y1], W * 1.6, H * 1.6, { maksTile: 220 });
+    if (kc.nama.length) { g += `<image href="${kc.toDataURL("image/png")}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none"/>`; catCitra = ` · citra: ${kc.nama.map(esc).join(", ")}`; }
+    const LAY = await daftarLapisan(); if (LAY.length) { g += svgLapisan(LAY, P); catCitra += ` · lapisan: ${LAY.map((l) => esc(l.nama)).join(", ")}`; }
   } catch {}
   for (const w of Wl) if ((w.titik ?? []).length) g += `<polygon points="${w.titik.map((t) => P([t.lon, t.lat])).join(" ")}" fill="none" stroke="#d00" stroke-width="2" stroke-dasharray="7 4"/>`;
   if (o.grafik) { // grafik per lubang menempel di lokasinya (kolom zona, atau batang kedalaman vs rencana)
@@ -1596,7 +1656,7 @@ async function petaSVG(L, o = {}) {
   const leg = [["RENCANA", "Rencana"], ["PROGRES", "Progres"], ["EOH", "EOH / STB (selesai)"]].map(([k, t], i) => `<circle cx="${W - 150}" cy="${H - 64 + i * 15}" r="5" fill="${WARNA_STATUS[k]}" stroke="#111"/><text x="${W - 140}" y="${H - 61 + i * 15}" font-size="10">${t}</text>`).join("");
   g += `<rect x="${W - 160}" y="${H - 78}" width="152" height="70" fill="#fff" opacity=".9" stroke="#999"/>${leg}<line x1="${W - 156}" y1="${H - 16}" x2="${W - 142}" y2="${H - 16}" stroke="#d00" stroke-width="2" stroke-dasharray="5 3"/><text x="${W - 140}" y="${H - 13}" font-size="10">Batas IUP</text>`;
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="border:1px solid #333;background:#f4f1ea;max-width:100%;height:auto;font-family:Arial,sans-serif"><defs><clipPath id="cp"><rect width="${W}" height="${H}"/></clipPath></defs><g clip-path="url(#cp)">${g}</g></svg>
-    <div style="font-size:10px;color:#555">Grid UTM zona 51S (WGS84) · latar elevasi DEMNAS, kontur 25 m (tebal tiap 100 m) · posisi titik: collar/GPS Mulai bor/rencana</div>`;
+    <div style="font-size:10px;color:#555">Grid UTM zona 51S (WGS84) · latar elevasi DEMNAS, kontur 25 m (tebal tiap 100 m)${catCitra} · posisi titik: collar/GPS Mulai bor/rencana</div>`;
 }
 const fmtTgl = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "");
 // ---------- Statistik pemboran & geologi (untuk presentasi dan laporan) ----------
@@ -2015,6 +2075,27 @@ async function blok3D(L, prof, o = {}) {
   const fid = "tf" + Math.random().toString(36).slice(2, 8);
   const filt = `<filter id="${fid}" x="-2%" y="-2%" width="104%" height="104%">${TOPO.blur ? `<feGaussianBlur stdDeviation="${TOPO.blur}"/>` : ""}<feColorMatrix type="saturate" values="${TOPO.sat}"/><feComponentTransfer>${["R", "G", "B"].map((c) => `<feFunc${c} type="linear" slope="${TOPO.k}" intercept="${TOPO.b}"/>`).join("")}</feComponentTransfer></filter>`;
   let g = `<g filter="url(#${fid})">` + walls + quads.map((q) => `<polygon points="${q.pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}" fill="${q.col}" stroke="${q.col}" stroke-width=".4"/>`).join("") + "</g>";
+  // citra drone terbaru + lapisan peta dibungkus ke permukaan topografi (tidak diredupkan agar bukaan lahan tetap terbaca)
+  let catCitra = "";
+  try { const TW = Math.min(2400, Math.max(600, Math.round(((x1 - x0) * kx) / 1.2))), TH = Math.round((TW * (y1 - y0) * ky) / ((x1 - x0) * kx));
+    const tex = await kanvasCitra([x0, y0, x1, y1], TW, TH, { lapisan: true, iup: true, maksTile: 260, lebar: Math.max(2, TW / 500) });
+    if (tex.nama.length || tex.lapisan?.length) {
+      const K = 2, cv = document.createElement("canvas"); cv.width = W * K; cv.height = H * K; const c2 = cv.getContext("2d");
+      const tri = (s0, s1, s2, t0, t1, t2) => { const [x0_, y0_] = t0, [x1_, y1_] = t1, [x2_, y2_] = t2, den = x0_ * (y1_ - y2_) + x1_ * (y2_ - y0_) + x2_ * (y0_ - y1_); if (!den) return;
+        const a = (s0[0] * (y1_ - y2_) + s1[0] * (y2_ - y0_) + s2[0] * (y0_ - y1_)) / den, b = (s0[0] * (x2_ - x1_) + s1[0] * (x0_ - x2_) + s2[0] * (x1_ - x0_)) / den, e = (s0[0] * (x1_ * y2_ - x2_ * y1_) + s1[0] * (x2_ * y0_ - x0_ * y2_) + s2[0] * (x0_ * y1_ - x1_ * y0_)) / den;
+        const cc = (s0[1] * (y1_ - y2_) + s1[1] * (y2_ - y0_) + s2[1] * (y0_ - y1_)) / den, d = (s0[1] * (x2_ - x1_) + s1[1] * (x0_ - x2_) + s2[1] * (x1_ - x0_)) / den, f = (s0[1] * (x1_ * y2_ - x2_ * y1_) + s1[1] * (x2_ * y0_ - x0_ * y2_) + s2[1] * (x0_ * y1_ - x1_ * y0_)) / den;
+        const mx = (s0[0] + s1[0] + s2[0]) / 3, my = (s0[1] + s1[1] + s2[1]) / 3, gr = (p) => [p[0] + (p[0] - mx) * 0.04 + Math.sign(p[0] - mx) * 0.6, p[1] + (p[1] - my) * 0.04 + Math.sign(p[1] - my) * 0.6];
+        c2.save(); c2.beginPath(); [s0, s1, s2].map(gr).forEach((p, i) => (i ? c2.lineTo(p[0] * K, p[1] * K) : c2.moveTo(p[0] * K, p[1] * K))); c2.closePath(); c2.clip(); c2.setTransform(a * K, cc * K, b * K, d * K, e * K, f * K);
+        const ux = Math.max(0, Math.floor(Math.min(x0_, x1_, x2_)) - 2), uy = Math.max(0, Math.floor(Math.min(y0_, y1_, y2_)) - 2), uw = Math.min(tex.width - ux, Math.ceil(Math.max(x0_, x1_, x2_)) + 2 - ux), uh = Math.min(tex.height - uy, Math.ceil(Math.max(y0_, y1_, y2_)) + 2 - uy);
+        if (uw > 0 && uh > 0) c2.drawImage(tex, ux, uy, uw, uh, ux, uy, uw, uh); c2.restore(); };
+      const qs = []; for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) { const c = [gm(i, j, fill(Z[j][i])), gm(i + 1, j, fill(Z[j][i + 1])), gm(i + 1, j + 1, fill(Z[j + 1][i + 1])), gm(i, j + 1, fill(Z[j + 1][i]))];
+        const t = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]].map(([u, v]) => [(u / NX) * TW, (1 - v / NY) * TH]); qs.push({ d: (c[0][2] + c[2][2]) / 2, s: c.map(S), t }); }
+      qs.sort((a, b) => b.d - a.d);
+      for (const q of qs) { c2.globalCompositeOperation = "destination-out"; c2.beginPath(); q.s.forEach((p, i) => (i ? c2.lineTo(p[0] * K, p[1] * K) : c2.moveTo(p[0] * K, p[1] * K))); c2.closePath(); c2.fill();
+        c2.globalCompositeOperation = "source-over"; tri(q.s[0], q.s[1], q.s[2], q.t[0], q.t[1], q.t[2]); tri(q.s[0], q.s[2], q.s[3], q.t[0], q.t[2], q.t[3]); }
+      g += `<image href="${cv.toDataURL("image/png")}" x="0" y="0" width="${W}" height="${H}"/>`;
+      catCitra = [tex.nama.length ? `citra ${tex.nama.map(esc).join(", ")}` : "", tex.lapisan?.length ? `lapisan ${tex.lapisan.map(esc).join(", ")}` : "", "batas IUP (merah)"].filter(Boolean).join(" · ") + " · ";
+    } } catch (e) { console.warn("citra 3D", e); }
   // lubang bor
   const hz = async (p) => fill(await tinggiDi(p.ll[0], p.ll[1]).catch(() => null)), PRF = prof ?? [];
   const lub = []; for (const p of pts) { const mx = (p.ll[0] - x0) * kx, my = (p.ll[1] - y0) * ky, z = await hz(p); lub.push({ p, mx, my, z, d: P3(mx, my, z)[2] }); }
@@ -2030,7 +2111,7 @@ async function blok3D(L, prof, o = {}) {
   const u0 = S(P3(cx, cy, zMin)), u1 = S(P3(cx, cy + 1, zMin)), ang = Math.atan2(u1[1] - u0[1], u1[0] - u0[0]);
   g += `<g transform="translate(${W - 46},48) rotate(${(ang * 180) / Math.PI + 90})"><polygon points="0,-20 7,6 0,0 -7,6" fill="#111"/></g><text x="${W - 46}" y="84" font-size="12" font-weight="700" text-anchor="middle">U</text>`;
   const Zs = [...new Map(PRF.map((r) => [r.zona, r])).values()];
-  const leg = `<div style="font-size:11px;color:#333;margin-top:4px">Topografi DEMNAS, tinggi ${zMin.toFixed(0)}–${zMax.toFixed(0)} m, perbesaran vertikal ${VE}× · <b>panjang lubang bor diperbesar ${HE}×</b> agar terlihat · garis putus = kedalaman rencana · dilihat dari arah ${["utara", "timur laut", "timur", "tenggara", "selatan", "barat daya", "barat", "barat laut"][Math.round((((o.az ?? 62) + 180) % 360) / 45) % 8]} · ${Zs.map((r) => `<span style="display:inline-block;width:12px;height:10px;background:${esc(r.warna)};border:1px solid #222;vertical-align:-1px"></span> ${esc(r.nama_zona)}`).join(" ")}</div>`;
+  const leg = `<div style="font-size:11px;color:#333;margin-top:4px">${catCitra}Topografi DEMNAS, tinggi ${zMin.toFixed(0)}–${zMax.toFixed(0)} m, perbesaran vertikal ${VE}× · <b>panjang lubang bor diperbesar ${HE}×</b> agar terlihat · garis putus = kedalaman rencana · dilihat dari arah ${["utara", "timur laut", "timur", "tenggara", "selatan", "barat daya", "barat", "barat laut"][Math.round((((o.az ?? 62) + 180) % 360) / 45) % 8]} · ${Zs.map((r) => `<span style="display:inline-block;width:12px;height:10px;background:${esc(r.warna)};border:1px solid #222;vertical-align:-1px"></span> ${esc(r.nama_zona)}`).join(" ")}</div>`;
   return `<svg width="${o.fit ? "100%" : W}" viewBox="0 0 ${W} ${H}" style="background:linear-gradient(#eaf2f7,#fff);font-family:Arial,sans-serif;${o.fit ? `max-height:${o.fit}px;` : ""}"><defs>${filt}<linearGradient id="tanah" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b98b62"/><stop offset=".55" stop-color="#8b5e3c"/><stop offset="1" stop-color="#5b4636"/></linearGradient></defs>${g}</svg>${leg}`;
 }
 async function laporanProgres(st) {
@@ -2934,6 +3015,7 @@ const UTM = (() => { const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996, e2 =
 // Elevasi DEMNAS di satu titik: baca piksel tile terrain-RGB zoom 14 (sama dengan yang dipakai peta)
 const demCache = {};
 // ---------- Peta 3D bawah permukaan (three.js): topografi tembus pandang + lubang bor menembus ke bawah, bisa diputar ----------
+const ren0MaxTex = () => { try { const c = document.createElement("canvas"), gl = c.getContext("webgl2") || c.getContext("webgl"); const m = gl?.getParameter(gl.MAX_TEXTURE_SIZE) ?? 4096; gl?.getExtension("WEBGL_lose_context")?.loseContext(); return m; } catch { return 4096; } };
 async function bawahPermukaan3D(L, PRF = []) {
   const lay = document.createElement("div"); lay.id = "bp3";
   lay.style.cssText = "position:fixed;inset:0;z-index:9999;background:#0e1a15;display:flex;flex-direction:column;color:#fff;font:13px system-ui";
@@ -2975,8 +3057,13 @@ async function bawahPermukaan3D(L, PRF = []) {
       const sx = (b - a) / (wM / NX), sy = (a - c) / (hM / NY), sh = Math.max(0.55, Math.min(1.2, 0.9 + 1.6 * (-sx * 0.7 + sy * 0.7) / Math.hypot(sx, sy, 1)));
       const col = warnaE(m).map((v) => Math.max(0, Math.min(255, Math.round(v * sh)))); g.fillStyle = `rgb(${col.join(",")})`; g.fillRect(i * cw, j * ch, cw + 1, ch + 1); } }
   const FIL = { redup: "blur(5px) saturate(0.35) contrast(0.55) brightness(1.15)", sedang: "blur(2px) saturate(0.65) contrast(0.8) brightness(1.05)", asli: "none" };
-  const tekstur = (k) => { const c = document.createElement("canvas"); c.width = dasar.width; c.height = dasar.height; const g = c.getContext("2d"); g.filter = FIL[k] ?? FIL.redup; g.drawImage(dasar, 0, 0); g.filter = "none";
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; };
+  // citra drone terbaru + semua lapisan peta + batas IUP dibungkus ke permukaan (tidak diredupkan agar bukaan lahan terbaca)
+  $("#bpM").textContent = "Memuat citra drone & lapisan…";
+  const maxT = Math.min(4096, ren0MaxTex()), TW0 = Math.max(dasar.width, Math.round(wM / 0.6)), TH0 = Math.round((TW0 * hM) / wM), fk = Math.min(1, maxT / Math.max(TW0, TH0)), TW = Math.round(TW0 * fk), TH = Math.round(TH0 * fk);
+  const citra = await kanvasCitra([lo0, la0, lo1, la1], TW, TH, { lapisan: true, iup: true, lebar: Math.max(2, TW / 600) }).catch(() => null);
+  const tekstur = (k) => { const c = document.createElement("canvas"); c.width = citra ? TW : dasar.width; c.height = citra ? TH : dasar.height; const g = c.getContext("2d"); g.filter = FIL[k] ?? FIL.redup; g.drawImage(dasar, 0, 0, c.width, c.height); g.filter = "none";
+    if (citra) g.drawImage(citra, 0, 0); 
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ren?.capabilities?.getMaxAnisotropy?.() ?? 1; return t; };
   // adegan
   $("#bpM").remove(); const box = $("#bpC"), W = () => box.clientWidth, H = () => box.clientHeight;
   ren = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); ren.setPixelRatio(Math.min(2, devicePixelRatio)); ren.setSize(W(), H()); ren.setClearColor(0xeef3f1); box.prepend(ren.domElement);
@@ -3015,7 +3102,7 @@ async function bawahPermukaan3D(L, PRF = []) {
     const u = label("U ↑", "#c00"); u.position.set(0, (zMax - zMin) * VE + span * 0.05, -hM / 2); grp.add(u);
     $("#bpL").innerHTML = [...zon].map(([n, w]) => `<div><span style="display:inline-block;width:12px;height:12px;background:${esc(w)};border:1px solid #fff;margin-right:6px;vertical-align:-1px"></span>${esc(n)}</div>`).join("")
       + `<div>${["RENCANA", "PROGRES", "EOH"].map((k) => `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${WARNA_STATUS[k]};border:1px solid #fff;margin:0 4px 0 0"></span>${k === "EOH" ? "EOH/STB" : LABEL_STATUS[k].replace(" (continue)", "")}`).join(" &nbsp;")}</div>
-      <div style="opacity:.8">Relief ${zMin.toFixed(0)}–${zMax.toFixed(0)} m ×${VE} · lubang ×${HE} · garis putus = sisa rencana</div>`;
+      <div style="opacity:.8">Relief ${zMin.toFixed(0)}–${zMax.toFixed(0)} m ×${VE} · lubang ×${HE} · garis putus = sisa rencana</div>${citra?.nama?.length || citra?.lapisan?.length ? `<div style="opacity:.8">${[...(citra.nama ?? []), ...(citra.lapisan ?? [])].map(esc).join(" · ")} · batas IUP merah</div>` : ""}`;
   };
   bangun();
   const lihat = (atas) => { const d = span * 0.95; ctl.target.set(0, -maxD * +$("#bpH").value * 0.3, 0); if (atas) cam.position.set(0, d * 1.3, d * 0.05); else cam.position.set(-d * 0.75, d * 0.45, d * 0.75); ctl.update(); };
