@@ -1,16 +1,30 @@
 [
  {
-  "id": "lugas_14042026",
-  "nama": "Peta drone Blok 1 & rencana jetty (14-04-2026)",
-  "file": "peta/citra/lugas_14042026.webp",
+  "id": "drone_blok1_14042026",
+  "nama": "Drone Blok 1 (14-04-2026)",
+  "file": "peta/citra/drone_blok1_14042026.webp",
   "bbox": [
-   121.7372062,
-   -1.7629945,
-   121.8484464,
-   -1.615827
+   121.7459756,
+   -1.731558,
+   121.7887868,
+   -1.6588783
   ],
   "project": "TGEP",
   "tampil": true,
-  "catatan": "Peta Lugas_14042026 (citra Esri + mosaik drone 100% Blok 1 & rencana jetty). Georeferensi ke 15 garis batas WIUP OP PT Luwuk Gas Sejati (koordinat SK), RMS ±5 m (maks ±8 m). Legenda & arah utara dihapus."
+  "catatan": "Mosaik drone dari peta Lugas_14042026, dipotong sebatas area drone; diperbesar 2× dan dipertajam (tanpa menambah detail baru). Georeferensi ke garis batas WIUP (koordinat SK), selisih ±5 m (maks ±8 m). Garis Blok 1 & IUP dihapus dari citra (ditampilkan sebagai garis vektor)."
+ },
+ {
+  "id": "drone_jetty_14042026",
+  "nama": "Drone rencana jetty (14-04-2026)",
+  "file": "peta/citra/drone_jetty_14042026.webp",
+  "bbox": [
+   121.8022517,
+   -1.7346877,
+   121.8472035,
+   -1.7003301
+  ],
+  "project": "TGEP",
+  "tampil": true,
+  "catatan": "Mosaik drone dari peta Lugas_14042026, dipotong sebatas area drone; diperbesar 2× dan dipertajam (tanpa menambah detail baru). Georeferensi ke garis batas WIUP (koordinat SK), selisih ±5 m (maks ±8 m)."
  }
 ]
