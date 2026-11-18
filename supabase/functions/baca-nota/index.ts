@@ -7,7 +7,7 @@ const admin = createClient(Deno.env.get("SUPABASE_URL")!, SERVICE, { auth: { per
 // Kunci dicoba berurutan: NOTA_ANTHROPIC_API_KEY lalu ANTHROPIC_API_KEY, sehingga kunci lama yang tertinggal di salah satu
 // nama tidak memblokir kunci baru di nama lain. Spasi/tanda kutip tak sengaja saat menempel dibuang.
 const bersih = (v?: string) => (v ?? "").trim().replace(/^["']|["']$/g, "").trim();
-const KEYS = ([["NOTA_ANTHROPIC_API_KEY", bersih(Deno.env.get("NOTA_ANTHROPIC_API_KEY"))], ["ANTHROPIC_API_KEY", bersih(Deno.env.get("ANTHROPIC_API_KEY"))]] as [string, string][])
+const KEYS = ([["x-terra-baca-nota", bersih(Deno.env.get("x-terra-baca-nota") ?? Deno.env.get("X_TERRA_BACA_NOTA"))], ["NOTA_ANTHROPIC_API_KEY", bersih(Deno.env.get("NOTA_ANTHROPIC_API_KEY"))], ["ANTHROPIC_API_KEY", bersih(Deno.env.get("ANTHROPIC_API_KEY"))]] as [string, string][])
   .filter(([, v], i, a) => v && a.findIndex(([, w]) => w === v) === i);
 const ciri = (v: string) => `${v.slice(0, 10)}…(${v.length} karakter)`; // untuk log; tidak pernah membuka isi kunci
 const MODEL = Deno.env.get("NOTA_MODEL") ?? Deno.env.get("SCAN_MODEL_A") ?? "claude-sonnet-5-5";
