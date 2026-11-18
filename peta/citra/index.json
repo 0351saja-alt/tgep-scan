@@ -1,17 +1,20 @@
 [
  {
-  "id": "drone_blok1_14042026",
-  "nama": "Drone Blok 1 (14-04-2026)",
-  "file": "peta/citra/drone_blok1_14042026.webp",
+  "id": "drone_blok1_lgs",
+  "nama": "Ortofoto drone Blok 1 (Citra_LGS)",
+  "tiles": "peta/citra/blok1_lgs/{z}/{x}/{y}.webp",
+  "daftar": "peta/citra/blok1_lgs/tiles.json",
+  "minzoom": 13,
+  "maxzoom": 18,
   "bbox": [
-   121.7459756,
-   -1.731558,
-   121.7887868,
-   -1.6588783
+   121.7461902,
+   -1.7294737,
+   121.7866565,
+   -1.6599127
   ],
   "project": "TGEP",
   "tampil": true,
-  "catatan": "Mosaik drone dari peta Lugas_14042026, dipotong sebatas area drone; diperbesar 2× dan dipertajam (tanpa menambah detail baru). Georeferensi ke garis batas WIUP (koordinat SK), selisih ±5 m (maks ±8 m). Garis Blok 1 & IUP dihapus dari citra (ditampilkan sebagai garis vektor)."
+  "catatan": "Dari Citra_LGS.pdf (ArcMap, 900 dpi): resolusi asli ±0,54 m/piksel, ditampilkan sampai zoom 18 (±0,6 m). Dipotong sebatas mosaik; garis IUP dihapus dari citra (pita ±7 m diisi pantulan piksel sebelahnya). Georeferensi ke garis batas WIUP (koordinat SK), selisih rata-rata ±2 m, maks ±5 m."
  },
  {
   "id": "drone_jetty_14042026",

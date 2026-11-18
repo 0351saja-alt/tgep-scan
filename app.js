@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.10";
+const APP_VERSION = "2026-11-18.11";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3302,7 +3302,8 @@ async function petaView(v) {
     // Citra/peta bergeoreferensi (mis. mosaik drone) per proyek — file statis di peta/citra, ikut tersimpan offline
     try { const pj = myTugas?.project; CT = (await (await fetch("peta/citra/index.json")).json()).filter((c) => !c.project || !pj || c.project === pj);
       const kor = (b) => [[b[0], b[3]], [b[2], b[3]], [b[2], b[1]], [b[0], b[1]]];
-      for (const c of CT) { map.addSource("ct_" + c.id, { type: "image", url: c.file, coordinates: kor(c.bbox) });
+      for (const c of CT) { if (c.tiles) map.addSource("ct_" + c.id, { type: "raster", tiles: [new URL(c.tiles.split("{z}")[0], location.href).href + "{z}" + c.tiles.split("{z}")[1]], tileSize: 256, minzoom: c.minzoom ?? 13, maxzoom: c.maxzoom ?? 18, bounds: c.bbox });
+        else map.addSource("ct_" + c.id, { type: "image", url: c.file, coordinates: kor(c.bbox) });
         map.addLayer({ id: "ct_" + c.id, type: "raster", source: "ct_" + c.id, layout: { visibility: "none" }, paint: { "raster-opacity": opCt(), "raster-fade-duration": 0 } }, map.getLayer("elev") ? "elev" : undefined); }
     } catch (er) { console.warn("citra overlay tidak dimuat", er); }
     const fc = { type: "FeatureCollection", features: W.map((w) => ({ type: "Feature", properties: { nama: w.nama }, geometry: { type: "Polygon", coordinates: [[...w.titik.map((t) => [t.lon, t.lat]), [w.titik[0].lon, w.titik[0].lat]]] } })) };
@@ -3373,7 +3374,8 @@ async function petaView(v) {
     if (!online()) return alert("Perlu sinyal untuk menyimpan.");
     try { const idx = await (await fetch("peta/dem/index.json", { cache: "no-cache" })).json(), c = await caches.open("tgep-peta"),
         ci = await (await fetch("peta/citra/index.json", { cache: "no-cache" })).json().catch(() => []),
-        U = ["vendor/maplibre-gl.js", "vendor/maplibre-gl.css", "vendor/three.module.min.js", "vendor/OrbitControls.js", "vendor/shp.min.js", "vendor/togeojson.umd.js", "vendor/jszip.min.js", "peta/dem/index.json", "peta/kontur/index.json", "peta/kontur/kontur.geojson", "peta/kontur/elevasi.png", "peta/kontur/lereng.png", "peta/citra/index.json", ...ci.map((x) => x.file), ...idx.tiles];
+        U = ["vendor/maplibre-gl.js", "vendor/maplibre-gl.css", "vendor/three.module.min.js", "vendor/OrbitControls.js", "vendor/shp.min.js", "vendor/togeojson.umd.js", "vendor/jszip.min.js", "peta/dem/index.json", "peta/kontur/index.json", "peta/kontur/kontur.geojson", "peta/kontur/elevasi.png", "peta/kontur/lereng.png", "peta/citra/index.json", ...ci.filter((x) => x.file).map((x) => x.file), ...idx.tiles];
+      for (const x of ci.filter((x) => x.daftar)) { U.push(x.daftar); try { U.push(...(await (await fetch(x.daftar, { cache: "no-cache" })).json())); } catch {} }
       let i = 0; for (const u of U) { await c.add(u); if (++i % 10 === 0) $("#pmInfo").textContent = `Menyimpan peta offline… ${i}/${U.length}`; }
       $("#pmInfo").textContent = `Peta offline tersimpan (${U.length} file). Relief, citra drone, GPS, batas IUP, lubang & lapisan tetap bisa dibuka tanpa sinyal; citra satelit Esri tetap perlu sinyal.`;
     } catch (er) { $("#pmInfo").textContent = "Gagal menyimpan offline: " + er.message; }
