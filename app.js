@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.19";
+const APP_VERSION = "2026-11-18.20";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -227,7 +227,12 @@ async function sync() {
       const path = `${session.user.id}/${it.client_uuid}.jpg`;
       const up = await sb.storage.from("scan-photos").upload(path, it.blob, { contentType: "image/jpeg", upsert: false });
       if (up.error && !/exists|Duplicate/i.test(up.error.message)) { it.error = up.error.message; await qPut(it); continue; }
-      const ins = await sb.from("scan_job").upsert({ client_uuid: it.client_uuid, form_type: it.form_type, bhid_hint: it.bhid, photo_path: path, captured_at: it.captured_at, sumber: it.sumber ?? null, file_name: it.file_name ?? null },
+      let excel_path = null;
+      if (it.sumber === "EXCEL" && it.excel) { excel_path = `${session.user.id}/${it.client_uuid}.xlsx`;
+        const ux = await sb.storage.from("scan-photos").upload(excel_path, it.excel, { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: false });
+        if (ux.error && !/exists|Duplicate/i.test(ux.error.message)) { it.error = ux.error.message; await qPut(it); continue; } }
+      const ins = await sb.from("scan_job").upsert({ client_uuid: it.client_uuid, form_type: it.form_type, bhid_hint: it.bhid, photo_path: path, captured_at: it.captured_at, sumber: it.sumber ?? null, file_name: it.file_name ?? null,
+        hal_kirim: it.hal_kirim ?? null, page_no: it.page_no ?? null, ...(it.sumber === "EXCEL" ? { excel_path, extraction_a: it.extraction_a } : {}) },
         { onConflict: "client_uuid", ignoreDuplicates: true });
       if (ins.error) { it.error = ins.error.message; await qPut(it); continue; }
       const { data: job } = await sb.from("scan_job").select("id").eq("client_uuid", it.client_uuid).single();
@@ -361,6 +366,58 @@ async function pdfToJpegs(file, onProg) {
   }
   return out;
 }
+// ---------- Form Logging manual (Excel): templat dan pembacaan ----------
+// Baris kunci tersembunyi (nama kolom database) membuat pembacaan tetap benar walau label diubah.
+const LOG_XL_HDR = [["bhid", "BHID"], ["date", "TANGGAL (dd/mm/yyyy)"], ["page", "HAL. ke- / dari"], ["logger", "LOGGER"], ["rigmc_id", "RIG"], ["xgps", "X GPS (6 digit)"], ["ygps", "Y GPS (7 digit)"], ["zgps", "Z GPS"], ["total_depth", "EOH (m)"], ["core_size", "CORE SIZE (NQ/HQ)"]];
+const LOG_XL_ROW = SHEET.filter(([k]) => k !== "geolithcode_prc_2");
+const LOG_XL_LABEL = { seq: "NO", depth_from: "FROM (m)", depth_to: "TO (m)", core_length: "CORE L (m)", lose_from: "LOSS DARI", lose_to: "LOSS SAMPAI", geozone_id: "ZONA", geolithcode_id_1: "LITO 1", geolithcode_prc_1: "% LITO1",
+  geolithcode_id_2: "LITO 2", colour: "WARNA", geohrdns_id: "HARD", geowthrg_id: "WTH", geosrp_id: "SERP", total_silica: "SIL %", total_garnierit: "GAR %", geomnrlcode_id_1: "MIN 1", min_1_prc: "% MIN1",
+  geomnrlcode_id_2: "MIN 2", min_2_prc: "% MIN2", d_length_cm: "DENS. P (cm)", d_diameter_cm: "DENS. D (cm)", d_weight_gr: "BERAT BASAH g", d_volume_measure_ml: "ARCHIMEDES VOL 2 (ml)", d_wet_weight: "BERAT CONTO kg", comment: "KOMENTAR" };
+async function templatLogging(bhid, hal) {
+  await muatKamus();
+  await muatJS("vendor/exceljs.min.js", () => window.ExcelJS); const EJ = window.ExcelJS, wb = new EJ.Workbook(); wb.creator = "X-Terra";
+  const ws = wb.addWorksheet("Form Logging", { views: [{ state: "frozen", ySplit: 7 }] }), wk = wb.addWorksheet("Kode");
+  const hijau = { type: "pattern", pattern: "solid", fgColor: { argb: "FF12251E" } }, putih = { color: { argb: "FFFFFFFF" }, bold: true };
+  ws.getCell("A1").value = `FORM LOGGING F-BOR — isian manual · ${bhid} hal. ${hal}`; ws.getCell("A1").font = { bold: true, size: 13 };
+  ws.getRow(2).values = LOG_XL_HDR.map(([k]) => k); ws.getRow(2).hidden = true;
+  ws.getRow(3).values = LOG_XL_HDR.map(([, t]) => t); ws.getRow(3).eachCell((c) => { c.fill = hijau; c.font = putih; });
+  ws.getRow(4).values = LOG_XL_HDR.map(([k]) => k === "bhid" ? bhid : k === "page" ? `${hal} / ` : "");
+  ws.getRow(4).eachCell({ includeEmpty: true }, (c) => { c.numFmt = "@"; c.border = { bottom: { style: "thin" } }; });
+  ws.getCell("A5").value = "Desimal pakai koma (0,40). Satu nilai per sel. Sel yang tidak berlaku dikosongkan. Kode harus dari daftar (pilih di panah sel). % LITO2 dan density dihitung sistem."; ws.getCell("A5").font = { italic: true, size: 9 };
+  ws.getRow(6).values = LOG_XL_ROW.map(([k]) => k); ws.getRow(6).hidden = true;
+  ws.getRow(7).values = LOG_XL_ROW.map(([k]) => LOG_XL_LABEL[k] ?? k); ws.getRow(7).eachCell((c) => { c.fill = hijau; c.font = putih; c.alignment = { wrapText: true, vertical: "middle", horizontal: "center" }; }); ws.getRow(7).height = 30;
+  const daftar = {}; let kol = 1;
+  for (const [nama, list] of Object.entries(KAMUS)) { const kodes = list.map((x) => x.code); if (!kodes.length) continue;
+    wk.getCell(1, kol).value = nama; wk.getCell(1, kol).font = { bold: true }; kodes.forEach((c, i) => { wk.getCell(i + 2, kol).value = c; wk.getCell(i + 2, kol + 1).value = list[i].name ?? ""; });
+    const L = wk.getColumn(kol).letter; daftar[nama] = `Kode!$${L}$2:$${L}$${kodes.length + 1}`; kol += 3; }
+  for (let r = 8; r < 8 + 15; r++) {
+    LOG_XL_ROW.forEach(([k], i) => { const c = ws.getCell(r, i + 1); c.numFmt = "@"; c.border = { top: { style: "hair" }, left: { style: "hair" }, bottom: { style: "hair" }, right: { style: "hair" } };
+      const kam = KOLOM_KAMUS[k]; if (kam && daftar[kam]) c.dataValidation = { type: "list", allowBlank: true, formulae: [daftar[kam]], showErrorMessage: true, errorTitle: "Kode tidak baku", error: "Pilih kode dari daftar SOP" }; });
+  }
+  LOG_XL_ROW.forEach(([k], i) => (ws.getColumn(i + 1).width = k === "comment" ? 26 : 9));
+  const cs = KAMUS.CORE_SIZE?.length ? daftar.CORE_SIZE : null; if (cs) ws.getCell(4, 10).dataValidation = { type: "list", allowBlank: true, formulae: [cs] };
+  const buf = await wb.xlsx.writeBuffer(), a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  a.download = `Form_Logging_${bhid.replace(/\s+/g, "_")}_hal${hal}.xlsx`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+async function bacaExcelLogging(file) {
+  await muatJS("vendor/exceljs.min.js", () => window.ExcelJS); const wb = new window.ExcelJS.Workbook(); await wb.xlsx.load(await file.arrayBuffer());
+  const ws = wb.getWorksheet("Form Logging") ?? wb.worksheets[0]; if (!ws) throw new Error("sheet Form Logging tidak ada");
+  const txt = (v) => String(v ?? "").trim(), aoa = [];
+  // angka yang diketik sebagai bilangan (bukan teks) ditulis dengan koma desimal agar sama dengan kertas
+  const nilai = (c) => { const v = c.value; if (v == null) return ""; if (typeof v === "number") return String(v).replace(".", ",");
+    if (v instanceof Date) return `${String(v.getUTCDate()).padStart(2, "0")}/${String(v.getUTCMonth() + 1).padStart(2, "0")}/${v.getUTCFullYear()}`; return c.text ?? String(v); };
+  for (let r = 1; r <= ws.rowCount; r++) { const row = ws.getRow(r), arr = []; for (let c = 1; c <= Math.max(ws.columnCount, 30); c++) arr.push(nilai(row.getCell(c))); aoa.push(arr); }
+  const iH = aoa.findIndex((r) => txt(r[0]) === "bhid"), iR = aoa.findIndex((r) => txt(r[0]) === "seq");
+  if (iH < 0 || iR < 0) throw new Error("bukan templat Form Logging dari aplikasi (baris kunci tidak ditemukan) — unduh templat lewat tombol ⬇ Templat Excel");
+  const kH = aoa[iH].map(txt), kR = aoa[iR].map(txt), header = {}, rows = [];
+  const nilaiH = aoa.slice(iH + 1).find((r) => r.some((c) => txt(c) && !LOG_XL_HDR.some(([, t]) => t === txt(c)))) ?? [];
+  kH.forEach((k, i) => { if (k) header[k] = txt(nilaiH[i]); });
+  aoa.slice(iR + 1).forEach((r) => { if (Object.values(LOG_XL_LABEL).includes(txt(r[0]))) return; if (!r.some((c) => txt(c))) return;
+    const o = { row_number: String(rows.length + 1) }; kR.forEach((k, i) => { if (k) o[k] = txt(r[i]); }); rows.push(o); });
+  return { form_code: "F-BOR", header, rows: rows.slice(0, 15), notes: `Excel manual: ${file.name}` };
+}
+
 async function fotoView(v) {
   const staff = isStaff(), last = JSON.parse(localStorage.getItem("fotoLast") || "{}");
   const queue = (await qAll()).filter((x) => !x.kind || x.kind === "arsip");
@@ -368,25 +425,33 @@ async function fotoView(v) {
   v.innerHTML = `<div class="card"><h2>Foto / unggah formulir</h2>
    <label>Ini formulir apa? *</label><select id="jn">${jenisOpt}</select>
    <div class="row"><div><label>Hole ID <span id="bhReq">*</span></label><input id="bh" data-bhid value="${esc(localStorage.getItem("bhid") || "")}" placeholder="mis. DH-NPG 01" autocapitalize="characters"></div><div><label>Rig</label>${rigField()}</div></div>
+   <div class="row" id="halRow"><div><label>Halaman ke- * <span class="muted">(sesuai HAL. di lembar)</span></label><input id="hl" inputmode="numeric" placeholder="1" value="${esc(localStorage.getItem("halLog") || "")}"></div></div>
    <div class="row" id="tglRow"><div><label>Tanggal formulir</label><input id="tg" type="date" value="${todayWIB()}"></div><div><label>Shift</label><select id="sh"><option value="">—</option><option value="PAGI">Day</option><option value="MALAM">Night</option></select></div></div>
    <label>Keterangan</label><input id="kt" placeholder="mis. DDR Rig 04 shift malam, hal. 1–2" value="">
    <p class="muted" id="tip"></p>
    <div class="big"><button id="bCam">📷 Ambil foto<small>kamera HP</small></button><button id="bUp" class="sec">🖼️ Unggah foto / PDF<small>galeri, CamScanner, file scan (bisa banyak)</small></button></div>
    <input id="fCam" type="file" accept="image/*" capture="environment" class="hide"><input id="fUp" type="file" accept="image/*,application/pdf,.pdf" multiple class="hide">
+   <div id="manBox" style="margin-top:10px;padding:10px;border-radius:10px;background:#F3F5F2"><b>Form Logging manual</b>
+     <p class="muted" style="margin:4px 0 6px">Setiap halaman hanya <b>2 kali</b> dibaca otomatis (hemat saldo AI). Bila 2 foto tetap gagal/ditolak: unduh templat Excel, isi sesuai lembar, lalu kirim Excel bersama <b>foto lembar terbaik dari galeri</b> (bukan foto baru). Verifier memeriksa Excel terhadap foto itu.</p>
+     <div class="row"><button class="sec" id="tplX">⬇ Templat Excel</button><button class="sec" id="manX">📄 Kirim Excel + foto galeri</button></div>
+     <input id="fX" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hide"><input id="fXg" type="file" accept="image/*" class="hide"></div>
    <div id="pr" class="muted"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean di HP (${queue.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
    <ul class="list">${queue.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "arsip" ? ARSIP[x.row.jenis] : FORMS[x.form_type])} · ${esc(x.bhid || x.row?.bhid || x.row?.rig || "")}${(x.page_no || x.row?.halaman) ? ` · hal. ${x.page_no || x.row.halaman}` : ""} · ${esc(x.sumber || x.row?.sumber || "")}<br><span class="muted">${new Date(x.captured_at || x.row.captured_at).toLocaleString("id-ID")}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong — semua foto sudah terkirim.</li>`}</ul></div>
    <div class="card"><h3>Kiriman saya</h3><ul class="list" id="mine"><li class="muted">Memuat…</li></ul></div>`;
   if (last.jenis && $("#jn").querySelector(`option[value="${last.jenis}"]`)) $("#jn").value = last.jenis;
-  const upd = () => { const j = $("#jn").value, fb = j === "SHEET"; $("#bhReq").style.display = fb ? "" : "none"; $("#tglRow").style.display = fb ? "none" : "";
+  const upd = () => { const j = $("#jn").value, fb = j === "SHEET"; $("#bhReq").style.display = fb ? "" : "none"; $("#tglRow").style.display = fb ? "none" : ""; $("#halRow").style.display = fb ? "" : "none"; $("#manBox").style.display = fb ? "" : "none";
     $("#tip").textContent = fb ? "Form Logging: letakkan di permukaan datar, cahaya merata, keempat kotak hitam di sudut harus masuk. Hasil CamScanner boleh, asal tidak terpotong dan tidak tertutup tanda air." : "Arsip: foto/scan disimpan apa adanya sebagai bukti; isinya tidak dibaca otomatis. DDR tetap wajib diisi di menu DDR."; };
   $("#jn").onchange = upd; upd();
   const meta = () => {
     const jenis = $("#jn").value, bhid = bakuBH($("#bh").value), rig = $("#rg").value.trim().toUpperCase();
     if (jenis === "SHEET" && !bhid) { $("#e").textContent = "Isi Hole ID dulu."; return null; }
+    const hal = parseInt($("#hl").value);
+    if (jenis === "SHEET" && !(hal > 0)) { $("#e").textContent = "Isi nomor halaman Form Logging (HAL. ke- di lembar)."; return null; }
+    if (hal > 0) localStorage.setItem("halLog", String(hal));
     if (jenis !== "SHEET" && !bhid && !rig) { $("#e").textContent = "Isi Hole ID atau Rig supaya arsip bisa dicari."; return null; }
     $("#e").textContent = ""; if (bhid) localStorage.setItem("bhid", bhid); if (rig) localStorage.setItem("rig", rig); localStorage.setItem("fotoLast", JSON.stringify({ jenis }));
-    return { jenis, bhid, rig, tanggal: $("#tg").value || null, shift: $("#sh").value || null, keterangan: $("#kt").value.trim() || null };
+    return { jenis, bhid, rig, hal: hal > 0 ? hal : null, tanggal: $("#tg").value || null, shift: $("#sh").value || null, keterangan: $("#kt").value.trim() || null };
   };
   const cekLogging = async (blob, nama) => {
     try { const bmp = await createImageBitmap(blob), lc = await localCheck(bmp); const why = [];
@@ -398,7 +463,7 @@ async function fotoView(v) {
   const put = async (m, blob, sumber, file_name, halaman, jumlah, captured_at) => {
     const client_uuid = crypto.randomUUID();
     if (m.jenis === "SHEET" && !(await cekLogging(blob, file_name))) return false;
-    if (m.jenis === "SHEET") return qPut({ client_uuid, form_type: "SHEET", bhid: m.bhid, blob, captured_at, sumber, file_name });
+    if (m.jenis === "SHEET") return qPut({ client_uuid, form_type: "SHEET", bhid: m.bhid, hal_kirim: (m.hal ?? 1) + Math.max(0, (halaman ?? 1) - 1), page_no: (m.hal ?? 1) + Math.max(0, (halaman ?? 1) - 1), blob, captured_at, sumber, file_name });
     return qPut({ kind: "arsip", client_uuid, blob, row: { client_uuid, jenis: m.jenis, rig: m.rig || null, bhid: m.bhid || null, tanggal: m.tanggal, shift: m.shift, keterangan: m.keterangan, halaman, jumlah_halaman: jumlah, sumber, file_name, captured_at } });
   };
   $("#bCam").onclick = () => meta() && $("#fCam").click();
@@ -417,12 +482,28 @@ async function fotoView(v) {
     } catch (e) { $("#e").textContent = "Gagal membaca file: " + e.message; }
     ev.target.value = ""; $("#pr").textContent = `${n} halaman masuk antrean.`; if (n) setTimeout(() => { render(); sync(); }, $("#e").textContent ? 4000 : 600);
   };
+  $("#tplX").onclick = async () => { const m = meta(); if (!m) return; try { await templatLogging(m.bhid, m.hal); } catch (e) { $("#e").textContent = "Gagal membuat templat: " + e.message; } };
+  let xFile = null;
+  $("#manX").onclick = () => { const m = meta(); if (!m) return; xFile = null; $("#fX").click(); };
+  $("#fX").onchange = (ev) => { xFile = ev.target.files[0]; ev.target.value = ""; if (!xFile) return; $("#pr").textContent = `Excel: ${xFile.name}. Sekarang pilih foto lembar dari galeri…`; $("#fXg").click(); };
+  $("#fXg").onchange = async (ev) => {
+    const g = ev.target.files[0], m = meta(); ev.target.value = ""; if (!g || !xFile || !m) return;
+    try {
+      const isi = await bacaExcelLogging(xFile);
+      if (isi.header.bhid && bakuBH(isi.header.bhid) !== m.bhid) { $("#e").textContent = `BHID di Excel (${isi.header.bhid}) berbeda dengan Hole ID yang dipilih (${m.bhid}). Samakan dulu.`; return; }
+      if (!isi.rows.length) { $("#e").textContent = "Tabel conto di Excel masih kosong."; return; }
+      isi.header.bhid ||= m.bhid; isi.header.page ||= String(m.hal);
+      await qPut({ client_uuid: crypto.randomUUID(), form_type: "SHEET", bhid: m.bhid, hal_kirim: m.hal, page_no: m.hal, sumber: "EXCEL", file_name: xFile.name,
+        blob: await shrink(g), excel: xFile, extraction_a: isi, captured_at: new Date(g.lastModified || Date.now()).toISOString() });
+      $("#pr").textContent = `Form Logging manual ${m.bhid} hal. ${m.hal} (${isi.rows.length} baris) masuk antrean.`; setTimeout(() => { render(); sync(); }, 600);
+    } catch (e) { $("#e").textContent = "Excel tidak bisa dibaca: " + e.message; }
+  };
   $("#sy").onclick = sync;
   if (online()) {
     const [{ data: a }, { data: b }] = await Promise.all([
-      staff ? sb.from("scan_job").select("id,form_type,bhid_hint,status,created_at,n_disagree,n_rule_flags,error,sumber,merged,cell_flags,konfirmasi").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30) : Promise.resolve({ data: [] }),
+      staff ? sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,created_at,n_disagree,n_rule_flags,error,sumber,merged,cell_flags,konfirmasi").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30) : Promise.resolve({ data: [] }),
       sb.from("form_photo").select("jenis,rig,bhid,tanggal,halaman,jumlah_halaman,sumber,created_at").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30)]);
-    const items = [...(a ?? []).map((j) => ({ id: j.id, t: j.created_at, h: `<li><span class="pill ${j.status}">${j.status === "REJECTED" ? "DITOLAK" : j.status}</span><span>${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}${j.sumber ? " · " + j.sumber : ""}<br><span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca, ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span></li>` })),
+    const items = [...(a ?? []).map((j) => ({ id: j.id, t: j.created_at, h: `<li><span class="pill ${j.status}">${j.status === "REJECTED" ? "DITOLAK" : j.status === "MANUAL" ? "ISI MANUAL" : j.status}</span><span>${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}${j.page_no ? " hal. " + j.page_no : ""}${j.sumber ? " · " + j.sumber : ""}<br><span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca, ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span></li>` })),
       ...(b ?? []).map((p) => ({ t: p.created_at, h: `<li><span class="pill APPROVED">ARSIP</span><span>${esc(ARSIP[p.jenis])} · ${esc(p.bhid || p.rig || "")}${p.halaman ? ` · hal. ${p.halaman}/${p.jumlah_halaman ?? "?"}` : ""} · ${p.sumber}<br><span class="muted">${p.tanggal ?? ""} · dikirim ${new Date(p.created_at).toLocaleString("id-ID")}</span></span></li>` }))].sort((x, y) => (x.t < y.t ? 1 : -1));
     $("#mine").innerHTML = items.map((x) => x.h).join("") || `<li class="muted">Belum ada.</li>`;
     // tombol konfirmasi tulisan untuk scan sendiri yang masih menunggu periksa
@@ -447,7 +528,7 @@ async function arsipList(box) {
 
 async function reviewList(v) {
   const { data, error } = await sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,created_at,n_disagree,n_rule_flags,error")
-    .in("status", ["NEEDS_REVIEW", "ERROR", "PROCESSING", "UPLOADED"]).order("created_at");
+    .in("status", ["NEEDS_REVIEW", "ERROR", "PROCESSING", "UPLOADED", "MANUAL"]).order("created_at");
   v.innerHTML = `<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">Scan menunggu pemeriksaan</h2><button class="sec" id="rf" style="flex:0">Muat ulang</button></div>
   ${error ? `<p class="err">${esc(error.message)}</p>` : ""}
   <ul class="list">${(data ?? []).map((j) => `<li><span class="pill ${j.status}">${j.status}</span><span style="flex:1">${esc(FORMS[j.form_type])} · <b>${esc(j.bhid_hint)}</b>${j.page_no ? " hal. " + j.page_no : ""}<br>
@@ -472,7 +553,9 @@ async function reviewDetail(v, id) {
   const cell = (val, key, idx, rowNo) => { const fk = `${rowNo ?? "h"}.${key}`; return `<td class="${cls(fk)}" title="${esc(tip(fk))}"${KF[fk] && !KF[fk].tidak_tahu ? ' style="outline:2px solid #1E9E69;outline-offset:-2px"' : ""}><input data-k="${key}" data-r="${idx ?? ""}" value="${esc(val ?? "")}" inputmode="${NUMERIC.has(key) ? "decimal" : "text"}"></td>`; };
   v.innerHTML = `<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}</h2><button class="sec" id="bk" style="flex:0">← Kembali</button></div>
    <p class="muted">Kuning = dua pembacaan berbeda · Merah = melanggar aturan validasi · Hijau = sudah Anda ubah · Bingkai hijau = sudah dikonfirmasi pengirim (${Object.keys(j.konfirmasi ?? {}).length}). Bandingkan dengan foto sebelum menyetujui.</p>
-   ${j.status === "ERROR" ? `<p class="err">Gagal diproses: ${esc(j.error)}</p>` : ""}</div>
+   ${j.status === "ERROR" ? `<p class="err">Gagal diproses: ${esc(j.error)}</p>` : ""}${j.status === "MANUAL" ? `<p class="err">${esc(j.error)}</p>` : ""}
+   ${j.sumber === "EXCEL" ? `<p><b>Form Logging manual dari Excel</b> (tanpa pembacaan AI) · <a href="#" id="dlx">⬇ Unduh Excel asli${j.file_name ? " (" + esc(j.file_name) + ")" : ""}</a> — cocokkan setiap baris dengan foto lembar.</p>` : ""}
+   ${(j.ai_kali ?? 0) > 0 ? `<p class="muted">Dibaca otomatis ${j.ai_kali}× untuk foto ini · batas 2× per halaman.</p>` : ""}</div>
    <div class="rv"><div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Foto</h3><input id="zm" type="range" min="1" max="4" step="0.25" value="1" style="flex:2"></div>
      <div class="photo" id="ph"><img id="im" src="${url?.signedUrl ?? ""}" alt="Foto formulir" style="width:100%"></div></div>
    <div class="card"><h3>Hasil scan (bisa diedit)</h3>
@@ -486,6 +569,7 @@ async function reviewDetail(v, id) {
    <div class="card"><label>Catatan pemeriksa</label><textarea id="nt" rows="2"></textarea>
      <div class="row" style="margin-top:10px"><button id="ok">Setujui & simpan ke database</button><button class="warn" id="re">Proses ulang</button><button class="danger" id="no">Tolak</button></div><div id="e" class="err"></div></div>`;
   $("#bk").onclick = () => reviewList(v);
+  if ($("#dlx")) $("#dlx").onclick = async (ev) => { ev.preventDefault(); const { data: u2 } = await sb.storage.from("scan-photos").createSignedUrl(j.excel_path, 600, { download: j.file_name || "form_logging.xlsx" }); if (u2?.signedUrl) location.href = u2.signedUrl; };
   // uji silang: foto core pada rentang kedalaman lembar ini
   if (j.form_type === "SHEET" || j.form_type === "LOG") {
     const ds = (data.rows ?? []).flatMap((r) => [r.depth_from, r.depth_to]).filter((x) => typeof x === "number");
@@ -596,8 +680,9 @@ async function coreView(v) {
    <div class="row"><div><label>Kotak ke-</label><input id="cx" inputmode="numeric"></div><div><label>FROM (m)</label><input id="cf" inputmode="decimal"></div><div><label>TO (m)</label><input id="ct" inputmode="decimal"></div></div>
    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="crt" style="width:auto"> Foto ulang kotak yang sudah pernah dikirim (mis. karena ditolak)</label>
    <p class="muted">Template SOP: 1 corebox per foto (maks. 5 m core), resolusi standar ≥ 3508 px sisi panjang (300 dpi cetak A4), di bawah 2400 px ditolak — pakai resolusi kamera tertinggi, jangan mode hemat/kecil; teduh, meteran 0–100 cm, papan Hole ID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
-   <div class="big"><button id="cgo">📷 Ambil foto corebox</button></div>
-   <input id="cfile" type="file" accept="image/*" capture="environment" class="hide"><div id="lc"></div><div id="e" class="err"></div></div>
+   <div class="big"><button id="cgo">📷 Ambil foto corebox</button><button id="cgg" class="sec">🖼️ Dari galeri<small>foto ulang / unggah manual</small></button></div>
+   <p class="muted" style="margin:6px 0 0">Setiap kotak hanya <b>2 kali</b> diperiksa otomatis. Setelah itu foto terbaik diunggah <b>dari galeri</b> dan diperiksa verifier secara manual.</p>
+   <input id="cfile" type="file" accept="image/*" capture="environment" class="hide"><input id="cfileG" type="file" accept="image/*" class="hide"><div id="lc"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean foto core (${qd.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
    <ul class="list">${qd.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.file_name)}${x.local_check.warnings.length ? `<br><span class="err">${x.local_check.warnings.map(esc).join(" · ")}</span>` : ""}${x.error ? `<br><span class="err">${esc(x.error)}</span>` : ""}</span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
    <div class="card"><h3>Kelengkapan & kesesuaian SOP</h3><div class="row"><input id="kb" value="${esc(bh)}"><button id="kg" style="flex:0">Cek</button></div><div id="ko"></div></div>`;
@@ -612,7 +697,10 @@ async function coreView(v) {
   $("#cb").onchange = isi; $("#cty").onchange = () => { localStorage.setItem("coreType", $("#cty").value); isi(); };
   $("#crt").onchange = () => { if (!$("#crt").checked) isi(); else { $("#cx").value = ""; $("#cf").value = ""; $("#ct").value = ""; $("#cx").focus(); } };
   await isi();
-  $("#cgo").onclick = () => {
+  let pakaiGaleri = false;
+  $("#cgg").onclick = () => { pakaiGaleri = true; $("#cgo").onclick(); };
+  $("#cgo").onclick = async () => {
+    const galeri = pakaiGaleri; pakaiGaleri = false;
     const f = num($("#cf").value), to = num($("#ct").value), box = parseInt($("#cx").value), retake = $("#crt").checked;
     if (!$("#cb").value.trim()) return ($("#e").textContent = "Isi Hole ID.");
     if (!(box > 0)) return ($("#e").textContent = "Isi nomor kotak.");
@@ -622,8 +710,15 @@ async function coreView(v) {
       if (box !== nx.box) return ($("#e").textContent = `Ditolak: kotak ${box} tidak melanjutkan kotak terakhir (${nx.lastBox}). Seharusnya kotak ${nx.box}. Bila ini foto ulang, centang “Foto ulang”.`);
       if (Math.abs(f - nx.from) > 0.02) return ($("#e").textContent = `Ditolak: FROM ${fmtD(f)} m tidak menyambung dengan TO kotak sebelumnya (${fmtD(nx.from)} m).`);
     } else if (box > nx.lastBox) return ($("#e").textContent = `Ditolak: kotak ${box} belum pernah dikirim, jadi bukan foto ulang. Hilangkan centang “Foto ulang”.`);
-    $("#e").textContent = ""; $("#cfile").click();
+    $("#e").textContent = "";
+    if (retake && online()) { // batas 2 kali pemeriksaan AI per kotak
+      const { data: cek } = await sb.from("core_photo").select("ai_kali").eq("bhid", bakuBH($("#cb").value)).eq("photo_type", $("#cty").value).eq("depth_from", f).eq("depth_to", to);
+      const n = (cek ?? []).reduce((s, r) => s + (r.ai_kali ?? 0), 0);
+      if (n >= 2 && !galeri) { $("#e").textContent = "Kotak ini sudah 2 kali diperiksa otomatis. Unggah foto terbaik dari galeri (tombol 🖼️ Dari galeri); foto akan diperiksa verifier secara manual."; return; }
+    }
+    (galeri ? $("#cfileG") : $("#cfile")).click();
   };
+  $("#cfileG").onchange = (ev) => $("#cfile").onchange(ev);
   $("#cfile").onchange = async (ev) => {
     const file = ev.target.files[0]; if (!file) return; ev.target.value = "";
     const bmp = await createImageBitmap(file); const lc = await localCheck(bmp);
@@ -643,7 +738,7 @@ async function coreView(v) {
     if (!lc.warnings.length) return save();
     $("#lc").innerHTML = `<div class="card" style="background:#FBE6D0"><b>Foto mungkin tidak sesuai SOP:</b><ul>${lc.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>
       <div class="row"><button id="rt">Ambil ulang</button><button class="sec" id="ks">Tetap simpan</button></div></div>`;
-    $("#rt").onclick = () => { $("#lc").innerHTML = ""; $("#cfile").click(); };
+    $("#rt").onclick = () => { $("#lc").innerHTML = ""; $("#cgo").onclick(); };
     $("#ks").onclick = save;
   };
   $("#sy").onclick = sync;
