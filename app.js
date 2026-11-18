@@ -3922,6 +3922,18 @@ async function mulaiNota(kamera, selesai) {
   else galat = "Tidak ada sinyal — nota tidak dibaca otomatis. Isi manual; foto tetap tersimpan.";
   keuForm(null, selesai, { foto: h, ai, galat });
 }
+// Tutorial singkat keuangan lapangan (dipakai di halaman Keuangan dan di form transaksi)
+const KEU_TUTORIAL = `<ol style="margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.5">
+  <li><b>Foto</b> nota / bukti transfer (📷) atau ambil screenshot m-banking dari galeri (🖼). Satu foto = satu transaksi.</li>
+  <li><b>Potong</b>: geser keempat sudut sampai pas di tepi nota, lalu Lanjut. Aplikasi membaca isinya otomatis (5–20 detik).</li>
+  <li><b>Periksa</b> isian bertanda kuning <i>periksa</i>: uang Masuk/Keluar, tanggal, <b>jumlah</b>, kategori, toko/penerima.</li>
+  <li><b>Nota tidak terbaca</b> (buram, tulisan tangan, sobek, tanpa sinyal)? Tetap simpan: <b>ketik total biaya</b> yang benar-benar dibayar dan <b>tulis keterangan</b> (beli apa, di mana, untuk apa). Foto tetap ikut sebagai bukti dan ditandai ⚠ untuk diperiksa admin.</li>
+  <li><b>Uraian</b> = apa yang dibeli/dibayar, singkat. <b>Keterangan</b> = konteks tambahan: berita transfer, siapa yang meminta, untuk rig/kegiatan apa.</li>
+  <li><b>Simpan</b>. Tanpa sinyal, data disimpan di HP dan terkirim otomatis saat ada sinyal.</li>
+  <li><b>Salah isi?</b> Tekan <b>Ubah</b> di daftar transaksi untuk mengoreksi total, keterangan atau isian lain (selama belum disetujui admin). Transaksi yang dikembalikan admin (↩) diperbaiki dengan cara yang sama.</li>
+  <li><b>Rekap</b>: pilih periode → ⬇ Unduh Excel (lembar Laporan + lembar foto Bukti) atau ☁ simpan ke Google Drive.</li></ol>`;
+const tutorKeu = (buka = false) => `<details ${buka ? "open" : ""} style="margin:6px 0"><summary style="cursor:pointer;font-weight:600">❓ Cara mengisi (tutorial)</summary>${KEU_TUTORIAL}</details>`;
+
 async function keuForm(trx = null, selesai = () => {}, pre = null) {
   const proj = trx?.project ?? proyekKeu(); if (!proj) return alert("Akun ini belum punya proyek. Minta admin menetapkan proyek.");
   const ai = pre?.ai ?? null, y = ai?.keyakinan ?? {};
@@ -3932,26 +3944,32 @@ async function keuForm(trx = null, selesai = () => {}, pre = null) {
   const bolehFoto = !trx || !(trx.bukti ?? []).length;
   const tanda = (k) => (ai && (y[k] === "rendah" || y[k] === "sedang") ? ` <span style="background:#FFE58A;color:#6E3A08;border-radius:6px;padding:0 6px;font-size:11px">periksa${y[k] === "rendah" ? "!" : ""}</span>` : "");
   const gaya = (k) => (ai && y[k] === "rendah" ? "background:#FFF4C2" : "");
+  // nota tidak terbaca / ragu: tetap diterima, pengguna diminta mengetik total & keterangan sendiri
+  const tidakTerbaca = trx ? !!trx.baca_ai?.tidak_terbaca
+    : !!foto && (!ai || !(Number(ai.jumlah) > 0) || y.jumlah === "rendah" || ai.jenis_dokumen === "LAINNYA");
+  const kuning = "background:#FFF4C2;border:2px solid #E0A800";
   const m = modal(`<h3>${trx ? "Perbaiki transaksi" : "Periksa & simpan transaksi"} · ${esc(proj)}</h3>
+    ${tutorKeu()}
     ${trx?.catatan_admin ? `<div class="card" style="background:#F6C9C3;margin:0 0 8px"><b>Catatan admin:</b> ${esc(trx.catatan_admin)}</div>` : ""}
     <div id="kFt"></div>
     ${ai ? `<div class="card" style="background:#DCEFE4;margin:6px 0"><b>Dibaca otomatis:</b> ${esc(KEU_JENIS[ai.jenis_dokumen] ?? ai.jenis_dokumen)} · <b>${ai.arah === "MASUK" ? "uang MASUK" : "uang KELUAR"}</b>${ai.alasan_arah ? ` <small class="muted">(${esc(ai.alasan_arah)})</small>` : ""}<br><small>Periksa isian bertanda kuning. Semua isian boleh diubah bila aplikasi salah membaca.</small>
       ${(ai.peringatan ?? []).length ? `<ul style="margin:4px 0 0 18px;color:#8A1C12;font-size:13px">${ai.peringatan.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}${ai.catatan ? `<div class="muted" style="font-size:12px;margin-top:4px">Catatan baca: ${esc(ai.catatan)}</div>` : ""}
       ${(ai.barang ?? []).length ? `<details style="margin-top:4px"><summary style="font-size:13px">Rincian barang terbaca (${ai.barang.length})</summary><table style="font-size:12px;margin-top:4px">${ai.barang.map((x) => `<tr><td style="padding:2px 6px;border:0">${esc(x.nama)}</td><td style="padding:2px 6px;border:0">${esc(x.qty ?? "")}</td><td style="padding:2px 6px;border:0;text-align:right">${x.subtotal ? fmtRp(x.subtotal) : ""}</td></tr>`).join("")}</table></details>` : ""}</div>`
       : pre?.galat ? `<div class="card" style="background:#FBE6D0;margin:6px 0">${esc(pre.galat)}${pre.foto ? `<br><button class="sec" id="kUlang" style="width:auto;padding:6px 12px;margin-top:6px">🔄 Baca ulang foto ini</button>` : ""}</div>` : ""}
+    ${tidakTerbaca ? `<div class="card" style="background:#FFF4C2;border:1px solid #E0A800;margin:6px 0"><b>⚠ ${trx ? "Nota ini tercatat tidak terbaca" : "Nota tidak terbaca jelas"} — tetap bisa disimpan.</b><br><small>Lihat foto (ketuk untuk memperbesar), lalu <b>ketik TOTAL BIAYA</b> yang benar-benar dibayar dan <b>tulis KETERANGAN</b> (beli apa, di mana, untuk apa). Foto tetap ikut sebagai bukti dan ditandai untuk diperiksa admin.</small></div>` : ""}
     <label>Uang${tanda("arah")}</label><div class="row"><label style="flex:1;margin:0"><input type="radio" name="kArah" value="KELUAR" ${v0.arah === "KELUAR" ? "checked" : ""} style="width:auto"> Keluar (beli / bayar / transfer ke orang lain)</label><label style="flex:1;margin:0"><input type="radio" name="kArah" value="MASUK" ${v0.arah === "MASUK" ? "checked" : ""} style="width:auto"> Masuk (dana diterima)</label></div>
-    <div class="row"><div><label>Tanggal${tanda("tanggal")}</label><input id="kTg" type="date" value="${esc(v0.tanggal)}" style="${gaya("tanggal")}"></div><div><label>Jumlah (Rp)${tanda("jumlah")}</label><input id="kJm" inputmode="numeric" placeholder="mis. 250.000" value="${v0.jumlah ? Math.round(v0.jumlah).toLocaleString("id-ID") : ""}" style="font-weight:700;${gaya("jumlah")}"></div></div>
+    <div class="row"><div><label>Tanggal${tanda("tanggal")}</label><input id="kTg" type="date" value="${esc(v0.tanggal)}" style="${gaya("tanggal")}"></div><div><label>Jumlah (Rp)${tanda("jumlah")}</label><input id="kJm" inputmode="numeric" placeholder="mis. 250.000" value="${v0.jumlah ? Math.round(v0.jumlah).toLocaleString("id-ID") : ""}" style="font-weight:700;${tidakTerbaca ? kuning : gaya("jumlah")}"></div></div>
     <label>Jenis bukti${tanda("jenis_dokumen")}</label><select id="kJn">${Object.entries(KEU_JENIS).map(([k, t]) => `<option value="${k}" ${jenis === k ? "selected" : ""}>${t}</option>`).join("")}</select>
     <label>Kategori${tanda("kategori")}</label><select id="kKt" style="${gaya("kategori")}"></select>
     <label>Uraian</label><input id="kUr" placeholder="mis. Solar 40 L untuk rig 1" value="${esc(v0.uraian)}">
-    <label>Keterangan (opsional)</label><textarea id="kKet" rows="2" maxlength="500" placeholder="mis. berita transfer, untuk keperluan apa, siapa yang meminta, catatan lain">${esc(v0.keterangan)}</textarea>
+    <label>Keterangan ${tidakTerbaca ? `<b style="color:#8A1C12">(wajib — nota tidak terbaca)</b>` : "(opsional)"}</label><textarea id="kKet" rows="${tidakTerbaca ? 3 : 2}" maxlength="500" placeholder="${tidakTerbaca ? "mis. Beli solar 40 L di kios Pak Udin, nota tulisan tangan buram, untuk rig 1" : "mis. berita transfer, untuk keperluan apa, siapa yang meminta, catatan lain"}" style="${tidakTerbaca ? kuning : ""}">${esc(v0.keterangan)}</textarea>
     <div class="row"><div><label id="kPhL">Toko / penerima${tanda("pihak")}</label><input id="kPh" value="${esc(v0.pihak)}" style="${gaya("pihak")}"></div><div><label>Cara bayar</label><select id="kMt">${["TUNAI", "TRANSFER", "QRIS", "LAINNYA"].map((x) => `<option ${v0.metode === x ? "selected" : ""}>${x}</option>`).join("")}</select></div></div>
     <div class="row"><div><label>No. nota / ref. transfer</label><input id="kRf" value="${esc(v0.no_ref)}"></div><div><label>Rig (opsional)</label><select id="kRg"><option value="">—</option>${rigs.map((r) => `<option ${v0.rig === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></div></div>
     <div id="kE" class="err"></div><div class="row" style="margin-top:10px;position:sticky;bottom:0;background:inherit;padding:8px 0;z-index:2"><button id="kOk">Simpan</button><button class="sec" id="kX">Batal</button></div>`);
   const isiKat = () => { const a = m.querySelector('[name="kArah"]:checked').value, L = KEU_KAT[a], cur = m.querySelector("#kKt").value || v0.kategori;
     m.querySelector("#kKt").innerHTML = L.map((x) => `<option ${cur === x ? "selected" : ""}>${esc(x)}</option>`).join(""); m.querySelector("#kPhL").childNodes[0].textContent = a === "MASUK" ? "Dari (pengirim)" : "Toko / penerima"; };
   m.querySelectorAll('[name="kArah"]').forEach((r) => (r.onchange = isiKat)); isiKat();
-  const jm = m.querySelector("#kJm"); jm.oninput = () => { const n = jm.value.replace(/\D/g, ""); jm.value = n ? Number(n).toLocaleString("id-ID") : ""; };
+  const jm = m.querySelector("#kJm"); if (tidakTerbaca && !trx) setTimeout(() => (jm.value ? m.querySelector("#kKet") : jm).focus(), 150); jm.oninput = () => { const n = jm.value.replace(/\D/g, ""); jm.value = n ? Number(n).toLocaleString("id-ID") : ""; };
   const tampilFoto = () => { const F = m.querySelector("#kFt");
     if (foto) { const u = URL.createObjectURL(foto.thumb); F.innerHTML = `<div style="text-align:center"><a href="#" id="kZm"><img src="${u}" style="max-height:24vh;max-width:100%;border-radius:8px;border:1px solid #ccc"></a><br>${bolehFoto ? `<button class="sec" id="kGf" style="width:auto;padding:4px 10px;margin-top:4px">Ganti foto</button>` : ""}</div>`;
       F.querySelector("#kZm").onclick = (e) => { e.preventDefault(); lihatZoom(foto.potong); }; }
@@ -3964,16 +3982,21 @@ async function keuForm(trx = null, selesai = () => {}, pre = null) {
     try { const hasil = await bacaNota(foto.potong); m.remove(); keuForm(null, selesai, { foto, ai: hasil }); } catch (e) { b.disabled = false; b.textContent = "🔄 Baca ulang foto ini"; alert(e.message); } });
   m.querySelector("#kX").onclick = () => m.remove();
   m.querySelector("#kOk").onclick = async () => {
-    const arah = m.querySelector('[name="kArah"]:checked').value, jumlah = Number(jm.value.replace(/\D/g, "")), uraian = m.querySelector("#kUr").value.trim(), e = m.querySelector("#kE");
-    if (!jumlah) return (e.textContent = "Isi jumlah uang."); if (!uraian) return (e.textContent = "Isi uraian singkat (untuk apa uangnya).");
+    const arah = m.querySelector('[name="kArah"]:checked').value, jumlah = Number(jm.value.replace(/\D/g, "")), e = m.querySelector("#kE"), ket = m.querySelector("#kKet").value.trim();
+    let uraian = m.querySelector("#kUr").value.trim();
+    if (!jumlah) { jm.focus(); return (e.textContent = tidakTerbaca ? "Ketik total biaya sesuai nota / yang benar-benar dibayar." : "Isi jumlah uang."); }
+    if (tidakTerbaca && !ket) { m.querySelector("#kKet").focus(); return (e.textContent = "Nota tidak terbaca: tulis keterangan (beli apa, di mana, untuk apa)."); }
+    if (!uraian) { if (!ket) return (e.textContent = "Isi uraian singkat (untuk apa uangnya)."); uraian = ket.slice(0, 80); m.querySelector("#kUr").value = uraian; }
+    if (tidakTerbaca && !trx && !confirm(`Simpan transaksi ${arah === "MASUK" ? "MASUK" : "KELUAR"} dengan total ${fmtRp(jumlah)}?\n\nKeterangan: ${ket}\n\nNota ditandai "tidak terbaca" agar diperiksa admin. Bila total salah, tekan Batal lalu koreksi.`)) return;
     if (!trx && !foto && arah === "KELUAR" && !confirm("Pengeluaran tanpa foto bukti. Tetap simpan? (foto bisa ditambahkan nanti lewat Ubah)")) return;
     const row = { project: proj, tanggal: m.querySelector("#kTg").value || todayWIB(), arah, kategori: m.querySelector("#kKt").value, uraian, pihak: m.querySelector("#kPh").value.trim() || null, jumlah,
-      metode: m.querySelector("#kMt").value, no_ref: m.querySelector("#kRf").value.trim() || null, rig: m.querySelector("#kRg").value || null, keterangan: m.querySelector("#kKet").value.trim() || null };
+      metode: m.querySelector("#kMt").value, no_ref: m.querySelector("#kRf").value.trim() || null, rig: m.querySelector("#kRg").value || null, keterangan: ket || null };
     jenis = m.querySelector("#kJn").value;
     if (ai && !trx) { const banding = { arah: ai.arah, tanggal: ai.tanggal, jumlah: ai.jumlah, kategori: ai.kategori, pihak: ai.pihak ?? null, jenis: ai.jenis_dokumen };
       row.diubah_dari_ai = Object.keys(banding).filter((k) => String((k === "jenis" ? jenis : row[k]) ?? "") !== String(banding[k] ?? ""));
       row.baca_ai = { jenis_dokumen: ai.jenis_dokumen, arah: ai.arah, alasan_arah: ai.alasan_arah, tanggal: ai.tanggal, jumlah: ai.jumlah, biaya_admin: ai.biaya_admin, pihak: ai.pihak, no_ref: ai.no_ref,
         metode: ai.metode, kategori: ai.kategori, uraian: ai.uraian, keterangan: ai.keterangan, barang: ai.barang, keyakinan: ai.keyakinan, peringatan: ai.peringatan, catatan: ai.catatan, model: ai.model }; }
+    if (tidakTerbaca && !trx) row.baca_ai = { ...(row.baca_ai ?? {}), tidak_terbaca: true, ...(pre?.galat ? { galat: String(pre.galat).slice(0, 300) } : {}) };
     m.querySelector("#kOk").disabled = true;
     const pos = trx ? null : await Promise.race([getPos(), new Promise((r) => setTimeout(() => r(null), 4000))]);
     const B = foto ? [{ client_uuid: crypto.randomUUID(), jenis, potong: foto.potong, asli: foto.asli, thumb: foto.thumb, urutan: 1, captured_at: new Date().toISOString() }] : [];
@@ -4025,13 +4048,14 @@ async function keuView(v) {
   const antre = (await qAll()).filter((x) => x.kind === "keu" || x.kind === "keubukti");
   v.innerHTML = `<div class="card"><h2>Keuangan lapangan</h2><p class="muted">Catat setiap uang keluar/masuk dengan foto nota, bukti transfer atau bukti pembayaran. Nota dipotong & dirapikan otomatis. Data ini hanya terlihat oleh admin lapangan dan admin kantor — tidak masuk Dashboard dan tidak terlihat client/verifier.</p>
     <div class="row" style="flex-wrap:wrap"><button id="kFoto" style="flex:1;min-width:150px;padding:14px">📷 Foto nota / bukti</button><button id="kGal" style="flex:1;min-width:150px;padding:14px">🖼 Unggah dari galeri</button></div>
-    <p class="muted" style="margin:6px 0 0">Satu foto per transaksi. Setelah difoto, nota dipotong dan dibaca otomatis (jenis bukti, uang masuk/keluar, tanggal, jumlah, toko/penerima, kategori). Periksa hasilnya; angka yang salah baca bisa diubah sebelum disimpan.
-      <a href="#" id="kMan">Isi manual tanpa foto</a> · <a href="#" id="kRek">Rekening kas lapangan${localStorage.getItem("rekKas") ? `: ${esc(localStorage.getItem("rekKas"))}` : " (belum diisi)"}</a></p>${antre.length ? `<p class="muted" style="margin-top:8px">⏳ ${antre.length} transaksi/bukti menunggu sinyal untuk dikirim.${antre.some((x) => x.error) ? ` Galat: ${esc(antre.find((x) => x.error).error)}` : ""}</p>` : ""}</div>
+    <p class="muted" style="margin:6px 0 0">Satu foto per transaksi. Setelah difoto, nota dipotong dan dibaca otomatis (jenis bukti, uang masuk/keluar, tanggal, jumlah, toko/penerima, kategori). Periksa hasilnya; angka yang salah baca bisa diubah sebelum disimpan. Nota yang tidak terbaca tetap diterima — cukup ketik total biaya dan keterangannya.
+      <a href="#" id="kMan">Isi manual tanpa foto</a> · <a href="#" id="kRek">Rekening kas lapangan${localStorage.getItem("rekKas") ? `: ${esc(localStorage.getItem("rekKas"))}` : " (belum diisi)"}</a></p>${antre.length ? `<p class="muted" style="margin-top:8px">⏳ ${antre.length} transaksi/bukti menunggu sinyal untuk dikirim.${antre.some((x) => x.error) ? ` Galat: ${esc(antre.find((x) => x.error).error)}` : ""}</p>` : ""}${tutorKeu(!localStorage.getItem("keuTutorDilihat"))}</div>
     <div class="card"><div class="row" style="align-items:flex-end;flex-wrap:wrap">${pilihProyekKeu()}<div><label>Dari</label><input id="kD" type="date" value="${dari}"></div><div><label>Sampai</label><input id="kS" type="date" value="${sampai}"></div>
       <div><label>Status</label><select id="kSt"><option value="">Semua</option>${Object.entries(KEU_STATUS).map(([k, [t]]) => `<option value="${k}" ${sessionStorage.getItem("keuSt") === k ? "selected" : ""}>${t}</option>`).join("")}</select></div>
       <button id="kGo" style="flex:0">Tampilkan</button></div>
       <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="sec" id="kXl" style="flex:0;white-space:nowrap">⬇ Unduh Excel (laporan + nota)</button><button class="sec" id="kDr" style="flex:0;white-space:nowrap">☁ Simpan rekap ke Google Drive</button></div>
       <div id="kR" style="margin-top:10px">Memuat…</div></div>`;
+  try { localStorage.setItem("keuTutorDilihat", "1"); } catch {}
   $("#kFoto").onclick = () => mulaiNota(true, () => keuView(v)); $("#kGal").onclick = () => mulaiNota(false, () => keuView(v));
   $("#kMan").onclick = (e) => { e.preventDefault(); keuForm(null, () => keuView(v)); };
   $("#kRek").onclick = (e) => { e.preventDefault(); const r = prompt("Nama pemilik / nomor rekening kas lapangan (dipakai untuk membedakan transfer MASUK dan KELUAR):", localStorage.getItem("rekKas") || ""); if (r !== null) { localStorage.setItem("rekKas", r.trim()); keuView(v); } };
@@ -4051,7 +4075,7 @@ async function keuView(v) {
     ${tanpaBukti ? `<p class="err">${tanpaBukti} pengeluaran belum ada foto buktinya.</p>` : ""}
     <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>Tanggal</th><th>Uraian</th><th>Kategori</th><th>Masuk</th><th>Keluar</th><th>Saldo</th><th>Bukti</th><th>Status</th><th></th></tr></thead><tbody>
     ${rows.map((r) => { const [stT, stB, stF] = KEU_STATUS[r.status] ?? [r.status, "#eee", "#333"], saya = r.created_by === session.user.id, bisaUbah = adm || (saya && r.status !== "DISETUJUI");
-      return `<tr><td style="padding:4px 6px;white-space:nowrap">${esc(r.tanggal)}</td><td style="padding:4px 6px">${esc(r.uraian)}${r.pihak ? `<br><small class="muted">${esc(r.pihak)}${r.no_ref ? " · " + esc(r.no_ref) : ""}</small>` : ""}${r.keterangan ? `<br><small>Ket: ${esc(r.keterangan)}</small>` : ""}${r.catatan_admin ? `<br><small style="color:#8A1C12">Admin: ${esc(r.catatan_admin)}</small>` : ""}${r.baca_ai ? `<br><small class="muted" title="Dibaca otomatis dari foto">🤖${(r.diubah_dari_ai ?? []).length ? ` diubah: ${esc(r.diubah_dari_ai.join(", "))}` : " sesuai bacaan"}</small>` : ""}</td>
+      return `<tr><td style="padding:4px 6px;white-space:nowrap">${esc(r.tanggal)}</td><td style="padding:4px 6px">${esc(r.uraian)}${r.pihak ? `<br><small class="muted">${esc(r.pihak)}${r.no_ref ? " · " + esc(r.no_ref) : ""}</small>` : ""}${r.keterangan ? `<br><small>Ket: ${esc(r.keterangan)}</small>` : ""}${r.catatan_admin ? `<br><small style="color:#8A1C12">Admin: ${esc(r.catatan_admin)}</small>` : ""}${r.baca_ai?.tidak_terbaca ? `<br><small style="color:#8A5A00;font-weight:600">⚠ nota tidak terbaca — total diisi manual</small>` : r.baca_ai ? `<br><small class="muted" title="Dibaca otomatis dari foto">🤖${(r.diubah_dari_ai ?? []).length ? ` diubah: ${esc(r.diubah_dari_ai.join(", "))}` : " sesuai bacaan"}</small>` : ""}</td>
         <td style="padding:4px 6px">${esc(r.kategori)}${r.rig ? `<br><small class="muted">${esc(r.rig)}</small>` : ""}</td><td style="padding:4px 6px;text-align:right;white-space:nowrap">${r.arah === "MASUK" ? fmtRp(r.jumlah) : ""}</td>
         <td style="padding:4px 6px;text-align:right;white-space:nowrap">${r.arah === "KELUAR" ? fmtRp(r.jumlah) : ""}</td><td style="padding:4px 6px;text-align:right;white-space:nowrap">${fmtRp(r.saldo)}</td>
         <td style="padding:4px 6px;white-space:nowrap">${r.bukti.map((b, i) => `<a href="#" data-bk="${r.id}|${i}">${b.jenis === "NOTA" ? "🧾" : b.jenis === "TRANSFER" ? "🏦" : "💳"}</a>`).join(" ") || `<span style="color:var(--red)">—</span>`}</td>
@@ -4102,7 +4126,7 @@ async function keuExcel(rows, o) {
   for (const [i, r] of rows.entries()) {
     const rr = r0 + 1 + i, row = L.getRow(rr), driveUrl = r.bukti.find((b) => b.drive_url)?.drive_url ?? r.bukti.find((b) => b.drive_url_asli)?.drive_url_asli;
     const [ty, tm, td] = r.tanggal.split("-").map(Number);
-    row.values = [i + 1, new Date(Date.UTC(ty, tm - 1, td)), r.uraian, r.keterangan ?? "", r.kategori, r.pihak ?? "", r.metode, r.no_ref ?? "", r.rig ?? "", r.arah === "MASUK" ? +r.jumlah : null, r.arah === "KELUAR" ? +r.jumlah : null,
+    row.values = [i + 1, new Date(Date.UTC(ty, tm - 1, td)), r.uraian, (r.baca_ai?.tidak_terbaca ? "[Nota tidak terbaca — total diisi manual] " : "") + (r.keterangan ?? ""), r.kategori, r.pihak ?? "", r.metode, r.no_ref ?? "", r.rig ?? "", r.arah === "MASUK" ? +r.jumlah : null, r.arah === "KELUAR" ? +r.jumlah : null,
       { formula: `L${rr - 1}+N(J${rr})-N(K${rr})` }, KEU_STATUS[r.status]?.[0] ?? r.status];
     row.getCell(2).numFmt = "dd/mm/yyyy"; row.getCell(3).alignment = { wrapText: true, vertical: "top" }; row.getCell(4).alignment = { wrapText: true, vertical: "top" };
     if (r.bukti.length) { tujuan[r.id] = br;
