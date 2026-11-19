@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-19.02";
+const APP_VERSION = "2026-11-19.03";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1846,6 +1846,7 @@ function petaA3Dialog(L) {
     <p class="muted">Isian disimpan di HP ini untuk ekspor berikutnya. Skala dipilih otomatis (bulat) agar semua titik bor dan batas IUP masuk.</p>
     <label>Logo perusahaan (PNG/JPG)</label><div class="row" style="align-items:center"><span id="paLg" style="flex:0 0 90px;height:44px;display:flex;align-items:center;justify-content:center;border:1px dashed #9aa;border-radius:6px;overflow:hidden">${logo ? `<img src="${logo}" style="max-height:42px;max-width:88px">` : `<span class="muted" style="font-size:11px">belum ada</span>`}</span><input id="paLf" type="file" accept="image/*" style="flex:1"></div>
     ${f("perusahaan", "Nama perusahaan (judul & kaki panel)")}${f("judul", "Judul peta")}${f("sub", "Sub-judul (proyek · tahun)")}
+    <label>Cakupan peta</label><select data-k="cakupan"><option value="bor" ${S.cakupan !== "iup" ? "selected" : ""}>Area pemboran saja (skala lebih besar)</option><option value="iup" ${S.cakupan === "iup" ? "selected" : ""}>Seluruh batas IUP</option></select>
     ${f("lampiran", "Keterangan lampiran")}<div class="row"><div>${f("nomor", "Nomor")}</div><div>${f("tanggal", "Tanggal")}</div></div>
     <div class="row"><div>${f("kota", "Kota (tanda tangan)", "mis. Luwuk")}</div><div>${f("jabatan", "Jabatan penandatangan")}</div></div>${f("nama", "Nama penandatangan", me?.full_name ?? "")}
     <label>Dasar / sumber tambahan (satu per baris, opsional)</label><textarea data-k="dasar" rows="3" placeholder="mis. SK IUP OP No. ...">${esc(S.dasar)}</textarea>
@@ -1873,11 +1874,14 @@ async function petaA3HTML(L, O) {
   const poly = Wl.filter((x) => (x.titik ?? []).length > 2).map((x) => ({ ...x, u: x.titik.map((t) => UTM.ke(+t.lon, +t.lat)) }));
   const semua = [...pts.map((p) => p.u), ...poly.flatMap((p) => p.u)];
   if (!semua.length) return "<p style='padding:20px'>Belum ada titik bor atau batas IUP untuk dipetakan.</p>";
+  // cakupan: area pemboran (bawaan) atau seluruh IUP
+  const fokus = O.cakupan !== "iup" && pts.length ? pts.map((p) => p.u) : semua;
   // bingkai peta (mm) dan skala bulat
   const FX = 20, FY = 20, FW = 279, FH = 257;
-  let e0 = Math.min(...semua.map((c) => c[0])), e1 = Math.max(...semua.map((c) => c[0])), n0 = Math.min(...semua.map((c) => c[1])), n1 = Math.max(...semua.map((c) => c[1]));
-  const gw = Math.max(300, (e1 - e0) * 1.12), gh = Math.max(300, (n1 - n0) * 1.12), Ec = (e0 + e1) / 2, Nc = (n0 + n1) / 2;
-  const SK = [1000, 2000, 2500, 5000, 7500, 10000, 12500, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 250000];
+  let e0 = Math.min(...fokus.map((c) => c[0])), e1 = Math.max(...fokus.map((c) => c[0])), n0 = Math.min(...fokus.map((c) => c[1])), n1 = Math.max(...fokus.map((c) => c[1]));
+  const tepi = fokus === semua ? 0 : 150; // ruang 150 m di sekeliling titik bor
+  const gw = Math.max(300, (e1 - e0) * 1.08 + 2 * tepi), gh = Math.max(300, (n1 - n0) * 1.08 + 2 * tepi), Ec = (e0 + e1) / 2, Nc = (n0 + n1) / 2;
+  const SK = [500, 1000, 2000, 2500, 5000, 7500, 10000, 12500, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 250000];
   const S = SK.find((s) => gw <= (FW / 1000) * s && gh <= (FH / 1000) * s) ?? 250000;
   const mm = 1000 / S; // mm per meter
   const X = (E) => FX + FW / 2 + (E - Ec) * mm, Y = (N) => FY + FH / 2 - (N - Nc) * mm;
@@ -1937,13 +1941,25 @@ async function petaA3HTML(L, O) {
   const sbM = [50, 100, 200, 250, 400, 500, 800, 1000, 1500, 2000, 2500, 4000, 5000, 10000, 20000].filter((v) => v * mm <= 82).pop() ?? 100, sbW = sbM * mm;
   const skalaSVG = `<svg viewBox="0 0 ${sbW + 12} 13" style="width:${sbW + 12}mm;height:13mm;display:block;margin:0 auto">${[0, 1, 2, 3].map((i) => `<rect x="${6 + (i * sbW) / 4}" y="4" width="${sbW / 4}" height="1.4" fill="${i % 2 ? "#fff" : "#111"}" stroke="#111" stroke-width=".15"/>`).join("")}
     ${[0, 1, 2, 3, 4].map((i) => `<text x="${6 + (i * sbW) / 4}" y="2.8" font-size="2" text-anchor="middle">${((i * sbW) / 4 / 10).toLocaleString("id-ID", { maximumFractionDigits: 1 })}</text><text x="${6 + (i * sbW) / 4}" y="9" font-size="2" text-anchor="middle">${((i * sbM) / 4).toLocaleString("id-ID")}</text>`).join("")}<text x="${sbW + 9}" y="2.8" font-size="2">cm</text><text x="${sbW + 9}" y="9" font-size="2">m</text></svg>`;
-  // peta situasi: ubin OSM zoom 7 di sekitar lokasi
-  const [lc, la] = UTM.dari(Ec, Nc), z = 7, n2 = 2 ** z, tx0 = ((lc + 180) / 360) * n2, ty0 = ((1 - Math.log(Math.tan((la * Math.PI) / 180) + 1 / Math.cos((la * Math.PI) / 180)) / Math.PI) / 2) * n2;
-  const IW = 92, IH = 68, ts = 30; // mm per ubin
-  const ox = IW / 2 - (tx0 % 1) * ts - ts, oy = IH / 2 - (ty0 % 1) * ts - ts, bx = Math.floor(tx0) - 1, by = Math.floor(ty0) - 1;
-  let inset = ""; for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) inset += `<img src="https://tile.openstreetmap.org/${z}/${bx + i}/${by + j}.png" style="position:absolute;left:${ox + i * ts}mm;top:${oy + j * ts}mm;width:${ts}mm;height:${ts}mm" onerror="this.remove()">`;
-  const kot = Math.max(1.6, ((Eb - Ea) / 40075016) * Math.cos((la * Math.PI) / 180) * n2 * ts);
-  inset += `<div style="position:absolute;left:${IW / 2 - kot / 2}mm;top:${IH / 2 - kot / 2}mm;width:${kot}mm;height:${kot}mm;border:.6mm solid #e01b1b"></div>`;
+  // peta situasi (indeks regional): pulau/kepulauan tempat lokasi berada, ubin OSM, kotak merah = cakupan peta
+  const [lc, la] = UTM.dari(Ec, Nc);
+  const REG = [["Sumatera", [95.0, -6.2, 106.3, 6.1]], ["Jawa & Bali", [105.0, -8.9, 115.8, -5.8]], ["Kalimantan", [108.5, -4.3, 119.3, 7.1]], ["Sulawesi", [118.7, -6.3, 125.5, 2.1]],
+    ["Nusa Tenggara", [115.8, -11.0, 125.3, -7.8]], ["Maluku", [124.6, -8.5, 135.0, 3.0]], ["Papua", [130.8, -9.3, 141.1, 1.0]]];
+  const cocok = REG.filter(([, b]) => lc >= b[0] && lc <= b[2] && la >= b[1] && la <= b[3]).sort((a, b) => Math.hypot(lc - (a[1][0] + a[1][2]) / 2, la - (a[1][1] + a[1][3]) / 2) - Math.hypot(lc - (b[1][0] + b[1][2]) / 2, la - (b[1][1] + b[1][3]) / 2));
+  const [regNama, rb] = cocok[0] ?? ["Regional", [lc - 4, la - 3, lc + 4, la + 3]];
+  let provinsi = "";
+  try { if (navigator.onLine) { const ctl = new AbortController(); setTimeout(() => ctl.abort(), 5000);
+    const j = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=5&accept-language=id&lat=${la}&lon=${lc}`, { signal: ctl.signal })).json(); provinsi = j?.address?.state ?? j?.address?.province ?? ""; } } catch {}
+  const IW = 92, IH = 68, txf = (lon, z) => ((lon + 180) / 360) * 2 ** z, tyf = (lat, z) => ((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) * 2 ** z;
+  let z = 3, ts = 0; for (let k = 9; k >= 3; k--) { const t = Math.min(IW / (txf(rb[2], k) - txf(rb[0], k)), IH / (tyf(rb[1], k) - tyf(rb[3], k))); if (t >= 14) { z = k; ts = t; break; } }
+  if (!ts) { z = 3; ts = Math.min(IW / (txf(rb[2], 3) - txf(rb[0], 3)), IH / (tyf(rb[1], 3) - tyf(rb[3], 3))); }
+  const cX = (txf(rb[0], z) + txf(rb[2], z)) / 2, cY = (tyf(rb[1], z) + tyf(rb[3], z)) / 2, MX = (tx) => IW / 2 + (tx - cX) * ts, MY = (ty) => IH / 2 + (ty - cY) * ts;
+  let inset = "";
+  for (let tx = Math.floor(cX - IW / 2 / ts); tx <= Math.floor(cX + IW / 2 / ts); tx++) for (let ty = Math.floor(cY - IH / 2 / ts); ty <= Math.floor(cY + IH / 2 / ts); ty++)
+    if (ty >= 0 && ty < 2 ** z) inset += `<img src="https://tile.openstreetmap.org/${z}/${((tx % 2 ** z) + 2 ** z) % 2 ** z}/${ty}.png" style="position:absolute;left:${MX(tx)}mm;top:${MY(ty)}mm;width:${ts + 0.05}mm;height:${ts + 0.05}mm" onerror="this.remove()">`;
+  const kA = UTM.dari(Ea, Nb), kB = UTM.dari(Eb, Na), kx0 = MX(txf(kA[0], z)), ky0 = MY(tyf(kA[1], z)), kw = Math.max(2.2, MX(txf(kB[0], z)) - kx0), kh = Math.max(2.2, MY(tyf(kB[1], z)) - ky0);
+  inset += `<div style="position:absolute;left:${kx0 + (MX(txf(kB[0], z)) - kx0) / 2 - kw / 2}mm;top:${ky0 + (MY(tyf(kB[1], z)) - ky0) / 2 - kh / 2}mm;width:${kw}mm;height:${kh}mm;border:.6mm solid #e01b1b;box-sizing:border-box"></div>`;
+  const situasiKet = `${regNama === "Regional" ? "Regional lokasi" : "Regional " + regNama}${provinsi ? " · Provinsi " + provinsi.replace(/^Provinsi\s+/i, "") : ""}`;
   const zonaTxt = `Universal Transverse Mercator (UTM) Zona 51 ${Nc < 1e7 && la >= 0 ? "Utara" : "Selatan"}`;
   const sumber = [
     ...Wl.map((x) => `Batas IUP: ${x.nama ?? "wilayah"}${x.nomor_sk ? " — " + x.nomor_sk : ""}`),
@@ -1988,7 +2004,7 @@ async function petaA3HTML(L, O) {
       ${adaCitra ? leg(`<span style="display:inline-block;width:6mm;height:3mm;background:linear-gradient(90deg,#6b7f4a,#9aa77a)"></span>`, "Citra drone") : ""}</div>
     <div style="font-size:2.2mm"><b>Sumber:</b><ol>${sumber.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></div>
     ${O.catatan ? `<div style="font-size:2.2mm"><b>Catatan:</b><div style="white-space:pre-line;margin-top:.4mm">${esc(O.catatan)}</div></div>` : ""}
-    <div><b style="font-size:2.4mm">Peta Situasi</b><div style="position:relative;width:${IW}mm;height:${IH}mm;overflow:hidden;border:.2mm solid #777;margin-top:.8mm;background:#cfe7f5">${inset}</div></div>
+    <div><b style="font-size:2.4mm">Peta Situasi</b> <span style="font-size:2.2mm">— ${esc(situasiKet)}</span><div style="position:relative;width:${IW}mm;height:${IH}mm;overflow:hidden;border:.2mm solid #777;margin-top:.8mm;background:#aad3df">${inset}</div><div style="display:flex;align-items:center;gap:1.5mm;font-size:2.1mm;margin-top:.6mm"><span style="display:inline-block;width:3mm;height:2.2mm;border:.5mm solid #e01b1b"></span>Lokasi yang dipetakan</div></div>
     <div class="c" style="margin-top:auto;font-size:2.5mm">${esc(O.kota ? O.kota + ", " : "")}${tglTtd}<div class="b">${esc(O.perusahaan)}</div><div>${esc(O.jabatan)}</div><div style="height:15mm"></div><div class="b" style="text-decoration:underline">${esc(O.nama || "........................................")}</div></div>
     <div class="c" style="background:#f1f1f1"><div class="b" style="font-size:3.2mm">${esc(O.perusahaan)}</div><div>${thn}</div></div>
   </div></div></body></html>`;
