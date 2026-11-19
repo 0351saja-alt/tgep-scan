@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-19.03";
+const APP_VERSION = "2026-11-19.04";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1831,6 +1831,29 @@ async function kanvasCitra(bb, Wp, Hp, o = {}) {
 }
 // ---------- Peta pemboran statis (SVG) untuk laporan/PDF ----------
 let _konturCache = null, _elevCache = null;
+// Hillshade dari ubin DEM terrain-RGB (peta/dem) untuk kotak lon/lat: bayangan gelap + sorotan terang transparan (ditumpuk di atas peta)
+async function hillshadeKanvas(bb, o = {}) {
+  const txf = (lon, z) => ((lon + 180) / 360) * 2 ** z, tyf = (lat, z) => ((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) * 2 ** z;
+  let z = 14; while (z > 10 && (Math.floor(txf(bb[2], z)) - Math.floor(txf(bb[0], z)) + 1) * (Math.floor(tyf(bb[1], z)) - Math.floor(tyf(bb[3], z)) + 1) > 48) z--;
+  const X0 = Math.floor(txf(bb[0], z)), X1 = Math.floor(txf(bb[2], z)), Y0 = Math.floor(tyf(bb[3], z)), Y1 = Math.floor(tyf(bb[1], z)), nx = X1 - X0 + 1, ny = Y1 - Y0 + 1;
+  const c = Object.assign(document.createElement("canvas"), { width: nx * 256, height: ny * 256 }), g = c.getContext("2d", { willReadFrequently: true });
+  let ada = 0;
+  await Promise.all(Array.from({ length: nx * ny }, (_, k) => new Promise((ok) => { const tx = X0 + (k % nx), ty = Y0 + Math.floor(k / nx), im = new Image();
+    im.onload = () => { g.drawImage(im, (tx - X0) * 256, (ty - Y0) * 256); ada++; ok(); }; im.onerror = ok; im.src = `peta/dem/${z}/${tx}/${ty}.png`; })));
+  if (!ada) return null;
+  const W = c.width, H = c.height, d = g.getImageData(0, 0, W, H).data, E = new Float32Array(W * H), ok = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) { if (d[i * 4 + 3] < 200) continue; E[i] = -10000 + (d[i * 4] * 65536 + d[i * 4 + 1] * 256 + d[i * 4 + 2]) * 0.1; ok[i] = 1; }
+  const latc = (bb[1] + bb[3]) / 2, px = (156543.03 * Math.cos((latc * Math.PI) / 180)) / 2 ** z, zf = o.eks ?? 2;
+  const az = ((360 - (o.az ?? 315) + 90) * Math.PI) / 180, alt = ((o.alt ?? 45) * Math.PI) / 180, out = g.createImageData(W, H), q = out.data, kuat = o.kuat ?? 0.85;
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const i = y * W + x; if (!ok[i] || !ok[i - 1] || !ok[i + 1] || !ok[i - W] || !ok[i + W]) continue;
+    const dzdx = ((E[i + 1] - E[i - 1]) / (2 * px)) * zf, dzdy = ((E[i - W] - E[i + W]) / (2 * px)) * zf;
+    const sl = Math.atan(Math.hypot(dzdx, dzdy)), asp = Math.atan2(dzdy, -dzdx);
+    const h = Math.max(0, Math.cos(alt) * Math.cos(sl) + Math.sin(alt) * Math.sin(sl) * Math.cos(az - asp)), datar = Math.cos(alt);
+    if (h < datar) { q[i * 4 + 3] = Math.min(255, ((datar - h) / datar) * 255 * kuat); } else { q[i * 4] = q[i * 4 + 1] = q[i * 4 + 2] = 255; q[i * 4 + 3] = Math.min(255, ((h - datar) / (1 - datar)) * 80 * kuat); } }
+  g.putImageData(out, 0, 0);
+  const lonT = (t) => (t / 2 ** z) * 360 - 180, latT = (t) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * t) / 2 ** z))) * 180) / Math.PI;
+  return { url: c.toDataURL("image/png"), bb: [lonT(X0), latT(Y1 + 1), lonT(X1 + 1), latT(Y0)], z };
+}
 // ---------- Ekspor peta lokasi titik bor A3 lanskap (template lampiran: peta + panel keterangan, skala bulat sebenarnya) ----------
 const PETA_A3_DEF = {
   perusahaan: "PT NUSA PRIMA GEMILANG", judul: "PETA LOKASI TITIK BOR EKSPLORASI", sub: "", lampiran: "Lampiran Laporan Kegiatan Eksplorasi Nikel Laterit",
@@ -1847,6 +1870,7 @@ function petaA3Dialog(L) {
     <label>Logo perusahaan (PNG/JPG)</label><div class="row" style="align-items:center"><span id="paLg" style="flex:0 0 90px;height:44px;display:flex;align-items:center;justify-content:center;border:1px dashed #9aa;border-radius:6px;overflow:hidden">${logo ? `<img src="${logo}" style="max-height:42px;max-width:88px">` : `<span class="muted" style="font-size:11px">belum ada</span>`}</span><input id="paLf" type="file" accept="image/*" style="flex:1"></div>
     ${f("perusahaan", "Nama perusahaan (judul & kaki panel)")}${f("judul", "Judul peta")}${f("sub", "Sub-judul (proyek · tahun)")}
     <label>Cakupan peta</label><select data-k="cakupan"><option value="bor" ${S.cakupan !== "iup" ? "selected" : ""}>Area pemboran saja (skala lebih besar)</option><option value="iup" ${S.cakupan === "iup" ? "selected" : ""}>Seluruh batas IUP</option></select>
+    <label>Bayangan relief (hillshade)</label><select data-k="hillshade"><option value="ya" ${S.hillshade !== "tidak" ? "selected" : ""}>Tampilkan (kesan 3D)</option><option value="tidak" ${S.hillshade === "tidak" ? "selected" : ""}>Tidak</option></select>
     ${f("lampiran", "Keterangan lampiran")}<div class="row"><div>${f("nomor", "Nomor")}</div><div>${f("tanggal", "Tanggal")}</div></div>
     <div class="row"><div>${f("kota", "Kota (tanda tangan)", "mis. Luwuk")}</div><div>${f("jabatan", "Jabatan penandatangan")}</div></div>${f("nama", "Nama penandatangan", me?.full_name ?? "")}
     <label>Dasar / sumber tambahan (satu per baris, opsional)</label><textarea data-k="dasar" rows="3" placeholder="mis. SK IUP OP No. ...">${esc(S.dasar)}</textarea>
@@ -1888,7 +1912,7 @@ async function petaA3HTML(L, O) {
   const Ea = Ec - FW / 2 / mm, Eb = Ec + FW / 2 / mm, Na = Nc - FH / 2 / mm, Nb = Nc + FH / 2 / mm;
   const PU = (c) => `${X(c[0]).toFixed(2)},${Y(c[1]).toFixed(2)}`, PL = (lon, lat) => PU(UTM.ke(lon, lat));
   const ll0 = UTM.dari(Ea, Na), ll1 = UTM.dari(Eb, Nb), bbLL = [Math.min(ll0[0], ll1[0]) - 0.002, Math.min(ll0[1], ll1[1]) - 0.002, Math.max(ll0[0], ll1[0]) + 0.002, Math.max(ll0[1], ll1[1]) + 0.002];
-  let g = "", catSumber = [], adaKontur = false, adaCitra = false, LAY = [];
+  let g = "", gK = "", catSumber = [], adaKontur = false, adaCitra = false, adaHS = false, LAY = [];
   try { // latar elevasi + kontur DEMNAS
     const I = await (await fetch("peta/kontur/index.json")).json(), bb = I.elevasi.bbox;
     if (!_elevCache) { const b = await (await fetch("peta/kontur/elevasi.png")).blob(); _elevCache = await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); }); }
@@ -1897,15 +1921,19 @@ async function petaA3HTML(L, O) {
     if (!_konturCache) _konturCache = await (await fetch("peta/kontur/kontur.geojson")).json();
     const inBox = (c) => c[0] > bbLL[0] && c[0] < bbLL[2] && c[1] > bbLL[1] && c[1] < bbLL[3];
     for (const f of _konturCache.features) { const c = f.geometry.coordinates; if (!c.some(inBox)) continue; const idx = f.properties.i === 1; adaKontur = true;
-      g += `<polyline points="${c.map((q) => PL(q[0], q[1])).join(" ")}" fill="none" stroke="${idx ? "#8a5a33" : "#b98a62"}" stroke-width="${idx ? 0.28 : 0.13}"/>`;
-      if (idx) { const md = c[Math.floor(c.length / 2)]; if (inBox(md)) { const [x, y] = PL(md[0], md[1]).split(","); g += `<text x="${x}" y="${y}" font-size="1.9" fill="#8a5a33" stroke="#fff" stroke-width=".5" paint-order="stroke">${esc(String(f.properties.z))}</text>`; } } }
+      gK += `<polyline points="${c.map((q) => PL(q[0], q[1])).join(" ")}" fill="none" stroke="${idx ? "#7a4a25" : "#a87a52"}" stroke-width="${idx ? 0.28 : 0.13}"/>`;
+      if (idx) { const md = c[Math.floor(c.length / 2)]; if (inBox(md)) { const [x, y] = PL(md[0], md[1]).split(","); gK += `<text x="${x}" y="${y}" font-size="1.9" fill="#8a5a33" stroke="#fff" stroke-width=".5" paint-order="stroke">${esc(String(f.properties.z))}</text>`; } } }
     catSumber.push("Topografi: DEMNAS (Badan Informasi Geospasial), kontur 25 m (indeks 100 m)");
   } catch {}
   try { // citra drone & lapisan peta yang diunggah di aplikasi
     const kc = await kanvasCitra(bbLL, 2200, 2200 * (bbLL[3] - bbLL[1]) / (bbLL[2] - bbLL[0]) / Math.cos((((bbLL[1] + bbLL[3]) / 2) * Math.PI) / 180), { maksTile: 260 });
     if (kc.nama.length) { const a = UTM.ke(bbLL[0], bbLL[3]), b = UTM.ke(bbLL[2], bbLL[1]); g += `<image href="${kc.toDataURL("image/png")}" x="${X(a[0])}" y="${Y(a[1])}" width="${X(b[0]) - X(a[0])}" height="${Y(b[1]) - Y(a[1])}" preserveAspectRatio="none"/>`; adaCitra = true; catSumber.push("Citra drone: " + kc.nama.join(", ")); }
+    if (O.hillshade !== "tidak") { const hs = await hillshadeKanvas(bbLL, { kuat: adaCitra ? 0.55 : 0.75 }).catch(() => null);
+      if (hs) { const a = UTM.ke(hs.bb[0], hs.bb[3]), b = UTM.ke(hs.bb[2], hs.bb[1]); g += `<image href="${hs.url}" x="${X(a[0])}" y="${Y(a[1])}" width="${X(b[0]) - X(a[0])}" height="${Y(b[1]) - Y(a[1])}" preserveAspectRatio="none"/>`; adaHS = true; catSumber.push("Hillshade dari DEMNAS (cahaya barat laut 315°, tinggi 45°, relief ×2)"); } }
+    g += gK; gK = "";
     LAY = await daftarLapisan(); if (LAY.length) g += svgLapisan(LAY, (c) => PL(c[0], c[1]), 0.9).replace(/stroke-width="2"/g, 'stroke-width=".35"');
   } catch {}
+  g += gK;
   // grid geografis (biru muda) — interval mengikuti luas peta
   const dLon = bbLL[2] - bbLL[0], gI = [5, 10, 15, 30, 60, 120, 300, 600].map((s) => s / 3600).find((s) => dLon / s <= 6) ?? 0.25;
   const dms = (v, pos, neg) => { const a = Math.abs(v), d = Math.floor(a + 1e-9), mn = Math.floor((a - d) * 60 + 1e-7), sc = Math.round(((a - d) * 60 - mn) * 60); return `${d}° ${mn}' ${sc}" ${v >= 0 ? pos : neg}`; };
@@ -2001,7 +2029,7 @@ async function petaA3HTML(L, O) {
       ${adaKontur ? leg(garis("#8a5a33", 0.5), "Kontur indeks 100 m") + leg(garis("#b98a62", 0.25), "Kontur 25 m") : ""}
       ${LAY.map((l) => leg(garis(esc(l.warna || "#00b7ff"), 0.6), esc(l.nama))).join("")}
       ${leg(garis("#8cc8ee", 0.4), "Grid geografis")}${leg(`<svg viewBox="0 0 4 4" style="width:3mm;height:3mm"><path d="M0,2H4M2,0V4" stroke="#111" stroke-width=".4"/></svg>`, "Grid UTM")}
-      ${adaCitra ? leg(`<span style="display:inline-block;width:6mm;height:3mm;background:linear-gradient(90deg,#6b7f4a,#9aa77a)"></span>`, "Citra drone") : ""}</div>
+      ${adaCitra ? leg(`<span style="display:inline-block;width:6mm;height:3mm;background:linear-gradient(90deg,#6b7f4a,#9aa77a)"></span>`, "Citra drone") : ""}${adaHS ? leg(`<span style="display:inline-block;width:6mm;height:3mm;background:linear-gradient(135deg,#fff,#9a9a9a 55%,#444)"></span>`, "Bayangan relief (hillshade)") : ""}</div>
     <div style="font-size:2.2mm"><b>Sumber:</b><ol>${sumber.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></div>
     ${O.catatan ? `<div style="font-size:2.2mm"><b>Catatan:</b><div style="white-space:pre-line;margin-top:.4mm">${esc(O.catatan)}</div></div>` : ""}
     <div><b style="font-size:2.4mm">Peta Situasi</b> <span style="font-size:2.2mm">— ${esc(situasiKet)}</span><div style="position:relative;width:${IW}mm;height:${IH}mm;overflow:hidden;border:.2mm solid #777;margin-top:.8mm;background:#aad3df">${inset}</div><div style="display:flex;align-items:center;gap:1.5mm;font-size:2.1mm;margin-top:.6mm"><span style="display:inline-block;width:3mm;height:2.2mm;border:.5mm solid #e01b1b"></span>Lokasi yang dipetakan</div></div>
