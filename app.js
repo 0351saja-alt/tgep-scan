@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-19.01";
+const APP_VERSION = "2026-11-19.02";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1532,10 +1532,11 @@ function pasangDok(isi, host, buf, ukuran) {
   const doc = new DOMParser().parseFromString(buf, "text/html");
   const css = [...doc.querySelectorAll("style")].map((x) => x.textContent).join("\n").replace(/@page\s*\{[^}]*\}/g, "");
   doc.querySelectorAll(".bar0,.bar,script").forEach((x) => x.remove());
-  isi.innerHTML = ""; host.style.cssText = ukuran === "16:9" ? "padding:4px 0" : "background:#fff;max-width:1000px;margin:0 auto"; host.dataset.dok = "1"; isi.appendChild(host);
+  isi.innerHTML = ""; host.style.cssText = ukuran === "16:9" ? "padding:4px 0" : ukuran === "A3L" ? "background:#fff;width:420mm;margin:0 auto" : "background:#fff;max-width:1000px;margin:0 auto"; host.dataset.dok = "1"; isi.appendChild(host);
   const sh = host.shadowRoot ?? host.attachShadow({ mode: "open" });
   sh.innerHTML = `<style>:host{display:block}${css.replace(/\bbody\b/g, ".dok-body")}</style><div class="dok-body" style="margin:0;background:transparent">${doc.body.innerHTML}</div>`;
   if (ukuran === "16:9") { const skala = () => { if (isi.isConnected) host.style.zoom = Math.min(1, (isi.clientWidth - 6) / 1300); }; skala(); addEventListener("resize", skala); }
+  if (ukuran === "A3L") { const skala = () => { if (isi.isConnected) host.style.zoom = Math.min(1, (isi.clientWidth - 6) / 1588); }; skala(); addEventListener("resize", skala); }
 }
 // wadah tulis yang menempel dokumen ke elemen halaman (dipakai Dashboard)
 function wadahDi(el, ukuran) { let buf = ""; const host = document.createElement("div");
@@ -1550,7 +1551,7 @@ function jendelaDok(judul, ukuran = "A4") {
     <div data-isi style="flex:1;overflow:auto;-webkit-overflow-scrolling:touch"><p style="color:#fff;font-family:Arial;padding:20px">Menyusun ${esc(judul.toLowerCase())}…</p></div>`;
   document.body.appendChild(L); document.body.style.overflow = "hidden";
   const pr = Object.assign(document.createElement("style"), { id: "dokPrint" });
-  pr.textContent = `@media print{@page{size:${ukuran === "16:9" ? "338.67mm 190.5mm" : "A4"};margin:${ukuran === "16:9" ? 0 : "10mm"}}body>*:not(#dokLayer){display:none!important}#dokLayer{position:static!important;background:#fff!important}#dokLayer>div:first-child{display:none!important}#dokLayer [data-isi]{overflow:visible!important}[data-dok]{zoom:1!important;padding:0!important}}`;
+  pr.textContent = `@media print{@page{size:${ukuran === "16:9" ? "338.67mm 190.5mm" : ukuran === "A3L" ? "420mm 297mm" : "A4"};margin:${ukuran === "16:9" || ukuran === "A3L" ? 0 : "10mm"}}body>*:not(#dokLayer){display:none!important}#dokLayer{position:static!important;background:#fff!important}#dokLayer>div:first-child{display:none!important}#dokLayer [data-isi]{overflow:visible!important}[data-dok]{zoom:1!important;padding:0!important}}`;
   document.head.appendChild(pr);
   const isi = L.querySelector("[data-isi]"), host = document.createElement("div"); let buf = "";
   const tutup = () => { L.remove(); pr.remove(); document.body.style.overflow = ""; };
@@ -1830,6 +1831,168 @@ async function kanvasCitra(bb, Wp, Hp, o = {}) {
 }
 // ---------- Peta pemboran statis (SVG) untuk laporan/PDF ----------
 let _konturCache = null, _elevCache = null;
+// ---------- Ekspor peta lokasi titik bor A3 lanskap (template lampiran: peta + panel keterangan, skala bulat sebenarnya) ----------
+const PETA_A3_DEF = {
+  perusahaan: "PT NUSA PRIMA GEMILANG", judul: "PETA LOKASI TITIK BOR EKSPLORASI", sub: "", lampiran: "Lampiran Laporan Kegiatan Eksplorasi Nikel Laterit",
+  nomor: "-", tanggal: "-", kota: "", jabatan: "Kepala Teknik Tambang", nama: "",
+  dasar: "", catatan: "1. Posisi titik bor dari GPS collar / Mulai bor; titik rencana dari daftar rencana lubang.\n2. Kedalaman sesuai laporan harian (Progres bor & DDR) di aplikasi X-Terra.",
+};
+function petaA3Dialog(L) {
+  const S = { ...PETA_A3_DEF, ...JSON.parse(localStorage.getItem("petaA3") || "{}") }, logo = localStorage.getItem("petaA3Logo");
+  const Wl = JSON.parse(localStorage.getItem("wilayah") || "[]");
+  if (!S.sub) S.sub = (Wl[0]?.nama ? Wl[0].nama.toUpperCase() + " · " : "") + "TAHUN " + new Date().getFullYear();
+  const f = (k, l, ph = "") => `<label>${l}</label><input data-k="${k}" value="${esc(S[k] ?? "")}" placeholder="${esc(ph)}">`;
+  const m = modal(`<h3>Peta lokasi PDF (A3 lanskap)</h3>
+    <p class="muted">Isian disimpan di HP ini untuk ekspor berikutnya. Skala dipilih otomatis (bulat) agar semua titik bor dan batas IUP masuk.</p>
+    <label>Logo perusahaan (PNG/JPG)</label><div class="row" style="align-items:center"><span id="paLg" style="flex:0 0 90px;height:44px;display:flex;align-items:center;justify-content:center;border:1px dashed #9aa;border-radius:6px;overflow:hidden">${logo ? `<img src="${logo}" style="max-height:42px;max-width:88px">` : `<span class="muted" style="font-size:11px">belum ada</span>`}</span><input id="paLf" type="file" accept="image/*" style="flex:1"></div>
+    ${f("perusahaan", "Nama perusahaan (judul & kaki panel)")}${f("judul", "Judul peta")}${f("sub", "Sub-judul (proyek · tahun)")}
+    ${f("lampiran", "Keterangan lampiran")}<div class="row"><div>${f("nomor", "Nomor")}</div><div>${f("tanggal", "Tanggal")}</div></div>
+    <div class="row"><div>${f("kota", "Kota (tanda tangan)", "mis. Luwuk")}</div><div>${f("jabatan", "Jabatan penandatangan")}</div></div>${f("nama", "Nama penandatangan", me?.full_name ?? "")}
+    <label>Dasar / sumber tambahan (satu per baris, opsional)</label><textarea data-k="dasar" rows="3" placeholder="mis. SK IUP OP No. ...">${esc(S.dasar)}</textarea>
+    <label>Catatan</label><textarea data-k="catatan" rows="3">${esc(S.catatan)}</textarea>
+    <p class="err" id="pae"></p><div class="row"><button class="sec" id="pab">Batal</button><button id="pak">Buat peta PDF</button></div>`);
+  let logoBaru = logo;
+  m.querySelector("#paLf").onchange = async (e) => { const fl = e.target.files[0]; if (!fl) return;
+    const bmp = await createImageBitmap(fl), k = Math.min(1, 600 / Math.max(bmp.width, bmp.height)), c = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) });
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height); logoBaru = c.toDataURL("image/png"); m.querySelector("#paLg").innerHTML = `<img src="${logoBaru}" style="max-height:42px;max-width:88px">`; };
+  m.querySelector("#pab").onclick = () => m.remove();
+  m.querySelector("#pak").onclick = () => {
+    const O = {}; m.querySelectorAll("[data-k]").forEach((x) => (O[x.dataset.k] = x.value.trim()));
+    localStorage.setItem("petaA3", JSON.stringify(O)); if (logoBaru) try { localStorage.setItem("petaA3Logo", logoBaru); } catch {}
+    m.remove(); petaA3(L, { ...O, logo: logoBaru });
+  };
+}
+async function petaA3(L, O) {
+  const w = jendelaDok("Peta lokasi titik bor (A3)", "A3L");
+  try { w.document.open(); w.document.write(await petaA3HTML(L, O)); w.document.close(); }
+  catch (e) { w.document.open(); w.document.write(`<p style="padding:20px;color:#b00">Peta gagal disusun: ${esc(e.message)}</p>`); w.document.close(); }
+}
+async function petaA3HTML(L, O) {
+  const Wl = JSON.parse(localStorage.getItem("wilayah") || "[]");
+  const pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat)).map((x) => ({ ...x, u: UTM.ke(+x.lon, +x.lat) }));
+  const poly = Wl.filter((x) => (x.titik ?? []).length > 2).map((x) => ({ ...x, u: x.titik.map((t) => UTM.ke(+t.lon, +t.lat)) }));
+  const semua = [...pts.map((p) => p.u), ...poly.flatMap((p) => p.u)];
+  if (!semua.length) return "<p style='padding:20px'>Belum ada titik bor atau batas IUP untuk dipetakan.</p>";
+  // bingkai peta (mm) dan skala bulat
+  const FX = 20, FY = 20, FW = 279, FH = 257;
+  let e0 = Math.min(...semua.map((c) => c[0])), e1 = Math.max(...semua.map((c) => c[0])), n0 = Math.min(...semua.map((c) => c[1])), n1 = Math.max(...semua.map((c) => c[1]));
+  const gw = Math.max(300, (e1 - e0) * 1.12), gh = Math.max(300, (n1 - n0) * 1.12), Ec = (e0 + e1) / 2, Nc = (n0 + n1) / 2;
+  const SK = [1000, 2000, 2500, 5000, 7500, 10000, 12500, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 250000];
+  const S = SK.find((s) => gw <= (FW / 1000) * s && gh <= (FH / 1000) * s) ?? 250000;
+  const mm = 1000 / S; // mm per meter
+  const X = (E) => FX + FW / 2 + (E - Ec) * mm, Y = (N) => FY + FH / 2 - (N - Nc) * mm;
+  const Ea = Ec - FW / 2 / mm, Eb = Ec + FW / 2 / mm, Na = Nc - FH / 2 / mm, Nb = Nc + FH / 2 / mm;
+  const PU = (c) => `${X(c[0]).toFixed(2)},${Y(c[1]).toFixed(2)}`, PL = (lon, lat) => PU(UTM.ke(lon, lat));
+  const ll0 = UTM.dari(Ea, Na), ll1 = UTM.dari(Eb, Nb), bbLL = [Math.min(ll0[0], ll1[0]) - 0.002, Math.min(ll0[1], ll1[1]) - 0.002, Math.max(ll0[0], ll1[0]) + 0.002, Math.max(ll0[1], ll1[1]) + 0.002];
+  let g = "", catSumber = [], adaKontur = false, adaCitra = false, LAY = [];
+  try { // latar elevasi + kontur DEMNAS
+    const I = await (await fetch("peta/kontur/index.json")).json(), bb = I.elevasi.bbox;
+    if (!_elevCache) { const b = await (await fetch("peta/kontur/elevasi.png")).blob(); _elevCache = await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); }); }
+    const a = UTM.ke(bb[0], bb[3]), b = UTM.ke(bb[2], bb[1]);
+    g += `<image href="${_elevCache}" x="${X(a[0])}" y="${Y(a[1])}" width="${X(b[0]) - X(a[0])}" height="${Y(b[1]) - Y(a[1])}" preserveAspectRatio="none" opacity=".45"/>`;
+    if (!_konturCache) _konturCache = await (await fetch("peta/kontur/kontur.geojson")).json();
+    const inBox = (c) => c[0] > bbLL[0] && c[0] < bbLL[2] && c[1] > bbLL[1] && c[1] < bbLL[3];
+    for (const f of _konturCache.features) { const c = f.geometry.coordinates; if (!c.some(inBox)) continue; const idx = f.properties.i === 1; adaKontur = true;
+      g += `<polyline points="${c.map((q) => PL(q[0], q[1])).join(" ")}" fill="none" stroke="${idx ? "#8a5a33" : "#b98a62"}" stroke-width="${idx ? 0.28 : 0.13}"/>`;
+      if (idx) { const md = c[Math.floor(c.length / 2)]; if (inBox(md)) { const [x, y] = PL(md[0], md[1]).split(","); g += `<text x="${x}" y="${y}" font-size="1.9" fill="#8a5a33" stroke="#fff" stroke-width=".5" paint-order="stroke">${esc(String(f.properties.z))}</text>`; } } }
+    catSumber.push("Topografi: DEMNAS (Badan Informasi Geospasial), kontur 25 m (indeks 100 m)");
+  } catch {}
+  try { // citra drone & lapisan peta yang diunggah di aplikasi
+    const kc = await kanvasCitra(bbLL, 2200, 2200 * (bbLL[3] - bbLL[1]) / (bbLL[2] - bbLL[0]) / Math.cos((((bbLL[1] + bbLL[3]) / 2) * Math.PI) / 180), { maksTile: 260 });
+    if (kc.nama.length) { const a = UTM.ke(bbLL[0], bbLL[3]), b = UTM.ke(bbLL[2], bbLL[1]); g += `<image href="${kc.toDataURL("image/png")}" x="${X(a[0])}" y="${Y(a[1])}" width="${X(b[0]) - X(a[0])}" height="${Y(b[1]) - Y(a[1])}" preserveAspectRatio="none"/>`; adaCitra = true; catSumber.push("Citra drone: " + kc.nama.join(", ")); }
+    LAY = await daftarLapisan(); if (LAY.length) g += svgLapisan(LAY, (c) => PL(c[0], c[1]), 0.9).replace(/stroke-width="2"/g, 'stroke-width=".35"');
+  } catch {}
+  // grid geografis (biru muda) — interval mengikuti luas peta
+  const dLon = bbLL[2] - bbLL[0], gI = [5, 10, 15, 30, 60, 120, 300, 600].map((s) => s / 3600).find((s) => dLon / s <= 6) ?? 0.25;
+  const dms = (v, pos, neg) => { const a = Math.abs(v), d = Math.floor(a + 1e-9), mn = Math.floor((a - d) * 60 + 1e-7), sc = Math.round(((a - d) * 60 - mn) * 60); return `${d}° ${mn}' ${sc}" ${v >= 0 ? pos : neg}`; };
+  let grid = "", lab = "";
+  for (let lon = Math.ceil(bbLL[0] / gI) * gI; lon <= bbLL[2]; lon += gI) { const ln = []; for (let k = 0; k <= 20; k++) ln.push(PL(lon, bbLL[1] + ((bbLL[3] - bbLL[1]) * k) / 20)); grid += `<polyline points="${ln.join(" ")}" fill="none" stroke="#8cc8ee" stroke-width=".22"/>`;
+    const xt = X(UTM.ke(lon, UTM.dari(Ec, Nb)[1])[0]), xb = X(UTM.ke(lon, UTM.dari(Ec, Na)[1])[0]);
+    if (xt > FX + 4 && xt < FX + FW - 4) lab += `<text x="${xt}" y="${FY - 7.5}" font-size="2.3" text-anchor="middle">${dms(lon, "BT", "BB")}</text><text x="${xb}" y="${FY + FH + 9.8}" font-size="2.3" text-anchor="middle">${dms(lon, "BT", "BB")}</text>`; }
+  for (let lat = Math.ceil(bbLL[1] / gI) * gI; lat <= bbLL[3]; lat += gI) { const ln = []; for (let k = 0; k <= 20; k++) ln.push(PL(bbLL[0] + ((bbLL[2] - bbLL[0]) * k) / 20, lat)); grid += `<polyline points="${ln.join(" ")}" fill="none" stroke="#8cc8ee" stroke-width=".22"/>`;
+    const y = Y(UTM.ke(UTM.dari(Ea, Nc)[0], lat)[1]);
+    if (y > FY + 4 && y < FY + FH - 4) lab += `<text transform="translate(${FX - 7},${y}) rotate(-90)" font-size="2.3" text-anchor="middle">${dms(lat, "LU", "LS")}</text><text transform="translate(${FX + FW + 7},${y}) rotate(90)" font-size="2.3" text-anchor="middle">${dms(lat, "LU", "LS")}</text>`; }
+  // grid UTM: tanda di tepi + label mT/mU, silang di dalam peta
+  const gs = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000].find((s) => (Eb - Ea) / s <= 6) ?? 20000, ribu = (v) => Math.round(v).toLocaleString("id-ID");
+  for (let E = Math.ceil(Ea / gs) * gs; E < Eb; E += gs) { const x = X(E); lab += `<line x1="${x}" y1="${FY}" x2="${x}" y2="${FY - 2}" stroke="#111" stroke-width=".2"/><line x1="${x}" y1="${FY + FH}" x2="${x}" y2="${FY + FH + 2}" stroke="#111" stroke-width=".2"/><text x="${x}" y="${FY - 2.8}" font-size="2" text-anchor="middle">${ribu(E)} mT</text><text x="${x}" y="${FY + FH + 4.6}" font-size="2" text-anchor="middle">${ribu(E)} mT</text>`;
+    for (let N = Math.ceil(Na / gs) * gs; N < Nb; N += gs) { const y = Y(N); grid += `<path d="M${x - 1.6},${y}H${x + 1.6}M${x},${y - 1.6}V${y + 1.6}" stroke="#111" stroke-width=".22"/>`; } }
+  for (let N = Math.ceil(Na / gs) * gs; N < Nb; N += gs) { const y = Y(N); lab += `<line x1="${FX}" y1="${y}" x2="${FX - 2}" y2="${y}" stroke="#111" stroke-width=".2"/><line x1="${FX + FW}" y1="${y}" x2="${FX + FW + 2}" y2="${y}" stroke="#111" stroke-width=".2"/><text transform="translate(${FX - 2.8},${y}) rotate(-90)" font-size="2" text-anchor="middle">${ribu(N)} mU</text><text transform="translate(${FX + FW + 2.8},${y}) rotate(90)" font-size="2" text-anchor="middle">${ribu(N)} mU</text>`; }
+  // batas IUP
+  for (const p of poly) g += `<polygon points="${p.u.map(PU).join(" ")}" fill="none" stroke="#e01b1b" stroke-width=".9"/>`;
+  // titik bor
+  const rT = Math.max(0.9, Math.min(1.6, 8 / Math.sqrt(Math.max(1, pts.length)))), fT = Math.max(1.6, Math.min(2.6, rT * 1.7));
+  for (const p of [...pts].sort((a, b) => (a.status === "RENCANA" ? 0 : 1) - (b.status === "RENCANA" ? 0 : 1))) { const x = X(p.u[0]), y = Y(p.u[1]), r = p.status === "RENCANA" ? rT * 0.8 : rT;
+    g += `<circle cx="${x}" cy="${y}" r="${r}" fill="${WARNA_STATUS[p.status] ?? "#999"}" stroke="${p.di_dalam_iup === false ? "#e00" : "#111"}" stroke-width="${p.di_dalam_iup === false ? 0.5 : 0.22}"/><text x="${x + r + 0.6}" y="${y + fT * 0.35}" font-size="${fT}" font-weight="700" stroke="#fff" stroke-width=".55" paint-order="stroke">${esc(p.bhid)}</text>`; }
+  // rekap di pojok kiri bawah peta
+  const nS = (k) => pts.filter((p) => (k === "EOH" ? ["EOH", "STB"].includes(p.status) : p.status === k)).length;
+  const mBor = pts.reduce((s, p) => s + (+p.kedalaman || +p.kd || 0), 0), mRk = pts.reduce((s, p) => s + (+p.rencana_kedalaman || +p.rk || 0), 0);
+  const tb = [["Rencana", nS("RENCANA")], ["Progres (sedang dibor)", nS("PROGRES")], ["Selesai (EOH / STB)", nS("EOH")], ["Total titik", pts.length]];
+  const tx = FX + 3, ty = FY + FH - 30;
+  g += `<rect x="${tx}" y="${ty}" width="72" height="27" fill="#fff" stroke="#111" stroke-width=".25"/><text x="${tx + 36}" y="${ty + 4}" font-size="2.4" font-weight="700" text-anchor="middle">REKAP TITIK BOR</text>
+    ${tb.map(([a, b], i) => `<text x="${tx + 2}" y="${ty + 8.5 + i * 3.4}" font-size="2.2"${i === 3 ? ' font-weight="700"' : ""}>${a}</text><text x="${tx + 70}" y="${ty + 8.5 + i * 3.4}" font-size="2.2" text-anchor="end"${i === 3 ? ' font-weight="700"' : ""}>${b}</text>`).join("")}
+    <text x="${tx + 2}" y="${ty + 23.2}" font-size="2.2">Meter dibor / rencana</text><text x="${tx + 70}" y="${ty + 23.2}" font-size="2.2" text-anchor="end">${mBor.toLocaleString("id-ID", { maximumFractionDigits: 1 })} / ${mRk ? mRk.toLocaleString("id-ID", { maximumFractionDigits: 1 }) : "–"} m</text>`;
+  // luas IUP (UTM, rumus shoelace)
+  const luas = poly.reduce((s, p) => { let a = 0; for (let i = 0, n = p.u.length; i < n; i++) { const [x1, y1] = p.u[i], [x2, y2] = p.u[(i + 1) % n]; a += x1 * y2 - x2 * y1; } return s + Math.abs(a) / 2; }, 0) / 1e4;
+  // batang skala (≈ 80 mm, bulat)
+  const sbM = [50, 100, 200, 250, 400, 500, 800, 1000, 1500, 2000, 2500, 4000, 5000, 10000, 20000].filter((v) => v * mm <= 82).pop() ?? 100, sbW = sbM * mm;
+  const skalaSVG = `<svg viewBox="0 0 ${sbW + 12} 13" style="width:${sbW + 12}mm;height:13mm;display:block;margin:0 auto">${[0, 1, 2, 3].map((i) => `<rect x="${6 + (i * sbW) / 4}" y="4" width="${sbW / 4}" height="1.4" fill="${i % 2 ? "#fff" : "#111"}" stroke="#111" stroke-width=".15"/>`).join("")}
+    ${[0, 1, 2, 3, 4].map((i) => `<text x="${6 + (i * sbW) / 4}" y="2.8" font-size="2" text-anchor="middle">${((i * sbW) / 4 / 10).toLocaleString("id-ID", { maximumFractionDigits: 1 })}</text><text x="${6 + (i * sbW) / 4}" y="9" font-size="2" text-anchor="middle">${((i * sbM) / 4).toLocaleString("id-ID")}</text>`).join("")}<text x="${sbW + 9}" y="2.8" font-size="2">cm</text><text x="${sbW + 9}" y="9" font-size="2">m</text></svg>`;
+  // peta situasi: ubin OSM zoom 7 di sekitar lokasi
+  const [lc, la] = UTM.dari(Ec, Nc), z = 7, n2 = 2 ** z, tx0 = ((lc + 180) / 360) * n2, ty0 = ((1 - Math.log(Math.tan((la * Math.PI) / 180) + 1 / Math.cos((la * Math.PI) / 180)) / Math.PI) / 2) * n2;
+  const IW = 92, IH = 68, ts = 30; // mm per ubin
+  const ox = IW / 2 - (tx0 % 1) * ts - ts, oy = IH / 2 - (ty0 % 1) * ts - ts, bx = Math.floor(tx0) - 1, by = Math.floor(ty0) - 1;
+  let inset = ""; for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) inset += `<img src="https://tile.openstreetmap.org/${z}/${bx + i}/${by + j}.png" style="position:absolute;left:${ox + i * ts}mm;top:${oy + j * ts}mm;width:${ts}mm;height:${ts}mm" onerror="this.remove()">`;
+  const kot = Math.max(1.6, ((Eb - Ea) / 40075016) * Math.cos((la * Math.PI) / 180) * n2 * ts);
+  inset += `<div style="position:absolute;left:${IW / 2 - kot / 2}mm;top:${IH / 2 - kot / 2}mm;width:${kot}mm;height:${kot}mm;border:.6mm solid #e01b1b"></div>`;
+  const zonaTxt = `Universal Transverse Mercator (UTM) Zona 51 ${Nc < 1e7 && la >= 0 ? "Utara" : "Selatan"}`;
+  const sumber = [
+    ...Wl.map((x) => `Batas IUP: ${x.nama ?? "wilayah"}${x.nomor_sk ? " — " + x.nomor_sk : ""}`),
+    `Titik bor: database X-Terra, keadaan ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`, ...catSumber,
+    ...(LAY.length ? [`Lapisan peta: ${LAY.map((l) => l.nama).join(", ")}`] : []), "Peta situasi: © kontributor OpenStreetMap",
+    ...String(O.dasar || "").split("\n").map((s) => s.trim()).filter(Boolean)];
+  const leg = (sym, t) => `<div style="display:flex;align-items:center;gap:2mm;margin:.6mm 0"><span style="flex:0 0 9mm;display:flex;justify-content:center">${sym}</span><span>${t}</span></div>`;
+  const dot = (c, r = 1.6) => `<svg viewBox="0 0 4 4" style="width:${r * 2}mm;height:${r * 2}mm"><circle cx="2" cy="2" r="1.7" fill="${c}" stroke="#111" stroke-width=".3"/></svg>`;
+  const garis = (c, w = 0.6, da = "") => `<svg viewBox="0 0 9 2" style="width:9mm;height:2mm"><line x1="0" y1="1" x2="9" y2="1" stroke="${c}" stroke-width="${w}" ${da ? `stroke-dasharray="${da}"` : ""}/></svg>`;
+  const thn = new Date().getFullYear(), tglTtd = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(O.judul)}</title><style>
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#111}
+    .sheet{position:relative;width:420mm;height:297mm;background:#fff;overflow:hidden;box-sizing:border-box}
+    .pn{position:absolute;left:313mm;top:8mm;width:99mm;height:281mm;border:.35mm solid #111;box-sizing:border-box;display:flex;flex-direction:column;font-size:2.6mm}
+    .pn>div{border-bottom:.25mm solid #111;padding:1.6mm 2.2mm}.pn>div:last-child{border-bottom:0}
+    .c{text-align:center}.b{font-weight:700}.kv{display:grid;grid-template-columns:30mm 3mm 1fr;row-gap:.4mm}
+    ol{margin:.5mm 0 0 4mm;padding:0}li{margin:.2mm 0}h4{margin:0 0 1mm;font-size:2.9mm;text-align:center}
+  </style></head><body><div class="sheet">
+  <svg viewBox="0 0 420 297" style="position:absolute;left:0;top:0;width:420mm;height:297mm;font-family:Arial,Helvetica,sans-serif">
+    <rect x="4" y="4" width="412" height="289" fill="none" stroke="#111" stroke-width=".5"/>
+    <defs><clipPath id="pk"><rect x="${FX}" y="${FY}" width="${FW}" height="${FH}"/></clipPath></defs>
+    <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" fill="#f7f4ec"/>
+    <g clip-path="url(#pk)">${g}${grid}</g>
+    <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" fill="none" stroke="#111" stroke-width=".4"/>
+    <rect x="${FX - 10.5}" y="${FY - 10.5}" width="${FW + 21}" height="${FH + 21}" fill="none" stroke="#111" stroke-width=".3"/>
+    ${lab}
+  </svg>
+  <div class="pn">
+    <div style="font-size:2.4mm">${esc(O.lampiran)}<div class="kv" style="grid-template-columns:14mm 3mm 1fr;margin-top:.8mm"><span>Nomor</span><span>:</span><span>${esc(O.nomor)}</span><span>Tanggal</span><span>:</span><span>${esc(O.tanggal)}</span></div></div>
+    <div class="c">${O.logo ? `<img src="${O.logo}" style="max-height:16mm;max-width:60mm;display:block;margin:0 auto 1.5mm">` : ""}<div class="b" style="font-size:3.6mm;line-height:1.3">${esc(O.judul)}</div><div class="b" style="font-size:3mm;margin-top:.6mm">${esc(O.sub)}</div></div>
+    <div><div class="kv"><span>Jumlah titik bor</span><span>:</span><span>${pts.length} titik (${nS("EOH")} selesai, ${nS("PROGRES")} progres, ${nS("RENCANA")} rencana)</span>${luas ? `<span>Luas IUP</span><span>:</span><span>${luas.toLocaleString("id-ID", { maximumFractionDigits: 2 })} Ha</span>` : ""}<span>Meter dibor</span><span>:</span><span>${mBor.toLocaleString("id-ID", { maximumFractionDigits: 1 })} m</span></div></div>
+    <div class="c"><div class="b" style="font-size:3.4mm;margin-bottom:1mm">Skala 1 : ${S.toLocaleString("id-ID")}</div>${skalaSVG}
+      <svg viewBox="0 0 10 14" style="width:7mm;height:10mm;display:block;margin:1mm auto 0"><text x="5" y="3.4" font-size="3.6" text-anchor="middle" font-weight="700">U</text><polygon points="5,4.5 9,13.5 5,10.8 1,13.5" fill="#111"/></svg></div>
+    <div><div class="kv" style="grid-template-columns:26mm 3mm 1fr;font-size:2.3mm"><span>Sistem Proyeksi</span><span>:</span><span>${zonaTxt}</span><span>Datum Horizontal</span><span>:</span><span>World Geodetic System 1984 (WGS 84)</span><span>Sistem Koordinat</span><span>:</span><span>Geografis (derajat) dan UTM (meter)</span><span>Interval Grid</span><span>:</span><span>Geografis ${gI >= 1 / 60 ? Math.round(gI * 60) + "'" : Math.round(gI * 3600) + '"'} ; UTM ${gs.toLocaleString("id-ID")} m</span></div></div>
+    <div><h4>KETERANGAN</h4>
+      ${poly.length ? leg(garis("#e01b1b", 0.9), "Batas IUP") : ""}
+      ${leg(dot(WARNA_STATUS.RENCANA, 1.3), "Titik rencana pemboran")}${leg(dot(WARNA_STATUS.PROGRES), "Titik bor progres (sedang dibor)")}${leg(dot(WARNA_STATUS.EOH), "Titik bor selesai (EOH / STB)")}
+      ${pts.some((p) => p.di_dalam_iup === false) ? leg(`<svg viewBox="0 0 4 4" style="width:3.2mm;height:3.2mm"><circle cx="2" cy="2" r="1.6" fill="#fff" stroke="#e00" stroke-width=".6"/></svg>`, "Titik di luar batas IUP") : ""}
+      ${adaKontur ? leg(garis("#8a5a33", 0.5), "Kontur indeks 100 m") + leg(garis("#b98a62", 0.25), "Kontur 25 m") : ""}
+      ${LAY.map((l) => leg(garis(esc(l.warna || "#00b7ff"), 0.6), esc(l.nama))).join("")}
+      ${leg(garis("#8cc8ee", 0.4), "Grid geografis")}${leg(`<svg viewBox="0 0 4 4" style="width:3mm;height:3mm"><path d="M0,2H4M2,0V4" stroke="#111" stroke-width=".4"/></svg>`, "Grid UTM")}
+      ${adaCitra ? leg(`<span style="display:inline-block;width:6mm;height:3mm;background:linear-gradient(90deg,#6b7f4a,#9aa77a)"></span>`, "Citra drone") : ""}</div>
+    <div style="font-size:2.2mm"><b>Sumber:</b><ol>${sumber.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></div>
+    ${O.catatan ? `<div style="font-size:2.2mm"><b>Catatan:</b><div style="white-space:pre-line;margin-top:.4mm">${esc(O.catatan)}</div></div>` : ""}
+    <div><b style="font-size:2.4mm">Peta Situasi</b><div style="position:relative;width:${IW}mm;height:${IH}mm;overflow:hidden;border:.2mm solid #777;margin-top:.8mm;background:#cfe7f5">${inset}</div></div>
+    <div class="c" style="margin-top:auto;font-size:2.5mm">${esc(O.kota ? O.kota + ", " : "")}${tglTtd}<div class="b">${esc(O.perusahaan)}</div><div>${esc(O.jabatan)}</div><div style="height:15mm"></div><div class="b" style="text-decoration:underline">${esc(O.nama || "........................................")}</div></div>
+    <div class="c" style="background:#f1f1f1"><div class="b" style="font-size:3.2mm">${esc(O.perusahaan)}</div><div>${thn}</div></div>
+  </div></div></body></html>`;
+}
 async function petaSVG(L, o = {}) {
   const W = o.w ?? 900, H = o.h ?? 580, pad = 0.12;
   const Wl = JSON.parse(localStorage.getItem("wilayah") || "[]"), pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat)).map((x) => ({ ...x, ll: x.x != null ? UTM.dari(+x.x, +x.y) : [+x.lon, +x.lat] }));
@@ -3386,7 +3549,7 @@ async function petaView(v) {
   const bisaTulis = ["verifier", "admin"].includes(me?.role);
   v.innerHTML = `<div class="card" id="pmCard" style="padding:8px"><div class="row" style="flex-wrap:wrap;align-items:center;gap:6px">
       <select id="pmB" style="flex:0 0 140px"><option value="sat">Citra satelit</option><option value="osm">Peta jalan (OSM)</option><option value="none">Tanpa latar</option></select>
-      <button class="sec" id="pm3" style="flex:0">3D</button><button class="sec" id="pmBP" style="flex:0;white-space:nowrap;background:#12251E;color:#fff">🧊 3D bawah permukaan</button><label id="pmKl" style="flex:0;white-space:nowrap;margin:0;display:none">Kolom bor <input id="pmK" type="range" min="0.5" max="3" step="0.25" value="${localStorage.getItem("kolom3d") || 1}" style="width:80px;vertical-align:middle"></label><select id="pmTopo" title="Tampilan topografi saat 3D" style="flex:0 0 150px">${[["redup", "Topo redup (bor jelas)"], ["sedang", "Topo sedang"], ["asli", "Topo asli"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select><label style="flex:0;white-space:nowrap;margin:0">Tinggi <input id="pmX" type="range" min="1" max="4" step="0.5" value="1.5" style="width:80px;vertical-align:middle"> <span id="pmXv">1,5×</span></label>
+      <button class="sec" id="pm3" style="flex:0">3D</button><button class="sec" id="pmA3" style="flex:0;white-space:nowrap" title="Ekspor peta lokasi titik bor ke PDF A3 lanskap">🖨 Peta PDF A3</button><button class="sec" id="pmBP" style="flex:0;white-space:nowrap;background:#12251E;color:#fff">🧊 3D bawah permukaan</button><label id="pmKl" style="flex:0;white-space:nowrap;margin:0;display:none">Kolom bor <input id="pmK" type="range" min="0.5" max="3" step="0.25" value="${localStorage.getItem("kolom3d") || 1}" style="width:80px;vertical-align:middle"></label><select id="pmTopo" title="Tampilan topografi saat 3D" style="flex:0 0 150px">${[["redup", "Topo redup (bor jelas)"], ["sedang", "Topo sedang"], ["asli", "Topo asli"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select><label style="flex:0;white-space:nowrap;margin:0">Tinggi <input id="pmX" type="range" min="1" max="4" step="0.5" value="1.5" style="width:80px;vertical-align:middle"> <span id="pmXv">1,5×</span></label>
       <button class="sec" id="pmL" style="flex:0">Lapisan ▾</button><button class="sec" id="pmF" style="flex:0">Impor file</button><input type="file" id="pmFi" multiple accept=".zip,.shp,.dbf,.prj,.shx,.cpg,.kml,.kmz,.geojson,.json,.csv,.txt" style="display:none">
       <button class="sec" id="pmT" style="flex:0">● Lacak</button><button class="sec" id="pmI" style="flex:0">Ke IUP</button><button class="sec" id="pmO" style="flex:0">Simpan offline</button></div>
     <div id="pmPanel" class="card" style="display:none;margin:8px 0 0;padding:8px;background:#f6f7f2"></div>
@@ -3644,6 +3807,7 @@ async function petaView(v) {
   $("#pm3").onclick = () => { const p = map.getPitch() > 5 ? 0 : 65, cs = L.filter((f) => +f.properties.kd > 0 || PRF.some((r) => r.bhid === f.properties.bhid)).map((f) => f.geometry.coordinates);
     if (p && cs.length) { const bb = new maplibregl.LngLatBounds(); cs.forEach((c) => bb.extend(c)); map.fitBounds(bb, { pitch: p, bearing: -20, padding: { top: 140, bottom: 60, left: 60, right: 60 }, maxZoom: 16.5, duration: 1000 }); }
     else map.easeTo({ pitch: p, bearing: p ? -20 : 0, duration: 800 }); $("#pm3").textContent = p ? "2D" : "3D"; };
+  $("#pmA3").onclick = () => petaA3Dialog(L.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], kedalaman: f.properties.kedalaman ?? f.properties.kd, rencana_kedalaman: f.properties.rencana_kedalaman ?? f.properties.rk })));
   $("#pmBP").onclick = () => bawahPermukaan3D(L.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] })), PRF);
   $("#pmK").oninput = (e) => { localStorage.setItem("kolom3d", e.target.value); gambarKolom3D(); terapkanTopo(); };
   map.on("pitchend", () => { $("#pm3").textContent = map.getPitch() > 5 ? "2D" : "3D"; terapkanTopo(); });
