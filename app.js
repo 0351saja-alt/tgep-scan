@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-19.05";
+const APP_VERSION = "2026-11-19.06";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1892,17 +1892,18 @@ const PETA_A3_DEF = {
   nomor: "-", tanggal: "-", kota: "", jabatan: "Kepala Teknik Tambang", nama: "",
   dasar: "", catatan: "1. Posisi titik bor dari GPS collar / Mulai bor; titik rencana dari daftar rencana lubang.\n2. Kedalaman sesuai laporan harian (Progres bor & DDR) di aplikasi X-Terra.",
 };
-function petaA3Dialog(L) {
+function petaA3Dialog(L, mode = {}) {
   const S = { ...PETA_A3_DEF, ...JSON.parse(localStorage.getItem("petaA3") || "{}") }, logo = localStorage.getItem("petaA3Logo");
+  if (mode.g3d) S.judul = localStorage.getItem("petaA3judul3d") || "PETA 3D LUBANG BOR BAWAH PERMUKAAN";
   const Wl = JSON.parse(localStorage.getItem("wilayah") || "[]");
   if (!S.sub) S.sub = (Wl[0]?.nama ? Wl[0].nama.toUpperCase() + " · " : "") + "TAHUN " + new Date().getFullYear();
   const f = (k, l, ph = "") => `<label>${l}</label><input data-k="${k}" value="${esc(S[k] ?? "")}" placeholder="${esc(ph)}">`;
-  const m = modal(`<h3>Peta lokasi PDF (A3 lanskap)</h3>
+  const m = modal(`<h3>${mode.g3d ? "Peta 3D bawah permukaan" : "Peta lokasi"} PDF (A3 lanskap)</h3>
     <p class="muted">Isian disimpan di HP ini untuk ekspor berikutnya. Skala dipilih otomatis (bulat) agar semua titik bor dan batas IUP masuk.</p>
     <label>Logo perusahaan (PNG/JPG)</label><div class="row" style="align-items:center"><span id="paLg" style="flex:0 0 90px;height:44px;display:flex;align-items:center;justify-content:center;border:1px dashed #9aa;border-radius:6px;overflow:hidden">${logo ? `<img src="${logo}" style="max-height:42px;max-width:88px">` : `<span class="muted" style="font-size:11px">belum ada</span>`}</span><input id="paLf" type="file" accept="image/*" style="flex:1"></div>
     ${f("perusahaan", "Nama perusahaan (judul & kaki panel)")}${f("judul", "Judul peta")}${f("sub", "Sub-judul (proyek · tahun)")}
-    <label>Cakupan peta</label><select data-k="cakupan"><option value="bor" ${S.cakupan !== "iup" ? "selected" : ""}>Area pemboran saja (skala lebih besar)</option><option value="iup" ${S.cakupan === "iup" ? "selected" : ""}>Seluruh batas IUP</option></select>
-    <label>Bayangan relief (hillshade)</label><select data-k="hillshade"><option value="ya" ${S.hillshade !== "tidak" ? "selected" : ""}>Tampilkan (kesan 3D)</option><option value="tidak" ${S.hillshade === "tidak" ? "selected" : ""}>Tidak</option></select>
+    <div ${mode.g3d ? 'style="display:none"' : ""}><label>Cakupan peta</label><select data-k="cakupan"><option value="bor" ${S.cakupan !== "iup" ? "selected" : ""}>Area pemboran saja (skala lebih besar)</option><option value="iup" ${S.cakupan === "iup" ? "selected" : ""}>Seluruh batas IUP</option></select>
+    <label>Bayangan relief (hillshade)</label><select data-k="hillshade"><option value="ya" ${S.hillshade !== "tidak" ? "selected" : ""}>Tampilkan (kesan 3D)</option><option value="tidak" ${S.hillshade === "tidak" ? "selected" : ""}>Tidak</option></select></div>
     ${f("lampiran", "Keterangan lampiran")}<div class="row"><div>${f("nomor", "Nomor")}</div><div>${f("tanggal", "Tanggal")}</div></div>
     <div class="row"><div>${f("kota", "Kota (tanda tangan)", "mis. Luwuk")}</div><div>${f("jabatan", "Jabatan penandatangan")}</div></div>${f("nama", "Nama penandatangan", me?.full_name ?? "")}
     <label>Dasar / sumber tambahan (satu per baris, opsional)</label><textarea data-k="dasar" rows="3" placeholder="mis. SK IUP OP No. ...">${esc(S.dasar)}</textarea>
@@ -1913,13 +1914,15 @@ function petaA3Dialog(L) {
     const bmp = await createImageBitmap(fl), k = Math.min(1, 600 / Math.max(bmp.width, bmp.height)), c = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) });
     c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height); logoBaru = c.toDataURL("image/png"); m.querySelector("#paLg").innerHTML = `<img src="${logoBaru}" style="max-height:42px;max-width:88px">`; };
   m.querySelector("#pab").onclick = () => m.remove();
+  if (mode.g3d) m.style.zIndex = 10000;
   const ambil = () => { const O = {}; m.querySelectorAll("[data-k]").forEach((x) => (O[x.dataset.k] = x.value.trim()));
-    localStorage.setItem("petaA3", JSON.stringify(O)); if (logoBaru) try { localStorage.setItem("petaA3Logo", logoBaru); } catch {} return { ...O, logo: logoBaru }; };
-  m.querySelector("#pav").onclick = () => { const O = ambil(); m.remove(); petaA3(L, O); };
+    if (mode.g3d) { localStorage.setItem("petaA3judul3d", O.judul); const lama = JSON.parse(localStorage.getItem("petaA3") || "{}"); O.judulPeta2D = lama.judul; }
+    localStorage.setItem("petaA3", JSON.stringify(mode.g3d ? { ...O, judul: O.judulPeta2D ?? PETA_A3_DEF.judul } : O)); if (mode.g3d) O.g3d = mode.g3d; if (logoBaru) try { localStorage.setItem("petaA3Logo", logoBaru); } catch {} return { ...O, logo: logoBaru }; };
+  m.querySelector("#pav").onclick = () => { const O = ambil(); m.remove(); petaA3(L, O); if (mode.g3d) { const d = document.getElementById("dokLayer"); if (d) d.style.zIndex = 10001; } };
   m.querySelector("#pak").onclick = async () => {
     const O = ambil(), b = m.querySelector("#pak"), st = m.querySelector("#pap"); b.disabled = true; m.querySelector("#pae").textContent = "";
     try { st.textContent = "Menyusun peta (citra, kontur, hillshade, peta situasi)…"; const html = await petaA3HTML(L, O);
-      st.textContent = "Membuat file PDF A3…"; const nama = `Peta_Lokasi_Titik_Bor_${new Date().toISOString().slice(0, 10)}.pdf`;
+      st.textContent = "Membuat file PDF A3…"; const nama = `${O.g3d ? "Peta_3D_Bawah_Permukaan" : "Peta_Lokasi_Titik_Bor"}_${new Date().toISOString().slice(0, 10)}.pdf`;
       const r = await htmlKePdf(html, nama, { judul: O.judul }); st.textContent = `Selesai: ${nama} (${(r.bytes / 1048576).toFixed(1)} MB, A3 lanskap, 240 dpi) — cek folder Unduhan.`; b.disabled = false; b.textContent = "⬇ Unduh lagi";
     } catch (e) { b.disabled = false; st.textContent = ""; m.querySelector("#pae").textContent = `PDF langsung gagal (${e.message}). Pakai Pratinjau lalu Simpan PDF.`; }
   };
@@ -1929,7 +1932,76 @@ async function petaA3(L, O) {
   try { w.document.open(); w.document.write(await petaA3HTML(L, O)); w.document.close(); }
   catch (e) { w.document.open(); w.document.write(`<p style="padding:20px;color:#b00">Peta gagal disusun: ${esc(e.message)}</p>`); w.document.close(); }
 }
+// Peta 3D bawah permukaan dalam format lampiran A3 yang sama (gambar 3D di bingkai peta, panel keterangan di kanan)
+async function petaA3HTML3D(L, O) {
+  const G = O.g3d, FX = 20, FY = 20, FW = 279, FH = 257;
+  const pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat));
+  const nS = (k) => pts.filter((p) => (k === "EOH" ? ["EOH", "STB"].includes(p.status) : p.status === k)).length;
+  const mBor = pts.reduce((s, p) => s + (+p.kedalaman || +p.kd || 0), 0);
+  const [lo0, la0, lo1, la1] = G.wilayahLL, lc = (lo0 + lo1) / 2, la = (la0 + la1) / 2;
+  const { inset, situasiKet, IW, IH } = await petaSituasi(lc, la, [lo0, la1], [lo1, la0]);
+  const mataAngin = (d) => ["utara", "timur laut", "timur", "tenggara", "selatan", "barat daya", "barat", "barat laut"][Math.round(((d % 360) + 360) % 360 / 45) % 8];
+  const leg = (sym, t) => `<div style="display:flex;align-items:center;gap:2mm;margin:.6mm 0"><span style="flex:0 0 9mm;display:flex;justify-content:center">${sym}</span><span>${t}</span></div>`;
+  const kotak = (c) => `<span style="display:inline-block;width:5mm;height:3mm;background:${esc(c)};border:.2mm solid #333"></span>`;
+  const dot = (c) => `<svg viewBox="0 0 4 4" style="width:3.2mm;height:3.2mm"><circle cx="2" cy="2" r="1.7" fill="${c}" stroke="#111" stroke-width=".3"/></svg>`;
+  const thn = new Date().getFullYear(), tglTtd = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+  const sumber = [`Titik bor & kedalaman: database X-Terra, keadaan ${tglTtd}`, "Layer (TP, limonit, saprolit, bedrock, dll.): Form Logging yang disetujui verifier",
+    "Topografi: DEMNAS (Badan Informasi Geospasial)", "Peta situasi: © kontributor OpenStreetMap", ...String(O.dasar || "").split("\n").map((x) => x.trim()).filter(Boolean)];
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(O.judul)}</title><style>
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#111}
+    .sheet{position:relative;width:420mm;height:297mm;background:#fff;overflow:hidden;box-sizing:border-box}
+    .pn{position:absolute;left:313mm;top:8mm;width:99mm;height:281mm;border:.35mm solid #111;box-sizing:border-box;display:flex;flex-direction:column;font-size:2.6mm}
+    .pn>div{border-bottom:.25mm solid #111;padding:1.6mm 2.2mm}.pn>div:last-child{border-bottom:0}
+    .c{text-align:center}.b{font-weight:700}.kv{display:grid;grid-template-columns:30mm 3mm 1fr;row-gap:.4mm}
+    ol{margin:.5mm 0 0 4mm;padding:0}li{margin:.2mm 0}h4{margin:0 0 1mm;font-size:2.9mm;text-align:center}
+  </style></head><body><div class="sheet">
+  <svg viewBox="0 0 420 297" style="position:absolute;left:0;top:0;width:420mm;height:297mm;font-family:Arial,Helvetica,sans-serif">
+    <rect x="4" y="4" width="412" height="289" fill="none" stroke="#111" stroke-width=".5"/>
+    <image href="${G.url}" x="${FX}" y="${FY}" width="${FW}" height="${FH}" preserveAspectRatio="xMidYMid meet"/>
+    <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" fill="none" stroke="#111" stroke-width=".4"/>
+    <g transform="translate(${FX + 12},${FY + 14}) rotate(${G.utara.toFixed(1)})"><circle r="8" fill="#fff" opacity=".85" stroke="#111" stroke-width=".25"/><polygon points="0,-6.5 3,3.5 0,1.5 -3,3.5" fill="#111"/><text y="-7.6" font-size="3" font-weight="700" text-anchor="middle">U</text></g>
+    <text x="${FX + 2}" y="${FY + FH - 2.5}" font-size="2.4" fill="#333">Tampilan perspektif tanpa skala · relief ×${G.VE} · panjang lubang ×${G.HE} · dilihat dari arah ${mataAngin(G.arahLihat)}</text>
+  </svg>
+  <div class="pn">
+    <div style="font-size:2.4mm">${esc(O.lampiran)}<div class="kv" style="grid-template-columns:14mm 3mm 1fr;margin-top:.8mm"><span>Nomor</span><span>:</span><span>${esc(O.nomor)}</span><span>Tanggal</span><span>:</span><span>${esc(O.tanggal)}</span></div></div>
+    <div class="c">${O.logo ? `<img src="${O.logo}" style="max-height:16mm;max-width:60mm;display:block;margin:0 auto 1.5mm">` : ""}<div class="b" style="font-size:3.6mm;line-height:1.3">${esc(O.judul)}</div><div class="b" style="font-size:3mm;margin-top:.6mm">${esc(O.sub)}</div></div>
+    <div><div class="kv"><span>Jumlah titik bor</span><span>:</span><span>${pts.length} titik (${nS("EOH")} selesai, ${nS("PROGRES")} progres, ${nS("RENCANA")} rencana)</span><span>Meter dibor</span><span>:</span><span>${mBor.toLocaleString("id-ID", { maximumFractionDigits: 1 })} m</span><span>Kedalaman maks.</span><span>:</span><span>${(+G.maxD).toLocaleString("id-ID", { maximumFractionDigits: 1 })} m</span><span>Elevasi permukaan</span><span>:</span><span>${Math.round(G.zMin)} – ${Math.round(G.zMax)} m dpl</span></div></div>
+    <div><h4>TAMPILAN 3D</h4><div class="kv" style="grid-template-columns:30mm 3mm 1fr;font-size:2.4mm"><span>Skala</span><span>:</span><span>Tanpa skala (perspektif)</span><span>Pembesaran relief</span><span>:</span><span>× ${G.VE}</span><span>Pembesaran lubang</span><span>:</span><span>× ${G.HE} (panjang lubang tidak sebanding dengan relief)</span><span>Arah pandang</span><span>:</span><span>dari ${mataAngin(G.arahLihat)} (${Math.round(G.arahLihat)}°)</span><span>Topografi</span><span>:</span><span>${esc(G.topo)}, tembus pandang ${Math.round((1 - G.tembus) * 100)} %</span><span>Datum</span><span>:</span><span>WGS 84 · elevasi DEMNAS</span></div></div>
+    <div><h4>KETERANGAN</h4>
+      ${G.zon.length ? G.zon.map(([n, w]) => leg(kotak(w), esc(n))).join("") : leg(kotak("#bbb"), "Lubang belum ber-logging (warna = status)")}
+      ${leg(dot(WARNA_STATUS.RENCANA), "Collar titik rencana")}${leg(dot(WARNA_STATUS.PROGRES), "Collar titik progres")}${leg(dot(WARNA_STATUS.EOH), "Collar titik selesai (EOH / STB)")}
+      ${leg(`<svg viewBox="0 0 9 2" style="width:9mm;height:2mm"><line x1="0" y1="1" x2="9" y2="1" stroke="#333" stroke-width=".5" stroke-dasharray="1.2 .8"/></svg>`, "Sisa kedalaman rencana")}
+      ${leg(`<span style="display:inline-block;width:6mm;height:3mm;background:linear-gradient(135deg,#e7efe9,#9fb3a8);opacity:.8;border:.2mm solid #999"></span>`, "Permukaan topografi (tembus pandang)")}</div>
+    <div style="font-size:2.2mm"><b>Sumber:</b><ol>${sumber.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div>
+    <div style="font-size:2.2mm"><b>Catatan:</b><div style="white-space:pre-line;margin-top:.4mm">${esc([O.catatan, "Gambar 3D adalah visualisasi; panjang lubang diperbesar agar terlihat. Ukuran dan kedalaman yang berlaku ada di tabel database / Form Logging."].filter(Boolean).join("\n"))}</div></div>
+    <div><b style="font-size:2.4mm">Peta Situasi</b> <span style="font-size:2.2mm">— ${esc(situasiKet)}</span><div style="position:relative;width:${IW}mm;height:${IH - 14}mm;overflow:hidden;border:.2mm solid #777;margin-top:.8mm;background:#aad3df">${inset.replace(/top:([\d.-]+)mm/g, (m, v) => `top:${(+v - 7).toFixed(2)}mm`)}</div></div>
+    <div class="c" style="margin-top:auto;font-size:2.5mm">${esc(O.kota ? O.kota + ", " : "")}${tglTtd}<div class="b">${esc(O.perusahaan)}</div><div>${esc(O.jabatan)}</div><div style="height:13mm"></div><div class="b" style="text-decoration:underline">${esc(O.nama || "........................................")}</div></div>
+    <div class="c" style="background:#f1f1f1"><div class="b" style="font-size:3.2mm">${esc(O.perusahaan)}</div><div>${thn}</div></div>
+  </div></div></body></html>`;
+}
+async function petaSituasi(lc, la, kA, kB) {
+  // peta situasi (indeks regional): pulau/kepulauan tempat lokasi berada, ubin OSM, kotak merah = cakupan peta
+  const REG = [["Sumatera", [95.0, -6.2, 106.3, 6.1]], ["Jawa & Bali", [105.0, -8.9, 115.8, -5.8]], ["Kalimantan", [108.5, -4.3, 119.3, 7.1]], ["Sulawesi", [118.7, -6.3, 125.5, 2.1]],
+    ["Nusa Tenggara", [115.8, -11.0, 125.3, -7.8]], ["Maluku", [124.6, -8.5, 135.0, 3.0]], ["Papua", [130.8, -9.3, 141.1, 1.0]]];
+  const cocok = REG.filter(([, b]) => lc >= b[0] && lc <= b[2] && la >= b[1] && la <= b[3]).sort((a, b) => Math.hypot(lc - (a[1][0] + a[1][2]) / 2, la - (a[1][1] + a[1][3]) / 2) - Math.hypot(lc - (b[1][0] + b[1][2]) / 2, la - (b[1][1] + b[1][3]) / 2));
+  const [regNama, rb] = cocok[0] ?? ["Regional", [lc - 4, la - 3, lc + 4, la + 3]];
+  let provinsi = "";
+  try { if (navigator.onLine) { const ctl = new AbortController(); setTimeout(() => ctl.abort(), 5000);
+    const j = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=5&accept-language=id&lat=${la}&lon=${lc}`, { signal: ctl.signal })).json(); provinsi = j?.address?.state ?? j?.address?.province ?? ""; } } catch {}
+  const IW = 92, IH = 68, txf = (lon, z) => ((lon + 180) / 360) * 2 ** z, tyf = (lat, z) => ((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) * 2 ** z;
+  let z = 3, ts = 0; for (let k = 9; k >= 3; k--) { const t = Math.min(IW / (txf(rb[2], k) - txf(rb[0], k)), IH / (tyf(rb[1], k) - tyf(rb[3], k))); if (t >= 14) { z = k; ts = t; break; } }
+  if (!ts) { z = 3; ts = Math.min(IW / (txf(rb[2], 3) - txf(rb[0], 3)), IH / (tyf(rb[1], 3) - tyf(rb[3], 3))); }
+  const cX = (txf(rb[0], z) + txf(rb[2], z)) / 2, cY = (tyf(rb[1], z) + tyf(rb[3], z)) / 2, MX = (tx) => IW / 2 + (tx - cX) * ts, MY = (ty) => IH / 2 + (ty - cY) * ts;
+  let inset = "";
+  for (let tx = Math.floor(cX - IW / 2 / ts); tx <= Math.floor(cX + IW / 2 / ts); tx++) for (let ty = Math.floor(cY - IH / 2 / ts); ty <= Math.floor(cY + IH / 2 / ts); ty++)
+    if (ty >= 0 && ty < 2 ** z) inset += `<img src="https://tile.openstreetmap.org/${z}/${((tx % 2 ** z) + 2 ** z) % 2 ** z}/${ty}.png" style="position:absolute;left:${MX(tx)}mm;top:${MY(ty)}mm;width:${ts + 0.05}mm;height:${ts + 0.05}mm" onerror="this.remove()">`;
+  const kx0 = MX(txf(kA[0], z)), ky0 = MY(tyf(kA[1], z)), kw = Math.max(2.2, MX(txf(kB[0], z)) - kx0), kh = Math.max(2.2, MY(tyf(kB[1], z)) - ky0);
+  inset += `<div style="position:absolute;left:${kx0 + (MX(txf(kB[0], z)) - kx0) / 2 - kw / 2}mm;top:${ky0 + (MY(tyf(kB[1], z)) - ky0) / 2 - kh / 2}mm;width:${kw}mm;height:${kh}mm;border:.6mm solid #e01b1b;box-sizing:border-box"></div>`;
+  const situasiKet = `${regNama === "Regional" ? "Regional lokasi" : "Regional " + regNama}${provinsi ? " · Provinsi " + provinsi.replace(/^Provinsi\s+/i, "") : ""}`;
+  return { inset, situasiKet, IW, IH };
+}
 async function petaA3HTML(L, O) {
+  if (O.g3d) return petaA3HTML3D(L, O);
   const Wl = JSON.parse(localStorage.getItem("wilayah") || "[]");
   const pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat)).map((x) => ({ ...x, u: UTM.ke(+x.lon, +x.lat) }));
   const poly = Wl.filter((x) => (x.titik ?? []).length > 2).map((x) => ({ ...x, u: x.titik.map((t) => UTM.ke(+t.lon, +t.lat)) }));
@@ -2006,25 +2078,8 @@ async function petaA3HTML(L, O) {
   const sbM = [50, 100, 200, 250, 400, 500, 800, 1000, 1500, 2000, 2500, 4000, 5000, 10000, 20000].filter((v) => v * mm <= 82).pop() ?? 100, sbW = sbM * mm;
   const skalaSVG = `<svg viewBox="0 0 ${sbW + 12} 13" style="width:${sbW + 12}mm;height:13mm;display:block;margin:0 auto">${[0, 1, 2, 3].map((i) => `<rect x="${6 + (i * sbW) / 4}" y="4" width="${sbW / 4}" height="1.4" fill="${i % 2 ? "#fff" : "#111"}" stroke="#111" stroke-width=".15"/>`).join("")}
     ${[0, 1, 2, 3, 4].map((i) => `<text x="${6 + (i * sbW) / 4}" y="2.8" font-size="2" text-anchor="middle">${((i * sbW) / 4 / 10).toLocaleString("id-ID", { maximumFractionDigits: 1 })}</text><text x="${6 + (i * sbW) / 4}" y="9" font-size="2" text-anchor="middle">${((i * sbM) / 4).toLocaleString("id-ID")}</text>`).join("")}<text x="${sbW + 9}" y="2.8" font-size="2">cm</text><text x="${sbW + 9}" y="9" font-size="2">m</text></svg>`;
-  // peta situasi (indeks regional): pulau/kepulauan tempat lokasi berada, ubin OSM, kotak merah = cakupan peta
   const [lc, la] = UTM.dari(Ec, Nc);
-  const REG = [["Sumatera", [95.0, -6.2, 106.3, 6.1]], ["Jawa & Bali", [105.0, -8.9, 115.8, -5.8]], ["Kalimantan", [108.5, -4.3, 119.3, 7.1]], ["Sulawesi", [118.7, -6.3, 125.5, 2.1]],
-    ["Nusa Tenggara", [115.8, -11.0, 125.3, -7.8]], ["Maluku", [124.6, -8.5, 135.0, 3.0]], ["Papua", [130.8, -9.3, 141.1, 1.0]]];
-  const cocok = REG.filter(([, b]) => lc >= b[0] && lc <= b[2] && la >= b[1] && la <= b[3]).sort((a, b) => Math.hypot(lc - (a[1][0] + a[1][2]) / 2, la - (a[1][1] + a[1][3]) / 2) - Math.hypot(lc - (b[1][0] + b[1][2]) / 2, la - (b[1][1] + b[1][3]) / 2));
-  const [regNama, rb] = cocok[0] ?? ["Regional", [lc - 4, la - 3, lc + 4, la + 3]];
-  let provinsi = "";
-  try { if (navigator.onLine) { const ctl = new AbortController(); setTimeout(() => ctl.abort(), 5000);
-    const j = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=5&accept-language=id&lat=${la}&lon=${lc}`, { signal: ctl.signal })).json(); provinsi = j?.address?.state ?? j?.address?.province ?? ""; } } catch {}
-  const IW = 92, IH = 68, txf = (lon, z) => ((lon + 180) / 360) * 2 ** z, tyf = (lat, z) => ((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) * 2 ** z;
-  let z = 3, ts = 0; for (let k = 9; k >= 3; k--) { const t = Math.min(IW / (txf(rb[2], k) - txf(rb[0], k)), IH / (tyf(rb[1], k) - tyf(rb[3], k))); if (t >= 14) { z = k; ts = t; break; } }
-  if (!ts) { z = 3; ts = Math.min(IW / (txf(rb[2], 3) - txf(rb[0], 3)), IH / (tyf(rb[1], 3) - tyf(rb[3], 3))); }
-  const cX = (txf(rb[0], z) + txf(rb[2], z)) / 2, cY = (tyf(rb[1], z) + tyf(rb[3], z)) / 2, MX = (tx) => IW / 2 + (tx - cX) * ts, MY = (ty) => IH / 2 + (ty - cY) * ts;
-  let inset = "";
-  for (let tx = Math.floor(cX - IW / 2 / ts); tx <= Math.floor(cX + IW / 2 / ts); tx++) for (let ty = Math.floor(cY - IH / 2 / ts); ty <= Math.floor(cY + IH / 2 / ts); ty++)
-    if (ty >= 0 && ty < 2 ** z) inset += `<img src="https://tile.openstreetmap.org/${z}/${((tx % 2 ** z) + 2 ** z) % 2 ** z}/${ty}.png" style="position:absolute;left:${MX(tx)}mm;top:${MY(ty)}mm;width:${ts + 0.05}mm;height:${ts + 0.05}mm" onerror="this.remove()">`;
-  const kA = UTM.dari(Ea, Nb), kB = UTM.dari(Eb, Na), kx0 = MX(txf(kA[0], z)), ky0 = MY(tyf(kA[1], z)), kw = Math.max(2.2, MX(txf(kB[0], z)) - kx0), kh = Math.max(2.2, MY(tyf(kB[1], z)) - ky0);
-  inset += `<div style="position:absolute;left:${kx0 + (MX(txf(kB[0], z)) - kx0) / 2 - kw / 2}mm;top:${ky0 + (MY(tyf(kB[1], z)) - ky0) / 2 - kh / 2}mm;width:${kw}mm;height:${kh}mm;border:.6mm solid #e01b1b;box-sizing:border-box"></div>`;
-  const situasiKet = `${regNama === "Regional" ? "Regional lokasi" : "Regional " + regNama}${provinsi ? " · Provinsi " + provinsi.replace(/^Provinsi\s+/i, "") : ""}`;
+  const { inset, situasiKet, IW, IH } = await petaSituasi(lc, la, UTM.dari(Ea, Nb), UTM.dari(Eb, Na));
   const zonaTxt = `Universal Transverse Mercator (UTM) Zona 51 ${Nc < 1e7 && la >= 0 ? "Utara" : "Selatan"}`;
   const sumber = [
     ...Wl.map((x) => `Batas IUP: ${x.nama ?? "wilayah"}${x.nomor_sk ? " — " + x.nomor_sk : ""}`),
@@ -3494,7 +3549,7 @@ async function bawahPermukaan3D(L, PRF = []) {
     <label style="margin:0;color:#cfe3d9">Relief × <input id="bpV" type="range" min="1" max="4" step="0.5" value="1.5" style="width:70px;vertical-align:middle"><span id="bpVv">1,5</span></label>
     <label style="margin:0;color:#cfe3d9">Lubang × <input id="bpH" type="range" min="1" max="30" step="1" value="1" style="width:90px;vertical-align:middle"><span id="bpHv"></span></label>
     <button id="bpA" class="sec" style="flex:0;padding:4px 10px">Atas</button><button id="bpS" class="sec" style="flex:0;padding:4px 10px">Samping</button>
-    <button id="bpP" class="sec" style="flex:0;padding:4px 10px">Simpan gambar</button><button id="bpX" style="flex:0;padding:4px 12px;margin-left:auto">✕ Tutup</button></div>
+    <button id="bpP" class="sec" style="flex:0;padding:4px 10px">Simpan gambar</button><button id="bpPDF" class="sec" style="flex:0;padding:4px 10px">⬇ PDF A3</button><button id="bpX" style="flex:0;padding:4px 12px;margin-left:auto">✕ Tutup</button></div>
     <div id="bpC" style="flex:1;position:relative;min-height:0"><div id="bpL" style="position:absolute;left:10px;top:10px;background:rgba(0,0,0,.55);border-radius:8px;padding:6px 9px;font-size:12px;line-height:1.6;pointer-events:none"></div>
       <div id="bpM" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px">Memuat topografi DEMNAS…</div></div>
     <div id="bpI" style="padding:6px 10px;background:#12251E;color:#cfe3d9;font-size:12px;min-height:1.4em">Seret untuk memutar · dua jari / klik kanan untuk menggeser · cubit / roda untuk zoom · ketuk lubang untuk keterangan layer.</div>`;
@@ -3539,7 +3594,7 @@ async function bawahPermukaan3D(L, PRF = []) {
   const pos = (lon, lat) => [(lon - clo) * kx, -(lat - cla) * ky];
   const maxD = Math.max(5, ...P.map((p) => Math.max(dalam(p), +p.rk || 0))), span = Math.max(wM, hM);
   const heAuto = Math.max(1, Math.round((zMax - zMin + 60) * 0.8 / maxD)); $("#bpH").value = Math.min(30, heAuto);
-  let grp = null, terr = null, hit = [];
+  let grp = null, terr = null, hit = [], zonAkhir = new Map();
   const label = (txt, warna = "#111") => { const c = document.createElement("canvas"), g = c.getContext("2d"); g.font = "bold 44px system-ui"; c.width = Math.ceil(g.measureText(txt).width) + 24; c.height = 60;
     g.font = "bold 44px system-ui"; g.fillStyle = "rgba(255,255,255,.88)"; g.fillRect(0, 0, c.width, c.height); g.fillStyle = warna; g.fillText(txt, 12, 46);
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false })); const k = span * 0.0007; s.scale.set(c.width * k * 0.5, c.height * k * 0.5, 1); s.renderOrder = 10; return s; };
@@ -3567,6 +3622,7 @@ async function bawahPermukaan3D(L, PRF = []) {
       const lb = label(p.bhid); lb.position.set(x, y0 + span * 0.035, z); grp.add(lb);
       grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, y0, z), lb.position.clone()]), new THREE.LineBasicMaterial({ color: 0x333333 }))); }
     const u = label("U ↑", "#c00"); u.position.set(0, (zMax - zMin) * VE + span * 0.05, -hM / 2); grp.add(u);
+    zonAkhir = zon;
     $("#bpL").innerHTML = [...zon].map(([n, w]) => `<div><span style="display:inline-block;width:12px;height:12px;background:${esc(w)};border:1px solid #fff;margin-right:6px;vertical-align:-1px"></span>${esc(n)}</div>`).join("")
       + `<div>${["RENCANA", "PROGRES", "EOH"].map((k) => `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${WARNA_STATUS[k]};border:1px solid #fff;margin:0 4px 0 0"></span>${k === "EOH" ? "EOH/STB" : LABEL_STATUS[k].replace(" (continue)", "")}`).join(" &nbsp;")}</div>
       <div style="opacity:.8">Relief ${zMin.toFixed(0)}–${zMax.toFixed(0)} m ×${VE} · lubang ×${HE} · garis putus = sisa rencana</div>${citra?.nama?.length || citra?.lapisan?.length ? `<div style="opacity:.8">${[...(citra.nama ?? []), ...(citra.lapisan ?? [])].map(esc).join(" · ")} · batas IUP merah</div>` : ""}`;
@@ -3578,6 +3634,20 @@ async function bawahPermukaan3D(L, PRF = []) {
   $("#bpT").onchange = (e) => { localStorage.setItem("topo3d", e.target.value); terr.material.map.dispose(); terr.material.map = tekstur(e.target.value); terr.material.needsUpdate = true; };
   $("#bpO").oninput = (e) => { localStorage.setItem("bp3op", e.target.value); terr.material.opacity = +e.target.value; };
   $("#bpV").oninput = bangun; $("#bpH").oninput = bangun;
+  $("#bpPDF").onclick = () => {
+    // render ulang resolusi tinggi dengan perbandingan sisi bingkai peta A3 (279 × 257 mm)
+    const w0 = W(), h0 = H(), pr = ren.getPixelRatio(), RW = 2600, RH = Math.round((RW * 257) / 279);
+    ren.setPixelRatio(1); ren.setSize(RW, RH, false); cam.aspect = RW / RH; cam.updateProjectionMatrix(); ren.render(sc, cam);
+    const cv = Object.assign(document.createElement("canvas"), { width: RW, height: RH }), cg = cv.getContext("2d"); cg.fillStyle = "#fff"; cg.fillRect(0, 0, RW, RH); cg.drawImage(ren.domElement, 0, 0);
+    const url = cv.toDataURL("image/jpeg", 0.92);
+    // arah utara di layar: proyeksikan titik pusat & titik ke utara
+    const p0 = new THREE.Vector3(0, 0, 0).project(cam), p1 = new THREE.Vector3(0, 0, -span * 0.2).project(cam), sudut = (Math.atan2((p1.x - p0.x) * RW, (p1.y - p0.y) * RH) * 180) / Math.PI;
+    const arahLihat = ((Math.atan2(cam.position.x - ctl.target.x, -(cam.position.z - ctl.target.z)) * 180) / Math.PI + 360) % 360; // posisi kamera dilihat dari titik pusat (0° = utara)
+    ren.setPixelRatio(pr); ren.setSize(w0, h0); cam.aspect = w0 / h0; cam.updateProjectionMatrix();
+    const t = $("#bpT"), info = { url, utara: sudut, VE: +$("#bpV").value, HE: +$("#bpH").value, topo: t.options[t.selectedIndex].text, tembus: +$("#bpO").value,
+      zon: [...zonAkhir], zMin, zMax, maxD, arahLihat, wilayahLL: [lo0, la0, lo1, la1] };
+    petaA3Dialog(L, { g3d: info });
+  };
   $("#bpP").onclick = () => { ren.render(sc, cam); const a = document.createElement("a"); a.href = ren.domElement.toDataURL("image/png"); a.download = `Peta3D_bawah_permukaan_${new Date().toISOString().slice(0, 10)}.png`; a.click(); };
   const ray = new THREE.Raycaster(), v2 = new THREE.Vector2(); let turun = null;
   ren.domElement.addEventListener("pointerdown", (e) => (turun = [e.clientX, e.clientY]));
