@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-18.21";
+const APP_VERSION = "2026-11-19.01";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -342,12 +342,56 @@ function loginView() {
   app.innerHTML = after + `<div class="card"><h2>Masuk</h2><p class="muted">Akun dibuat oleh admin. Setelah sekali masuk, aplikasi tetap bisa memotret saat offline.</p>
   <label>Email</label><input id="em" type="email" autocomplete="username"><label>Kata sandi</label><input id="pw" type="password" autocomplete="current-password">
   <div style="margin-top:12px"><button id="go">Masuk</button></div><div id="e" class="err"></div>
+  <p style="margin-top:10px"><a href="#" id="lupa">Lupa kata sandi?</a></p>
   <p class="muted" style="margin-top:12px">Belum punya akun? <a href="daftar.html">Daftar di sini</a> — akun aktif setelah disetujui admin.</p></div>`;
   if (qp.get("email")) $("#em").value = qp.get("email");
   $("#go").onclick = async () => {
     const { error } = await sb.auth.signInWithPassword({ email: $("#em").value.trim(), password: $("#pw").value });
-    if (error) $("#e").textContent = /banned/i.test(error.message) ? "Akun ini sudah dinonaktifkan admin. Untuk memakai aplikasi lagi, hubungi admin agar pendaftaran Anda ditinjau ulang." : /invalid login/i.test(error.message) ? "Email atau kata sandi salah. Bila akun Anda sudah dihapus admin, daftar ulang lewat tautan di bawah." : error.message;
+    if (error) $("#e").innerHTML = /banned/i.test(error.message) ? "Akun ini sudah dinonaktifkan admin. Untuk memakai aplikasi lagi, hubungi admin agar pendaftaran Anda ditinjau ulang." : /invalid login/i.test(error.message) ? `Email atau kata sandi salah. <a href="#" id="lupa2">Lupa kata sandi?</a> Bila akun Anda sudah dihapus admin, daftar ulang lewat tautan di bawah.` : esc(error.message);
     else localStorage.removeItem("aksesDicabut");
+    const l2 = $("#lupa2"); if (l2) l2.onclick = (e) => { e.preventDefault(); lupaSandi($("#em").value.trim()); };
+  };
+  $("#pw").onkeydown = (e) => { if (e.key === "Enter") $("#go").click(); };
+  $("#lupa").onclick = (e) => { e.preventDefault(); lupaSandi($("#em").value.trim()); };
+}
+// Lupa kata sandi: kirim link reset ke email (bila layanan email aktif) + catat permintaan agar admin bisa membuat kata sandi sementara
+function lupaSandi(emailAwal = "") {
+  const m = modal(`<h3>Lupa kata sandi</h3>
+    <p class="muted">Masukkan email akun Anda. Aplikasi mengirim link untuk membuat kata sandi baru ke email itu, dan admin juga menerima permintaan Anda.</p>
+    <label>Email</label><input id="lse" type="email" value="${esc(emailAwal)}" autocomplete="username">
+    <p class="err" id="lsx"></p><div id="lso"></div>
+    <div class="row"><button class="sec" id="lsb">Tutup</button><button id="lsk">Kirim</button></div>`);
+  m.querySelector("#lsb").onclick = () => m.remove();
+  m.querySelector("#lsk").onclick = async () => {
+    const em = m.querySelector("#lse").value.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return (m.querySelector("#lsx").textContent = "Isi email yang benar.");
+    if (!navigator.onLine) return (m.querySelector("#lsx").textContent = "Butuh sinyal untuk meminta reset kata sandi.");
+    m.querySelector("#lsk").disabled = true; m.querySelector("#lsx").textContent = "";
+    try { await sb.rpc("minta_reset_password", { p_email: em }); } catch {}
+    const { error } = await sb.auth.resetPasswordForEmail(em, { redirectTo: location.origin + location.pathname });
+    m.querySelector("#lso").innerHTML = `<div class="card" style="background:#DCEFE4;margin:8px 0"><b>Permintaan terkirim.</b><br>
+      1. Bila email terdaftar, link <b>buat kata sandi baru</b> dikirim ke <b>${esc(em)}</b>. Buka link itu di HP ini (cek juga folder Spam/Promosi).<br>
+      2. Bila dalam 10 menit tidak ada email${error ? ` <span class="muted">(layanan email: ${esc(error.message)})</span>` : ""}, hubungi admin. Admin sudah melihat permintaan Anda dan bisa memberi <b>kata sandi sementara</b>; setelah masuk, Anda diminta membuat kata sandi baru.</div>`;
+    m.querySelector("#lsk").textContent = "Kirim ulang"; m.querySelector("#lsk").disabled = false;
+  };
+}
+// Buat kata sandi baru: setelah membuka link reset email, atau setelah masuk dengan kata sandi sementara dari admin
+function buatSandiBaru(alasan) {
+  if (document.getElementById("sbBaru")) return;
+  const m = modal(`<div id="sbBaru"><h3>Buat kata sandi baru</h3><p class="muted">${esc(alasan)}</p>
+    <label>Kata sandi baru (min. 8 karakter)</label><input id="sb1" type="password" autocomplete="new-password">
+    <label>Ulangi kata sandi baru</label><input id="sb2" type="password" autocomplete="new-password">
+    <p class="err" id="sbx"></p><div class="row"><button id="sbk">Simpan kata sandi</button></div></div>`);
+  m.querySelector("#sbk").onclick = async () => {
+    const a = m.querySelector("#sb1").value, b = m.querySelector("#sb2").value, x = m.querySelector("#sbx");
+    if (a.length < 8) return (x.textContent = "Minimal 8 karakter.");
+    if (a !== b) return (x.textContent = "Kedua isian tidak sama.");
+    m.querySelector("#sbk").disabled = true;
+    const { error } = await sb.auth.updateUser({ password: a });
+    if (error) { x.textContent = /same|different/i.test(error.message) ? "Kata sandi baru harus berbeda dari yang lama." : error.message; m.querySelector("#sbk").disabled = false; return; }
+    try { await sb.rpc("selesai_ganti_password"); } catch {}
+    if (me) { me.wajib_ganti_pw = false; localStorage.setItem("me", JSON.stringify(me)); }
+    m.remove(); toast?.("Kata sandi baru tersimpan.");
   };
 }
 
@@ -1106,12 +1150,56 @@ async function p2hForm() {
 }
 
 // ---------- pengguna (admin) ----------
+// Hapus akun: tanpa data -> dihapus permanen; sudah ada data -> login ditutup permanen (email dilepas, kata sandi dihapus),
+// nama & semua data tetap tersimpan dan tetap tampil di laporan. Orangnya boleh daftar ulang dengan email yang sama.
+async function hapusAkun(uid, nama) {
+  const { data: pv, error: e1 } = await sb.rpc("admin_hapus_pengguna", { p_user: uid, p_konfirmasi: false });
+  if (e1) { alert(e1.message); return false; }
+  return new Promise((selesai) => {
+    const m = modal(`<h3 style="color:#B3261E">Hapus akun ${esc(nama || pv.nama || "")}?</h3>
+      ${pv.data_tetap ? `<p>Akun ini sudah mengirim <b>${pv.total_data} data</b> (${esc(pv.ringkasan)}).</p>
+        <p><b>Data tersebut TIDAK ikut dihapus</b>: tetap tersimpan, tetap tampil di Database, Dashboard, laporan dan DDR atas nama <b>${esc(nama || pv.nama)}</b>.</p>
+        <p>Yang dihapus: akses masuk. Email dilepas, kata sandi dihapus, sesi di semua HP diputus, penugasan proyek dicabut. Akun pindah ke daftar <b>Akun dihapus</b>.</p>`
+      : `<p>Akun ini belum pernah mengirim data, jadi dihapus <b>permanen</b> (akun, pendaftaran, penugasan).</p>`}
+      <p>Tidak bisa dibatalkan. Bila orang ini perlu masuk lagi, ia mendaftar ulang dan menunggu persetujuan.</p>
+      <label>Alasan (wajib)</label><textarea id="haa" rows="2" placeholder="mis. sudah tidak ikut proyek / kontrak selesai"></textarea>
+      <p class="err" id="hae"></p>
+      <div class="row"><button class="sec" id="hab">Batal</button><button id="hao" style="background:#B3261E">Ya, hapus akun</button></div>`);
+    const tutup = (x) => { m.remove(); selesai(x); };
+    m.querySelector("#hab").onclick = () => tutup(false);
+    m.querySelector("#hao").onclick = async () => {
+      const alasan = m.querySelector("#haa").value.trim();
+      if (!alasan) return (m.querySelector("#hae").textContent = "Alasan wajib diisi.");
+      m.querySelector("#hao").disabled = true;
+      const { error } = await sb.rpc("admin_hapus_pengguna", { p_user: uid, p_konfirmasi: true, p_alasan: alasan });
+      if (error) { m.querySelector("#hae").textContent = error.message; m.querySelector("#hao").disabled = false; return; }
+      tutup(true);
+    };
+  });
+}
+// Admin membuat kata sandi sementara untuk pengguna yang lupa kata sandi; pengguna wajib menggantinya saat masuk.
+async function resetSandiAdmin(uid, nama) {
+  if (!confirm(`Buat kata sandi sementara untuk ${nama}?\n\nKata sandi lamanya langsung tidak berlaku. Kirim kata sandi sementara langsung ke orangnya (WA/telepon), bukan lewat grup.`)) return false;
+  const { data, error } = await sb.rpc("admin_reset_password", { p_user: uid });
+  if (error) { alert(error.message); return false; }
+  const pesan = `X-Terra: kata sandi sementara untuk ${data.email} adalah ${data.password_sementara}\nMasuk di ${location.origin + location.pathname} lalu buat kata sandi baru Anda sendiri.`;
+  return new Promise((selesai) => {
+    const m = modal(`<h3>Kata sandi sementara</h3><p>${esc(data.nama)} · ${esc(data.email)}</p>
+      <p style="font-size:26px;font-weight:800;letter-spacing:2px;text-align:center;background:#F1F5F3;border-radius:10px;padding:10px;user-select:all">${esc(data.password_sementara)}</p>
+      <p class="muted">Hanya ditampilkan sekali. Saat masuk, pengguna langsung diminta membuat kata sandi baru.${data.nonaktif ? " <b>Catatan: akun ini masih NONAKTIF</b>, aktifkan dulu agar bisa masuk." : ""}</p>
+      <div class="row"><button class="sec" id="rsc">Salin pesan</button><a class="btn" id="rsw" href="https://wa.me/?text=${encodeURIComponent(pesan)}" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:10px;border-radius:10px;background:#1E9E69;color:#fff;text-decoration:none">Kirim lewat WhatsApp</a></div>
+      <div class="row"><button id="rso">Selesai</button></div>`);
+    m.querySelector("#rsc").onclick = async () => { await navigator.clipboard?.writeText(pesan); m.querySelector("#rsc").textContent = "Tersalin"; };
+    m.querySelector("#rso").onclick = () => { m.remove(); selesai(true); };
+  });
+}
 async function usersView(v) {
   const { data: rq, error } = await sb.from("registration_request").select("*").order("created_at", { ascending: false });
   if (error) return (v.innerHTML = `<p class="err">${esc(error.message)}</p>`);
-  const { data: au } = await sb.from("app_user").select("user_id,role");
-  const roleOf = Object.fromEntries((au ?? []).map((x) => [x.user_id, x.role]));
-  const pend = rq.filter((r) => r.status === "PENDING"), rest = rq.filter((r) => r.status !== "PENDING");
+  const [{ data: au }, { data: rs }] = await Promise.all([sb.from("app_user").select("user_id,role,dihapus_at,nonaktif_alasan,wajib_ganti_pw"), sb.rpc("admin_daftar_reset")]);
+  const roleOf = Object.fromEntries((au ?? []).map((x) => [x.user_id, x.role])), auOf = Object.fromEntries((au ?? []).map((x) => [x.user_id, x]));
+  const dihapus = rq.filter((r) => auOf[r.user_id]?.dihapus_at);
+  const pend = rq.filter((r) => r.status === "PENDING"), rest = rq.filter((r) => r.status !== "PENDING" && !auOf[r.user_id]?.dihapus_at);
   const link = new URL("daftar.html", location.href).href;
   const opt = (sel) => ["driller", "geologist", "verifier", "admin", "client", "admin_lapangan"].map((r) => `<option ${r === sel ? "selected" : ""}>${r}</option>`).join("");
   const row = (r, pending) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>${esc(r.full_name)}</b> · ${esc(r.email)}<br><span class="muted">${esc(r.position ?? "")} · ${esc(r.company ?? "")} · ${esc(r.phone ?? "")}${r.reason ? " · " + esc(r.reason) : ""}<br>
@@ -1119,12 +1207,16 @@ async function usersView(v) {
       <select data-role="${r.user_id}" style="flex:0;width:auto">${opt(roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif" ? roleOf[r.user_id] : r.requested_role)}</select>
       <button data-ok="${r.user_id}" style="flex:0">${pending ? "Setujui" : roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif" ? "Ubah peran" : "Aktifkan"}</button>
       ${pending || (roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif") ? `<button class="danger" data-no="${r.user_id}" style="flex:0">${pending ? "Tolak" : "Nonaktifkan"}</button>` : ""}
-      ${r.user_id === session?.user?.id ? "" : `<button class="danger" data-del="${r.user_id}" data-nm="${esc(r.full_name)}" style="flex:0" title="Hapus permanen (hanya akun yang belum pernah mengirim data)">Hapus</button>`}</li>`;
+      ${!pending && roleOf[r.user_id] && r.user_id !== session?.user?.id ? `<button class="sec" data-rpw="${r.user_id}" data-nm="${esc(r.full_name)}" style="flex:0" title="Buat kata sandi sementara (pengguna lupa kata sandi)">🔑 Reset sandi</button>` : ""}
+      ${r.user_id === session?.user?.id ? "" : `<button class="danger" data-del="${r.user_id}" data-nm="${esc(r.full_name)}" style="flex:0" title="Hapus akun. Bila sudah pernah mengirim data, datanya tetap tersimpan">Hapus akun</button>`}
+      ${auOf[r.user_id]?.wajib_ganti_pw ? `<span class="muted" style="width:100%">memakai kata sandi sementara, belum diganti</span>` : ""}</li>`;
   v.innerHTML = `<div class="card"><h2>Pengguna</h2>
     <p>Link pendaftaran untuk dibagikan: <b>${esc(link)}</b> <button class="sec" id="cp" style="padding:4px 10px">Salin</button></p>
     <p class="muted">Pendaftar tidak bisa melihat atau mengirim data sampai disetujui. Periksa nama, perusahaan dan nomor HP sebelum menyetujui — email belum diverifikasi otomatis.</p></div>
+    ${(rs ?? []).length ? `<div class="card" style="background:#FFF4D6"><h3>Permintaan lupa kata sandi (${rs.length})</h3><p class="muted">Pengguna sudah meminta link reset ke email. Bila emailnya tidak sampai, buat kata sandi sementara lalu kirim ke orangnya langsung (WA/telepon), jangan lewat grup.</p><ul class="list">${rs.map((x) => `<li style="flex-wrap:wrap"><span style="flex:1"><b>${esc(x.nama)}</b> · ${esc(x.email)}<br><span class="muted">${esc(x.peran)} · diminta ${new Date(x.diminta_at).toLocaleString("id-ID")}${x.jumlah > 1 ? ` · ${x.jumlah}×` : ""}</span></span><button data-rpw="${x.user_id}" data-nm="${esc(x.nama)}" style="flex:0">🔑 Buat kata sandi sementara</button></li>`).join("")}</ul></div>` : ""}
     <div class="card"><h3>Menunggu persetujuan (${pend.length})</h3><ul class="list">${pend.map((r) => row(r, true)).join("") || `<li class="muted">Tidak ada.</li>`}</ul></div>
     <div class="card"><h3>Semua pengguna</h3><ul class="list">${rest.map((r) => row(r, false)).join("") || `<li class="muted">-</li>`}</ul></div>
+    ${dihapus.length ? `<details class="card"><summary><b>Akun dihapus (${dihapus.length})</b> <span class="muted">— tidak bisa masuk; data yang pernah dikirim tetap tersimpan atas nama mereka</span></summary><ul class="list">${dihapus.map((r) => `<li><span style="flex:1"><b>${esc(r.full_name)}</b> · ${esc(r.email)}<br><span class="muted">dihapus ${new Date(auOf[r.user_id].dihapus_at).toLocaleString("id-ID")}${auOf[r.user_id].nonaktif_alasan ? " · " + esc(auOf[r.user_id].nonaktif_alasan) : ""}</span></span></li>`).join("")}</ul><p class="muted">Bila orang ini perlu masuk lagi, ia mendaftar ulang (email yang sama boleh) dan menunggu persetujuan.</p></details>` : ""}
     <div class="card" id="akc"></div><div class="card" id="rlc"></div>`;
   aksesKlien($("#akc")); rilisAdmin($("#rlc"));
   $("#cp").onclick = async () => { await navigator.clipboard?.writeText(link); $("#cp").textContent = "Tersalin"; };
@@ -1137,13 +1229,8 @@ async function usersView(v) {
   v.querySelectorAll("[data-ok]").forEach((b) => (b.onclick = () => act(b.dataset.ok, v.querySelector(`[data-role="${b.dataset.ok}"]`).value)));
   v.querySelectorAll("[data-no]").forEach((b) => (b.onclick = () => act(b.dataset.no, null)));
   // Hapus permanen: server menolak bila akun pernah mengirim data (pakai Nonaktifkan agar riwayat utuh)
-  v.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => {
-    const { error: e1 } = await sb.rpc("admin_hapus_pengguna", { p_user: b.dataset.del, p_konfirmasi: false });
-    if (e1) return alert(e1.message);
-    if (!confirm(`Hapus PERMANEN akun “${b.dataset.nm}”?\n\nAkun, pendaftaran dan penugasannya dihapus dan tidak bisa dipulihkan. Orang ini harus mendaftar ulang bila ingin masuk lagi.`)) return;
-    const { error } = await sb.rpc("admin_hapus_pengguna", { p_user: b.dataset.del, p_konfirmasi: true });
-    if (error) alert(error.message); else usersView(v);
-  }));
+  v.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { if (await hapusAkun(b.dataset.del, b.dataset.nm)) usersView(v); }));
+  v.querySelectorAll("[data-rpw]").forEach((b) => (b.onclick = async () => { if (await resetSandiAdmin(b.dataset.rpw, b.dataset.nm)) usersView(v); }));
 }
 
 // ---------- utilitas bersama ----------
@@ -2849,30 +2936,8 @@ async function personilAdmin(box) {
     if (!confirm(`Gabungkan "${us.find((p) => p.id === s.dataset.gt)?.nama}" ke ${ke}? Semua shift dengan ejaan itu dihitung untuk ${ke}.`)) return (s.value = "");
     const { error } = await sb.rpc("admin_gabung_personil", { p_dari: s.dataset.gt, p_ke: s.value }); if (error) return alert(error.message); ulang(); }));
 }
-// Keluarkan operator dari rekap (admin): hapus akun permanen bila belum pernah mengirim data; bila sudah, nonaktifkan.
-function keluarkanOperator(uid, nama) {
-  return new Promise(async (selesai) => {
-    const { error: cek } = await sb.rpc("admin_hapus_pengguna", { p_user: uid, p_konfirmasi: false });
-    const bisaHapus = !cek;
-    const m = modal(`<h3 style="color:#B3261E">Keluarkan ${esc(nama || "operator")} dari rekap?</h3>
-      ${bisaHapus ? `<p><b>Apakah Anda yakin ingin menghapus akun ini?</b> Akun ini belum pernah mengirim data, jadi bisa <b>dihapus permanen</b>: akun, pendaftaran dan penugasannya hilang dan <b>tidak bisa dipulihkan</b>. Bila orang ini perlu masuk lagi, ia harus mendaftar ulang.</p>`
-        : `<p>Akun ini <b>tidak bisa dihapus permanen</b> karena sudah mengirim data:<br><span class="muted">${esc(cek.message)}</span></p><p><b>Apakah Anda yakin ingin menonaktifkannya?</b> Ia tidak bisa masuk lagi dan hilang dari rekap harian, tetapi semua data yang pernah dikirim tetap tersimpan. Bisa diaktifkan kembali di menu <b>Pengguna</b>.</p>`}
-      <label>Alasan (wajib)</label><textarea id="kla" rows="2" placeholder="mis. bukan petugas TGEP / akun uji coba / sudah tidak bertugas"></textarea>
-      <p class="err" id="kle"></p>
-      <div class="row"><button class="sec" id="klb">Batal</button><button id="klo" style="background:#B3261E">${bisaHapus ? "Ya, hapus akun" : "Ya, nonaktifkan"}</button></div>`);
-    const tutup = (x) => { m.remove(); selesai(x); };
-    m.querySelector("#klb").onclick = () => tutup(false);
-    m.querySelector("#klo").onclick = async () => {
-      const alasan = m.querySelector("#kla").value.trim();
-      if (!alasan) return (m.querySelector("#kle").textContent = "Alasan wajib diisi.");
-      m.querySelector("#klo").disabled = true;
-      const { error } = bisaHapus ? await sb.rpc("admin_hapus_pengguna", { p_user: uid, p_konfirmasi: true })
-        : await sb.rpc("admin_set_user", { p_user: uid, p_role: null, p_note: alasan });
-      if (error) { m.querySelector("#kle").textContent = error.message; m.querySelector("#klo").disabled = false; return; }
-      tutup(true);
-    };
-  });
-}
+// Keluarkan operator dari rekap (admin): sama dengan Hapus akun (data tetap tersimpan bila sudah ada).
+function keluarkanOperator(uid, nama) { return hapusAkun(uid, nama); }
 // Hapus kiriman (admin) dari Folder operator: data dipindah ke arsip (deleted_record) dan bisa dipulihkan.
 const hapusJenis = (j) => ({ PROGRES: ["h", "drill_event"], P2H: ["h", "p2h_check"], DDR: ["h", "ddr"], "FORM LOGGING": ["d", "scan_job"], "FOTO CORE": ["d", "core_photo"] })[j] ?? (j?.startsWith("ARSIP ") ? ["h", "form_photo"] : null);
 function hapusKiriman(items) {
@@ -3740,12 +3805,12 @@ async function editSample(no, done) {
 async function loadMe() {
   if (!session) { me = null; return; }
   if (session.offline) { me = JSON.parse(localStorage.getItem("me") || "null"); return; }
-  const { data, error } = await sb.from("app_user").select("full_name,role").eq("user_id", session.user.id).maybeSingle();
+  const { data, error } = await sb.from("app_user").select("full_name,role,wajib_ganti_pw,dihapus_at").eq("user_id", session.user.id).maybeSingle();
   if (error) { me = JSON.parse(localStorage.getItem("me") || "null"); return; }   // gangguan jaringan: pakai identitas terakhir
   if (!data || data.role === "nonaktif") {
     // Tutup akses total HANYA bila server autentikasi memastikan akun dihapus/diblokir, atau peran tertulis "nonaktif".
     // Data akun yang sesaat tidak terbaca TIDAK dianggap dihapus (pakai identitas terakhir).
-    if (data?.role === "nonaktif") return aksesDicabut("dinonaktifkan");
+    if (data?.role === "nonaktif") return aksesDicabut(data.dihapus_at ? "dihapus" : "dinonaktifkan");
     if (localStorage.getItem("me")) {
       const { data: u, error: ue } = await sb.auth.getUser();
       if (ue && /not.?found|does not exist|banned|user_not_found|user_banned/i.test(ue.message + " " + (ue.code ?? ""))) return aksesDicabut(/banned/i.test(ue.message + (ue.code ?? "")) ? "dinonaktifkan" : "dihapus");
@@ -3757,6 +3822,7 @@ async function loadMe() {
     me = null; return;   // pendaftar baru: menunggu persetujuan
   }
   me = data; localStorage.setItem("me", JSON.stringify(data));
+  if (data.wajib_ganti_pw) setTimeout(() => buatSandiBaru("Anda masuk dengan kata sandi sementara dari admin. Buat kata sandi baru Anda sendiri sebelum melanjutkan."), 300);
 }
 async function aksesDicabut(jenis) {
   me = null; session = null;
@@ -3776,6 +3842,7 @@ sb.auth.onAuthStateChange(async (e, s) => {
   session = s ?? (e === "SIGNED_OUT" && !localStorage.getItem("manualLogout") ? offlineSession() : null);
   localStorage.removeItem("manualLogout");
   await loadMe(); render(); if (s) sync();
+  if (e === "PASSWORD_RECOVERY") setTimeout(() => buatSandiBaru("Anda membuka link reset kata sandi dari email. Buat kata sandi baru untuk akun ini."), 300);
 });
 addEventListener("online", async () => { const { data } = await sb.auth.getSession(); if (data.session) { session = data.session; render(); sync(); } else if (session?.offline) { session = null; render(); } });
 const { data: s0 } = await sb.auth.getSession().catch(() => ({ data: { session: null } }));
