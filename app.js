@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-19.04";
+const APP_VERSION = "2026-11-19.05";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1854,6 +1854,38 @@ async function hillshadeKanvas(bb, o = {}) {
   const lonT = (t) => (t / 2 ** z) * 360 - 180, latT = (t) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * t) / 2 ** z))) * 180) / Math.PI;
   return { url: c.toDataURL("image/png"), bb: [lonT(X0), latT(Y1 + 1), lonT(X1 + 1), latT(Y0)], z };
 }
+// Unduh langsung PDF (tanpa dialog cetak): halaman HTML → gambar 240 dpi → PDF satu halaman ukuran kertas yang diminta
+async function htmlKePdf(html, nama, o = {}) {
+  const wmm = o.wmm ?? 420, hmm = o.hmm ?? 297, dpi = o.dpi ?? 240;
+  const doc = new DOMParser().parseFromString(html, "text/html"), css = [...doc.querySelectorAll("style")].map((x) => x.textContent).join("\n");
+  const sheet = doc.querySelector(o.sel ?? ".sheet") ?? doc.body;
+  const keData = (b) => new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.onerror = () => r(null); f.readAsDataURL(b); });
+  await Promise.all([...sheet.querySelectorAll("img")].map(async (im) => { const src = im.getAttribute("src") || ""; if (src.startsWith("data:")) return;
+    try { const ctl = new AbortController(); setTimeout(() => ctl.abort(), 12000); const r = await fetch(new URL(src, location.href).href, { signal: ctl.signal }); if (!r.ok) throw 0; im.setAttribute("src", await keData(await r.blob())); }
+    catch { im.remove(); } }));
+  sheet.querySelectorAll("[onerror]").forEach((x) => x.removeAttribute("onerror"));
+  const xhtml = new XMLSerializer().serializeToString(sheet);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${wmm}mm" height="${hmm}mm" viewBox="0 0 ${(wmm / 25.4) * 96} ${(hmm / 25.4) * 96}"><foreignObject x="0" y="0" width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" class="akar" style="margin:0"><style>${css.replace(/\bbody\b/g, "div.akar").replace(/</g, "&lt;")}</style>${xhtml}</div></foreignObject></svg>`;
+  const img = new Image(); img.decoding = "sync";
+  await new Promise((ok, no) => { img.onload = ok; img.onerror = () => no(new Error("Halaman peta tidak bisa digambar di browser ini")); img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg); });
+  const W = Math.round((wmm / 25.4) * dpi), H = Math.round((hmm / 25.4) * dpi), c = Object.assign(document.createElement("canvas"), { width: W, height: H }), g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
+  g.drawImage(img, 0, 0, W, H); await new Promise((r) => setTimeout(r, 300)); g.drawImage(img, 0, 0, W, H); // gambar ulang: Safari kadang belum memuat gambar di dalam halaman pada gambar pertama
+  const jpg = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92)); if (!jpg) throw new Error("Gagal membuat gambar halaman (memori HP tidak cukup?)");
+  const jb = new Uint8Array(await jpg.arrayBuffer()), enc = new TextEncoder(), parts = [], off = []; let len = 0;
+  const tulis = (x) => { const b = typeof x === "string" ? enc.encode(x) : x; parts.push(b); len += b.length; }, obj = (n, isi) => { off[n] = len; tulis(`${n} 0 obj\n`); isi(); tulis("\nendobj\n"); };
+  const pw = ((wmm / 25.4) * 72).toFixed(2), ph = ((hmm / 25.4) * 72).toFixed(2), isiHal = `q ${pw} 0 0 ${ph} 0 0 cm /Im0 Do Q`;
+  tulis("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  obj(1, () => tulis("<</Type/Catalog/Pages 2 0 R>>")); obj(2, () => tulis("<</Type/Pages/Kids[3 0 R]/Count 1>>"));
+  obj(3, () => tulis(`<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${pw} ${ph}]/Resources<</XObject<</Im0 4 0 R>>>>/Contents 5 0 R>>`));
+  obj(4, () => { tulis(`<</Type/XObject/Subtype/Image/Width ${W}/Height ${H}/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length ${jb.length}>>\nstream\n`); tulis(jb); tulis("\nendstream"); });
+  obj(5, () => tulis(`<</Length ${isiHal.length}>>\nstream\n${isiHal}\nendstream`));
+  obj(6, () => tulis(`<</Title(${String(o.judul ?? nama).replace(/[()\\]/g, "")})/Producer(X-Terra)/CreationDate(D:${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)})>>`));
+  const xr = len; tulis(`xref\n0 7\n0000000000 65535 f \n${[1, 2, 3, 4, 5, 6].map((n) => String(off[n]).padStart(10, "0") + " 00000 n \n").join("")}trailer\n<</Size 7/Root 1 0 R/Info 6 0 R>>\nstartxref\n${xr}\n%%EOF`);
+  const blob = new Blob(parts, { type: "application/pdf" }), a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: nama.endsWith(".pdf") ? nama : nama + ".pdf" });
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+  return { bytes: blob.size, W, H };
+}
 // ---------- Ekspor peta lokasi titik bor A3 lanskap (template lampiran: peta + panel keterangan, skala bulat sebenarnya) ----------
 const PETA_A3_DEF = {
   perusahaan: "PT NUSA PRIMA GEMILANG", judul: "PETA LOKASI TITIK BOR EKSPLORASI", sub: "", lampiran: "Lampiran Laporan Kegiatan Eksplorasi Nikel Laterit",
@@ -1875,16 +1907,21 @@ function petaA3Dialog(L) {
     <div class="row"><div>${f("kota", "Kota (tanda tangan)", "mis. Luwuk")}</div><div>${f("jabatan", "Jabatan penandatangan")}</div></div>${f("nama", "Nama penandatangan", me?.full_name ?? "")}
     <label>Dasar / sumber tambahan (satu per baris, opsional)</label><textarea data-k="dasar" rows="3" placeholder="mis. SK IUP OP No. ...">${esc(S.dasar)}</textarea>
     <label>Catatan</label><textarea data-k="catatan" rows="3">${esc(S.catatan)}</textarea>
-    <p class="err" id="pae"></p><div class="row"><button class="sec" id="pab">Batal</button><button id="pak">Buat peta PDF</button></div>`);
+    <p class="err" id="pae"></p><p class="muted" id="pap"></p><div class="row"><button class="sec" id="pab">Batal</button><button class="sec" id="pav">Pratinjau</button><button id="pak">⬇ Unduh PDF A3</button></div>`);
   let logoBaru = logo;
   m.querySelector("#paLf").onchange = async (e) => { const fl = e.target.files[0]; if (!fl) return;
     const bmp = await createImageBitmap(fl), k = Math.min(1, 600 / Math.max(bmp.width, bmp.height)), c = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) });
     c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height); logoBaru = c.toDataURL("image/png"); m.querySelector("#paLg").innerHTML = `<img src="${logoBaru}" style="max-height:42px;max-width:88px">`; };
   m.querySelector("#pab").onclick = () => m.remove();
-  m.querySelector("#pak").onclick = () => {
-    const O = {}; m.querySelectorAll("[data-k]").forEach((x) => (O[x.dataset.k] = x.value.trim()));
-    localStorage.setItem("petaA3", JSON.stringify(O)); if (logoBaru) try { localStorage.setItem("petaA3Logo", logoBaru); } catch {}
-    m.remove(); petaA3(L, { ...O, logo: logoBaru });
+  const ambil = () => { const O = {}; m.querySelectorAll("[data-k]").forEach((x) => (O[x.dataset.k] = x.value.trim()));
+    localStorage.setItem("petaA3", JSON.stringify(O)); if (logoBaru) try { localStorage.setItem("petaA3Logo", logoBaru); } catch {} return { ...O, logo: logoBaru }; };
+  m.querySelector("#pav").onclick = () => { const O = ambil(); m.remove(); petaA3(L, O); };
+  m.querySelector("#pak").onclick = async () => {
+    const O = ambil(), b = m.querySelector("#pak"), st = m.querySelector("#pap"); b.disabled = true; m.querySelector("#pae").textContent = "";
+    try { st.textContent = "Menyusun peta (citra, kontur, hillshade, peta situasi)…"; const html = await petaA3HTML(L, O);
+      st.textContent = "Membuat file PDF A3…"; const nama = `Peta_Lokasi_Titik_Bor_${new Date().toISOString().slice(0, 10)}.pdf`;
+      const r = await htmlKePdf(html, nama, { judul: O.judul }); st.textContent = `Selesai: ${nama} (${(r.bytes / 1048576).toFixed(1)} MB, A3 lanskap, 240 dpi) — cek folder Unduhan.`; b.disabled = false; b.textContent = "⬇ Unduh lagi";
+    } catch (e) { b.disabled = false; st.textContent = ""; m.querySelector("#pae").textContent = `PDF langsung gagal (${e.message}). Pakai Pratinjau lalu Simpan PDF.`; }
   };
 }
 async function petaA3(L, O) {
