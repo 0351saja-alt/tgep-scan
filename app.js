@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-21.03";
+const APP_VERSION = "2026-11-21.04";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1943,6 +1943,68 @@ async function mosaikUbin(tpl, bb, lebarPx = 2400, maksUbin = 140) {
   let url; try { url = c.toDataURL("image/jpeg", 0.9); } catch { return null; }
   return { url, bb: [lonT(X0), latT(Y1 + 1), lonT(X1 + 1), latT(Y0)], z, lengkap: ada === nx * ny };
 }
+const SKALA_A3 = [500, 1000, 2000, 2500, 5000, 7500, 10000, 12500, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 250000];
+// Bingkai A3 di atas peta tab Peta: geser peta untuk memilih posisi, pilih skala (zoom/cubit ikut membulat ke skala standar).
+// Bingkai = area peta di PDF (279 × 257 mm). Mengembalikan {pusat:[lon,lat], skala} atau null bila batal.
+function aturBingkaiA3(map, { skala, pusat, L = [] } = {}) {
+  return new Promise((selesai) => {
+    const FWmm = 279, FHmm = 257, wadah = map.getContainer(), lama = { pitch: map.getPitch(), bearing: map.getBearing() };
+    const ov = document.createElement("div");
+    ov.id = "bingkaiA3";
+    ov.style.cssText = "position:absolute;inset:0;z-index:40;pointer-events:none;font:13px system-ui,sans-serif";
+    ov.innerHTML = `<div id="bfF" style="position:absolute;border:2px solid #d00;box-shadow:0 0 0 9999px rgba(0,0,0,.42);border-radius:2px"><span style="position:absolute;left:4px;top:3px;background:#d00;color:#fff;font-size:11px;padding:1px 5px;border-radius:3px">Area peta PDF A3</span>
+        <span style="position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;border:2px solid #d00;border-radius:50%"></span></div>
+      <div id="bfBar" style="position:absolute;left:8px;right:8px;top:8px;pointer-events:auto;background:#fff;color:#111;border-radius:10px;padding:8px;box-shadow:0 2px 8px rgba(0,0,0,.3);display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+        <b style="flex:1 1 100%;font-size:13px">📐 Geser peta untuk posisi · pilih skala (zoom/cubit ikut dibulatkan ke skala standar)</b>
+        <select id="bfS" style="flex:1 1 140px;margin:0">${SKALA_A3.map((v) => `<option value="${v}">1 : ${v.toLocaleString("id-ID")}</option>`).join("")}</select>
+        <button class="sec" id="bfO" style="flex:0 0 auto;width:auto;margin:0">Semua bor</button><button class="sec" id="bfB" style="flex:0 0 auto;width:auto;margin:0">Batal</button><button id="bfP" style="flex:0 0 auto;width:auto;margin:0">✓ Pakai</button>
+        <span id="bfI" style="flex:1 1 100%;font-size:12px;color:#555"></span></div>`;
+    wadah.appendChild(ov); wadah.scrollIntoView({ block: "start", behavior: "smooth" });
+    const F = ov.querySelector("#bfF"), sel = ov.querySelector("#bfS"), inf = ov.querySelector("#bfI"), bar = ov.querySelector("#bfBar");
+    // ukuran bingkai: rasio 279:257, sebesar mungkin di bawah bilah alat
+    let fr = null;
+    const tata = () => { const W = wadah.clientWidth, H = wadah.clientHeight, atas = bar.offsetHeight + 18, bawah = 30;
+      const aw = W - 24, ah = Math.max(80, H - atas - bawah), w = Math.min(aw, ah * FWmm / FHmm), h = w * FHmm / FWmm;
+      fr = { x: (W - w) / 2, y: atas + (ah - h) / 2, w, h }; Object.assign(F.style, { left: fr.x + "px", top: fr.y + "px", width: w + "px", height: h + "px" }); };
+    const tengahPx = () => [fr.x + fr.w / 2, fr.y + fr.h / 2];
+    // meter per piksel MapLibre (ubin 512) ↔ skala kertas: lebar bingkai (px) mewakili 279 mm di kertas
+    const MPP0 = 40075016.686 / 512, cosd = (lat) => Math.cos((lat * Math.PI) / 180);
+    const skalaDariZoom = () => MPP0 * cosd(map.unproject(tengahPx()).lat) / 2 ** map.getZoom() * fr.w * 1000 / FWmm;
+    const zoomUntuk = (S, lat) => Math.log2(MPP0 * cosd(lat) / (FWmm / 1000 * S / fr.w));
+    const terdekat = (S) => SKALA_A3.reduce((a, b) => Math.abs(Math.log(b / S)) < Math.abs(Math.log(a / S)) ? b : a);
+    let sibuk = false;
+    // atur zoom = skala S, dan letakkan titik ll tepat di pusat bingkai (bukan pusat layar)
+    const ke = (S, ll) => { sibuk = true; const c = ll ?? map.unproject(tengahPx());
+      map.jumpTo({ zoom: zoomUntuk(S, c.lat), pitch: 0, bearing: 0 });
+      const [px, py] = tengahPx(), cc = map.project(c);
+      map.jumpTo({ center: map.unproject([wadah.clientWidth / 2 + (cc.x - px), wadah.clientHeight / 2 + (cc.y - py)]) }); sibuk = false; };
+    const km = (m) => m >= 1000 ? (m / 1000).toLocaleString("id-ID", { maximumFractionDigits: 2 }) + " km" : Math.round(m) + " m";
+    const hitung = () => { const a = map.unproject([fr.x, fr.y + fr.h]), b = map.unproject([fr.x + fr.w, fr.y]);
+      const q = L.filter((p) => Number.isFinite(+p.lon)), n = q.filter((p) => +p.lon >= a.lng && +p.lon <= b.lng && +p.lat >= a.lat && +p.lat <= b.lat).length, S = +sel.value;
+      inf.textContent = `${n} dari ${q.length} titik bor di dalam bingkai · liputan ±${km(FWmm / 1000 * S)} × ${km(FHmm / 1000 * S)} · 1 cm di kertas = ${km(S / 100)}`; };
+    const putar = { r: map.dragRotate.isEnabled() };
+    map.dragRotate.disable(); map.touchZoomRotate.disableRotation?.();
+    tata();
+    const S0 = skala && SKALA_A3.includes(+skala) ? +skala : terdekat(skalaDariZoom());
+    sel.value = String(S0);
+    ke(S0, pusat ? { lng: pusat[0], lat: pusat[1] } : null); hitung();
+    const akhir = () => { if (sibuk) return; const S = skalaDariZoom();
+      if (Math.abs(Math.log(S / +sel.value)) > 0.015) { const t = terdekat(S); sel.value = String(t); ke(t); } hitung(); };
+    map.on("moveend", akhir);
+    const rz = () => { const c = map.unproject(tengahPx()); tata(); ke(+sel.value, c); hitung(); }; window.addEventListener("resize", rz);
+    sel.onchange = () => { ke(+sel.value); hitung(); };
+    ov.querySelector("#bfO").onclick = () => { // semua titik bor masuk bingkai, skala bulat terkecil yang cukup
+      const q = L.filter((p) => Number.isFinite(+p.lon) && Number.isFinite(+p.lat)); if (!q.length) return;
+      const x0 = Math.min(...q.map((p) => +p.lon)), x1 = Math.max(...q.map((p) => +p.lon)), y0 = Math.min(...q.map((p) => +p.lat)), y1 = Math.max(...q.map((p) => +p.lat)), lat = (y0 + y1) / 2;
+      const gw = (x1 - x0) * 111320 * cosd(lat) * 1.08 + 300, gh = (y1 - y0) * 110574 * 1.08 + 300;
+      const t = SKALA_A3.find((s) => gw <= FWmm / 1000 * s && gh <= FHmm / 1000 * s) ?? 250000; sel.value = String(t); ke(t, { lng: (x0 + x1) / 2, lat }); hitung(); };
+    const tutup = (hasil) => { map.off("moveend", akhir); window.removeEventListener("resize", rz); ov.remove();
+      if (putar.r) map.dragRotate.enable(); map.touchZoomRotate.enableRotation?.();
+      if (!hasil && lama.pitch > 0) map.easeTo({ pitch: lama.pitch, bearing: lama.bearing, duration: 400 }); selesai(hasil); };
+    ov.querySelector("#bfB").onclick = () => tutup(null);
+    ov.querySelector("#bfP").onclick = () => { const c = map.unproject(tengahPx()); tutup({ pusat: [c.lng, c.lat], skala: +sel.value }); };
+  });
+}
 const UBIN_LATAR = { sat: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", osm: "https://tile.openstreetmap.org/{z}/{x}/{y}.png" };
 // Hillshade dari ubin DEM terrain-RGB (peta/dem) untuk kotak lon/lat: bayangan gelap + sorotan terang transparan (ditumpuk di atas peta)
 async function hillshadeKanvas(bb, o = {}) {
@@ -2012,10 +2074,12 @@ function petaA3Dialog(L, mode = {}) {
   if (!S.sub) S.sub = (Wl[0]?.nama ? Wl[0].nama.toUpperCase() + " · " : "") + "TAHUN " + new Date().getFullYear();
   const f = (k, l, ph = "") => `<label>${l}</label><input data-k="${k}" value="${esc(S[k] ?? "")}" placeholder="${esc(ph)}">`;
   const m = modal(`<h3>${mode.g3d ? "Peta 3D bawah permukaan" : "Peta lokasi"} PDF (A3 lanskap)</h3>
-    <p class="muted">Isian disimpan di HP ini untuk ekspor berikutnya. Skala dipilih otomatis (bulat) agar semua titik bor dan batas IUP masuk.</p>
+    <p class="muted">Isian disimpan di HP ini untuk ekspor berikutnya. ${mode.peta ? "Posisi dan skala bisa diatur sendiri lewat tombol 📐 sebelum mengunduh." : "Skala dipilih otomatis (bulat) agar semua titik bor dan batas IUP masuk."}</p>
     <label>Logo perusahaan (PNG/JPG)</label><div class="row" style="align-items:center"><span id="paLg" style="flex:0 0 90px;height:44px;display:flex;align-items:center;justify-content:center;border:1px dashed #9aa;border-radius:6px;overflow:hidden">${logo ? `<img src="${logo}" style="max-height:42px;max-width:88px">` : `<span class="muted" style="font-size:11px">belum ada</span>`}</span><input id="paLf" type="file" accept="image/*" style="flex:1"></div>
     ${f("perusahaan", "Nama perusahaan (judul & kaki panel)")}${f("judul", "Judul peta")}${f("sub", "Sub-judul (proyek · tahun)")}
-    <div ${mode.g3d ? 'style="display:none"' : ""}><label>Cakupan peta</label><select data-k="cakupan">${mode.tampilan ? `<option value="layar" ${!["bor", "iup"].includes(S.cakupan) ? "selected" : ""}>Sesuai tampilan peta di layar</option>` : ""}<option value="bor" ${S.cakupan === "bor" || (!mode.tampilan && S.cakupan !== "iup") ? "selected" : ""}>Area pemboran saja (skala lebih besar)</option><option value="iup" ${S.cakupan === "iup" ? "selected" : ""}>Seluruh batas IUP</option></select>
+    <div ${mode.g3d ? 'style="display:none"' : ""}><label>Cakupan peta</label><select data-k="cakupan">${mode.peta ? `<option value="atur" ${S.cakupan === "atur" ? "selected" : ""}>Posisi & skala yang saya atur (bingkai 📐)</option>` : ""}${mode.tampilan ? `<option value="layar" ${!["bor", "iup", "atur"].includes(S.cakupan) ? "selected" : ""}>Sesuai tampilan peta di layar</option>` : ""}<option value="bor" ${S.cakupan === "bor" || (!mode.tampilan && S.cakupan !== "iup") ? "selected" : ""}>Area pemboran saja (skala lebih besar)</option><option value="iup" ${S.cakupan === "iup" ? "selected" : ""}>Seluruh batas IUP</option></select>
+    <label>Skala peta</label><select data-k="skala"><option value="">Otomatis (semua isi cakupan masuk)</option>${SKALA_A3.map((v) => `<option value="${v}" ${+S.skala === v ? "selected" : ""}>1 : ${v.toLocaleString("id-ID")}</option>`).join("")}</select>
+    ${mode.peta ? `<button class="sec" id="paAtur" style="width:100%;margin:6px 0">📐 Atur posisi & skala di peta (lihat bingkai A3)</button><p class="muted" id="paAi" style="font-size:12px;margin:0 0 6px"></p>` : ""}
     ${mode.tampilan ? `<p class="muted" style="font-size:12px;margin:2px 0 6px">Isi peta mengikuti tampilan di layar: latar ${({ sat: "citra satelit", osm: "peta jalan OSM", none: "tanpa latar" })[mode.tampilan.basemap] ?? ""}, lapisan yang dicentang, status lubang yang tampil${mode.tampilan.vis.hs ? ", bayangan relief" : ""}${mode.tampilan.vis.kontur ? ", kontur" : ""}. Ubah lewat tombol Lapisan sebelum mengekspor.</p>` : ""}
     <label ${mode.tampilan ? 'style="display:none"' : ""}>Bayangan relief (hillshade)</label><select data-k="hillshade" ${mode.tampilan ? 'style="display:none"' : ""}><option value="ya" ${S.hillshade !== "tidak" ? "selected" : ""}>Tampilkan (kesan 3D)</option><option value="tidak" ${S.hillshade === "tidak" ? "selected" : ""}>Tidak</option></select></div>
     ${f("lampiran", "Keterangan lampiran")}<div class="row"><div>${f("nomor", "Nomor")}</div><div>${f("tanggal", "Tanggal")}</div></div>
@@ -2029,8 +2093,16 @@ function petaA3Dialog(L, mode = {}) {
     c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height); logoBaru = c.toDataURL("image/png"); m.querySelector("#paLg").innerHTML = `<img src="${logoBaru}" style="max-height:42px;max-width:88px">`; };
   m.querySelector("#pab").onclick = () => m.remove();
   if (mode.g3d) m.style.zIndex = 10000;
+  let pusatAtur = mode.peta ? (() => { const c = mode.peta.getCenter(); return [c.lng, c.lat]; })() : null;
+  const selC = m.querySelector('[data-k="cakupan"]'), selS = m.querySelector('[data-k="skala"]');
+  const infoAtur = () => { const i = m.querySelector("#paAi"); if (i) i.textContent = selC.value === "atur" ? `Bingkai: pusat ${pusatAtur[1].toFixed(5)}, ${pusatAtur[0].toFixed(5)} · skala ${selS.value ? "1 : " + (+selS.value).toLocaleString("id-ID") : "otomatis"}` : ""; };
+  if (mode.peta) { infoAtur(); selC.onchange = selS.onchange = infoAtur;
+    m.querySelector("#paAtur").onclick = async () => { m.style.display = "none";
+      const r = await aturBingkaiA3(mode.peta, { skala: +selS.value || null, pusat: selC.value === "atur" ? pusatAtur : null, L });
+      m.style.display = "flex"; if (r) { pusatAtur = r.pusat; selS.value = String(r.skala); selC.value = "atur"; infoAtur(); } }; }
   const ambil = () => { const O = {}; m.querySelectorAll("[data-k]").forEach((x) => (O[x.dataset.k] = x.value.trim()));
     if (mode.tampilan) O.tampilan = mode.tampilan;
+    if (O.cakupan === "atur" && pusatAtur) O.pusat = pusatAtur;
     if (mode.g3d) { localStorage.setItem("petaA3judul3d", O.judul); const lama = JSON.parse(localStorage.getItem("petaA3") || "{}"); O.judulPeta2D = lama.judul; }
     { const { tampilan: _t, ...simpan } = O; localStorage.setItem("petaA3", JSON.stringify(mode.g3d ? { ...simpan, judul: O.judulPeta2D ?? PETA_A3_DEF.judul } : simpan)); } if (mode.g3d) O.g3d = mode.g3d; if (logoBaru) try { localStorage.setItem("petaA3Logo", logoBaru); } catch {} return { ...O, logo: logoBaru }; };
   m.querySelector("#pav").onclick = () => { const O = ambil(); m.remove(); petaA3(L, O); if (mode.g3d) { const d = document.getElementById("dokLayer"); if (d) d.style.zIndex = 10001; } };
@@ -2120,8 +2192,9 @@ async function petaA3HTML(L, O) {
   const Wl = JSON.parse(localStorage.getItem("wilayah") || "[]");
   const T = O.tampilan ?? null, V = T?.vis ?? null; // keadaan peta di layar (null = ekspor bawaan)
   // zona UTM mengikuti lokasi yang dipetakan (pusat tampilan layar, atau titik bor / IUP)
-  const pusat = O.cakupan === "layar" && T?.bounds ? [(T.bounds[0] + T.bounds[2]) / 2, (T.bounds[1] + T.bounds[3]) / 2]
-    : (() => { const q = L.filter((x) => Number.isFinite(+x.lon)); const w = Wl.flatMap((x) => x.titik ?? []); const A = q.length ? q : w; return A.length ? [A.reduce((s, x) => s + +x.lon, 0) / A.length, A.reduce((s, x) => s + +x.lat, 0) / A.length] : [123, -1]; })();
+  const atur = O.cakupan === "atur" && O.pusat ? O.pusat : null;
+  const pusat = atur ?? (O.cakupan === "layar" && T?.bounds ? [(T.bounds[0] + T.bounds[2]) / 2, (T.bounds[1] + T.bounds[3]) / 2]
+    : (() => { const q = L.filter((x) => Number.isFinite(+x.lon)); const w = Wl.flatMap((x) => x.titik ?? []); const A = q.length ? q : w; return A.length ? [A.reduce((s, x) => s + +x.lon, 0) / A.length, A.reduce((s, x) => s + +x.lat, 0) / A.length] : [123, -1]; })());
   const ZU = zonaUTMDari(pusat[0], pusat[1]), UTM = buatUTM(ZU.zona, ZU.selatan);
   let pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat) && (!V || V.st?.[x.status] !== false)).map((x) => ({ ...x, u: UTM.ke(+x.lon, +x.lat) }));
   let poly = (V && !V.iup ? [] : Wl).filter((x) => (x.titik ?? []).length > 2).map((x) => ({ ...x, u: x.titik.map((t) => UTM.ke(+t.lon, +t.lat)) }));
@@ -2134,13 +2207,14 @@ async function petaA3HTML(L, O) {
   const FX = 20, FY = 20, FW = 279, FH = 257;
   let e0 = Math.min(...fokus.map((c) => c[0])), e1 = Math.max(...fokus.map((c) => c[0])), n0 = Math.min(...fokus.map((c) => c[1])), n1 = Math.max(...fokus.map((c) => c[1]));
   const tepi = fokus === semua || layar ? 0 : 150; // ruang 150 m di sekeliling titik bor
-  const gw = Math.max(300, (e1 - e0) * (layar ? 1 : 1.08) + 2 * tepi), gh = Math.max(300, (n1 - n0) * (layar ? 1 : 1.08) + 2 * tepi), Ec = (e0 + e1) / 2, Nc = (n0 + n1) / 2;
-  const SK = [500, 1000, 2000, 2500, 5000, 7500, 10000, 12500, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 250000];
-  const S = SK.find((s) => gw <= (FW / 1000) * s && gh <= (FH / 1000) * s) ?? 250000;
+  const gw = Math.max(300, (e1 - e0) * (layar ? 1 : 1.08) + 2 * tepi), gh = Math.max(300, (n1 - n0) * (layar ? 1 : 1.08) + 2 * tepi);
+  let Ec = (e0 + e1) / 2, Nc = (n0 + n1) / 2;
+  if (atur) [Ec, Nc] = UTM.ke(atur[0], atur[1]); // pusat bingkai yang diatur pengguna
+  const S = +O.skala > 0 ? +O.skala : SKALA_A3.find((s) => gw <= (FW / 1000) * s && gh <= (FH / 1000) * s) ?? 250000; // skala pilihan pengguna atau otomatis
   const mm = 1000 / S; // mm per meter
   const X = (E) => FX + FW / 2 + (E - Ec) * mm, Y = (N) => FY + FH / 2 - (N - Nc) * mm;
   const Ea = Ec - FW / 2 / mm, Eb = Ec + FW / 2 / mm, Na = Nc - FH / 2 / mm, Nb = Nc + FH / 2 / mm;
-  if (layar) { // hanya titik & IUP yang masuk area peta yang dihitung di rekap/panel
+  if (layar || atur || +O.skala > 0) { // hanya titik & IUP yang masuk area peta yang dihitung di rekap/panel
     pts = pts.filter((p) => p.u[0] >= Ea && p.u[0] <= Eb && p.u[1] >= Na && p.u[1] <= Nb);
     poly = poly.filter((p) => Math.max(...p.u.map((c) => c[0])) >= Ea && Math.min(...p.u.map((c) => c[0])) <= Eb && Math.max(...p.u.map((c) => c[1])) >= Na && Math.min(...p.u.map((c) => c[1])) <= Nb); }
   const PU = (c) => `${X(c[0]).toFixed(2)},${Y(c[1]).toFixed(2)}`, PL = (lon, lat) => PU(UTM.ke(lon, lat));
@@ -4072,7 +4146,7 @@ async function petaView(v) {
     map.addSource("iup", { type: "geojson", data: fc });
     map.addLayer({ id: "iup-isi", type: "fill", source: "iup", paint: { "fill-color": "#ff2d2d", "fill-opacity": 0.06 } });
     map.addLayer({ id: "iup-garis", type: "line", source: "iup", paint: { "line-color": "#ff2d2d", "line-width": 2.5 } });
-    LBL.iup = W.flatMap((w) => w.titik.map((t) => label([t.lon, t.lat], String(t.no), "background:rgba(190,0,0,.75)")));
+    LBL.iup = W.flatMap((w) => w.titik.map((t, k) => label([t.lon, t.lat], String(t.no ?? k + 1), "background:rgba(190,0,0,.75)")));
     map.addSource("trk", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addSource("trkSimpan", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addLayer({ id: "trkSimpan", type: "line", source: "trkSimpan", paint: { "line-color": "#ff00d4", "line-width": 3 } });
@@ -4083,9 +4157,9 @@ async function petaView(v) {
     const hit = (st) => L.filter((f) => f.properties.status === st).length;
     $("#pmInfo").textContent = `${L.length} lubang (rencana ${hit("RENCANA")}, progres ${hit("PROGRES")}, EOH ${hit("EOH")}, STB ${hit("STB")}) · ${LAY.length} lapisan tambahan · ketuk peta untuk koordinat & elevasi${online() ? "" : " · OFFLINE: data terakhir yang tersimpan"}`;
   });
-  const info = async (ll) => { const u = UTM.ke(ll.lng, ll.lat), h = await tinggiDi(ll.lng, ll.lat), i = W.length ? (W.some((w) => diDalam(ll.lng, ll.lat, w.titik)) ? "di dalam IUP" : "di luar IUP") : "";
+  const info = async (ll) => { const zu = zonaUTMDari(ll.lng, ll.lat), u = buatUTM(zu.zona, zu.selatan).ke(ll.lng, ll.lat), h = await tinggiDi(ll.lng, ll.lat), i = W.length ? (W.some((w) => diDalam(ll.lng, ll.lat, w.titik)) ? "di dalam IUP" : "di luar IUP") : "";
     const lr = await lerengDi(ll.lng, ll.lat);
-    $("#pmInfo").textContent = `${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)} · UTM 51S E ${u[0].toFixed(1)} N ${u[1].toFixed(1)}${h != null ? ` · elevasi DEM ±${h.toFixed(1)} m` : ""}${lr != null ? ` · lereng ±${Math.round(lr)} % (${(Math.atan(lr / 100) * 180 / Math.PI).toFixed(0)}°)` : ""}${i ? " · " + i : ""}`; };
+    $("#pmInfo").textContent = `${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)} · UTM ${zu.zona}${zu.selatan ? "S" : "N"} E ${u[0].toFixed(1)} N ${u[1].toFixed(1)}${h != null ? ` · elevasi DEM ±${h.toFixed(1)} m` : ""}${lr != null ? ` · lereng ±${Math.round(lr)} % (${(Math.atan(lr / 100) * 180 / Math.PI).toFixed(0)}°)` : ""}${i ? " · " + i : ""}`; };
   // lereng di titik ketuk: dari 4 tetangga ±10 m di DEM
   const lerengDi = async (lon, lat) => { const d = 10 / 111320, dx = d / Math.cos((lat * Math.PI) / 180);
     const [e, w, n, s2] = await Promise.all([tinggiDi(lon + dx, lat), tinggiDi(lon - dx, lat), tinggiDi(lon, lat + d), tinggiDi(lon, lat - d)]);
@@ -4102,7 +4176,7 @@ async function petaView(v) {
       st: Object.fromEntries(Object.keys(LABEL_STATUS).map((k) => [k, tampil("st_" + k)])) },
     citra: CT.filter((c) => tampil("ct_" + c.id, c.tampil !== false)).map((c) => String(c.id)), lapisan: LAY.filter((ly) => tampil("ly_" + ly.id)).map((ly) => String(ly.id)),
     opRel: opRel(), opCt: opCt(), bounds: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()] }; };
-  $("#pmA3").onclick = () => petaA3Dialog(L.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], kedalaman: f.properties.kedalaman ?? f.properties.kd, rencana_kedalaman: f.properties.rencana_kedalaman ?? f.properties.rk })), { tampilan: tampilanPeta() });
+  $("#pmA3").onclick = () => petaA3Dialog(L.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], kedalaman: f.properties.kedalaman ?? f.properties.kd, rencana_kedalaman: f.properties.rencana_kedalaman ?? f.properties.rk })), { tampilan: tampilanPeta(), peta: map });
   $("#pmBP").onclick = () => bawahPermukaan3D(L.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] })), PRF);
   $("#pmK").oninput = (e) => { localStorage.setItem("kolom3d", e.target.value); gambarKolom3D(); terapkanTopo(); };
   map.on("pitchend", () => { $("#pm3").textContent = map.getPitch() > 5 ? "2D" : "3D"; terapkanTopo(); });
