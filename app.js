@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-19.06";
+const APP_VERSION = "2026-11-21.02";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1598,7 +1598,7 @@ async function printDDR(id) {
   const cor = d.coring ?? [], oh = d.open_hole ?? [], hrs = d.hours ?? [];
   const sumI = (xs) => xs.reduce((s, x) => s + (x.to - x.from), 0), sumC = cor.reduce((s, x) => s + (Number(x.core) || 0), 0);
   const totMin = hrs.reduce((s, h) => s + (durMin(h.mulai, h.selesai) ?? 0), 0);
-  const cons = d.consumables ?? [], cats = [...new Set(cons.map((c) => c.kategori))];
+  const cons = (d.consumables ?? []).filter((c) => !(isClient() && BARANG_BBM.test(`${c.item} ${c.kategori}`))), cats = [...new Set(cons.map((c) => c.kategori))];
   w.document.open(); w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>DDR ${esc(d.rig)} ${esc(d.report_date)} ${d.shift === "PAGI" ? "Day" : "Night"}</title>
   <style>body{font-family:Arial,sans-serif;font-size:11px;margin:16px;color:#111} h1{font-size:17px;margin:0} h3{margin:10px 0 2px;font-size:12px} table{border-collapse:collapse;width:100%;margin:4px 0} td,th{border:1px solid #888;padding:3px 5px;text-align:left} th{background:#e6efe9}
   .g{display:grid;grid-template-columns:repeat(3,1fr);gap:6px} .g img{width:100%;border:1px solid #ccc} .two{display:grid;grid-template-columns:1fr 1fr;gap:10px} @media print{button{display:none}}</style></head><body>
@@ -1673,13 +1673,13 @@ async function dashView(v) {
     R(sb.from("v_consumable_use").select("*").gte("report_date", st.from).lte("report_date", st.to)),
     sb.from("v_dash_hole").select("*"),
   ]);
-  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0 && (!pf || pf.bhids.includes(h.bhid))), K = computeKPI(days, tm ?? [], cu ?? [], holes).filter(([l]) => !isClient() || (l !== "Foto core lengkap" && (clientGeo() || !GEO_KPI.includes(l))));
+  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0 && (!pf || pf.bhids.includes(h.bhid))), K = computeKPI(days, tm ?? [], cu ?? [], holes).filter(([l]) => !isClient() || (l !== "Foto core lengkap" && !/BBM|Oli/i.test(l) && (clientGeo() || !GEO_KPI.includes(l))));
   $("#dx").onclick = async () => { try { const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new(), sh = (rows, nm) => X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), nm);
     X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([["DASHBOARD TGEP", `${st.from} s/d ${st.to}`, st.rig || "semua rig"], [], ["Indikator", "Nilai"], ...K.map(([a, b]) => [a, b])]), "KPI");
-    sh(days, "Kinerja rig harian"); sh(tm ?? [], "Pembagian waktu"); sh(cu ?? [], "Pemakaian barang"); if (!isClient() || clientGeo()) sh(holes, "Ringkasan lubang");
+    sh(tanpaBBM(days), "Kinerja rig harian"); sh(tm ?? [], "Pembagian waktu"); sh(isClient() ? (cu ?? []).filter((c) => !BARANG_BBM.test(`${c.item} ${c.kategori}`)) : cu ?? [], "Pemakaian barang"); if (!isClient() || clientGeo()) sh(holes, "Ringkasan lubang");
     X.writeFile(wb, `TGEP_Dashboard_${st.from}_${st.to}.xlsx`); } catch (e) { alert(e.message); } };
   $("#kpi").innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">${K.map(([l, val, note]) => `<div style="background:#fff;border-radius:10px;padding:10px;border-left:5px solid ${note === "!" ? "#C8281F" : "#1E9E69"}"><div class="muted" style="font-size:12px">${esc(l)}</div><div style="font-size:22px;font-weight:700">${esc(val)}</div></div>`).join("")}</div>
-    <p class="muted" style="margin-top:8px">Periode ${st.from} s/d ${st.to}${st.rig ? " · rig " + esc(st.rig) : " · semua rig"}. ${isClient() ? `Akun client: data rig proyek Anda${clientGeo() ? " termasuk data geologi yang sudah disetujui" : " (meter, jam, standby, BBM, P2H, DDR)"}.` : "Data geologi (tebal zona, conto) mencakup semua lubang yang sudah disetujui."}</p>`;
+    <p class="muted" style="margin-top:8px">Periode ${st.from} s/d ${st.to}${st.rig ? " · rig " + esc(st.rig) : " · semua rig"}. ${isClient() ? `Akun client: data rig proyek Anda${clientGeo() ? " termasuk data geologi yang sudah disetujui" : " (meter, jam, standby, P2H, DDR)"}.` : "Data geologi (tebal zona, conto) mencakup semua lubang yang sudah disetujui."}</p>`;
   const klien = isClient() && !clientGeo();
   const { data: kp } = isClient() ? { data: [] } : await sb.from("v_kepatuhan_harian").select("nama,rig,status,kurang,antrean").eq("tanggal", st.to);
   if (basi()) return;
@@ -1702,15 +1702,17 @@ async function dashView(v) {
   new Chart(box("c3", "Pembagian waktu kerja (menit)"), { type: "pie", data: { labels: Object.keys(tk), datasets: [{ data: Object.values(tk), backgroundColor: pal }] } });
   const sb2 = by((tm ?? []).filter((x) => ["Standby", "Perbaikan"].includes(x.kegiatan)), (x) => `${x.kegiatan}: ${x.alasan}`, (x) => x.menit);
   new Chart(box("c4", "Penyebab standby & perbaikan (menit)"), { type: "pie", data: { labels: Object.keys(sb2).length ? Object.keys(sb2) : ["(tidak ada)"], datasets: [{ data: Object.keys(sb2).length ? Object.values(sb2) : [1], backgroundColor: pal }] } });
+  if (!isClient()) {
   const br = by(days, (d) => d.rig, (d) => d.bbm_liter);
   new Chart(box("c5", "BBM per rig: total (L) & per meter (L/m)"), { type: "bar", data: { labels: Object.keys(br), datasets: [{ type: "bar", label: "BBM (L)", yAxisID: "y", data: Object.values(br), backgroundColor: "#2F6FB0" }, { type: "line", label: "L/m", data: Object.keys(br).map((r) => (mr[r] ? +(br[r] / mr[r]).toFixed(2) : null)), yAxisID: "y2", borderColor: "#C8281F" }] }, options: { scales: { y: { type: "linear", position: "left", beginAtZero: true }, y2: { type: "linear", position: "right", beginAtZero: true, grid: { display: false } } } } });
-  const lq = by((cu ?? []).filter((c) => c.unit === "liter"), (c) => c.item, (c) => c.qty);
+  }
+  const lq = by((cu ?? []).filter((c) => c.unit === "liter" && !(isClient() && BARANG_BBM.test(`${c.item} ${c.kategori}`))), (c) => c.item, (c) => c.qty);
   new Chart(box("c6", "Pemakaian cairan (liter) per jenis"), { type: "pie", data: { labels: Object.keys(lq).length ? Object.keys(lq) : ["(belum ada DDR)"], datasets: [{ data: Object.keys(lq).length ? Object.values(lq) : [1], backgroundColor: pal }] } });
   const { data: dh } = await R(sb.from("v_ddr_hours").select("kategori,kelompok,menit").gte("tanggal", st.from).lte("tanggal", st.to));
   const hk = by(dh ?? [], (x) => x.kategori, (x) => x.menit), hg = by(dh ?? [], (x) => x.kelompok, (x) => x.menit);
   new Chart(box("c11", "Distribusi jam DDR per kegiatan (jam)"), { type: "bar", data: { labels: Object.keys(hk).length ? Object.keys(hk) : ["(belum ada DDR)"], datasets: [{ label: "jam", data: Object.values(hk).map((m) => +(m / 60).toFixed(2)), backgroundColor: "#2F6FB0" }] }, options: { indexAxis: "y" } });
   new Chart(box("c12", "Drilling / Working / Standby (DDR)"), { type: "pie", data: { labels: Object.keys(hg).length ? Object.keys(hg) : ["(belum ada DDR)"], datasets: [{ data: Object.keys(hg).length ? Object.values(hg) : [1], backgroundColor: ["#1E9E69", "#E8892B", "#C8281F"] }] } });
-  if (klien) return;
+  if (klien) { pasangKlikGrafik(Chart); return; }
   const ed = [0, 2, 4, 6, 8, 10, 12, 15, 20, 30], lab = ed.slice(0, -1).map((e, i) => `${e}–${ed[i + 1]} m`);
   new Chart(box("c7", "Histogram tebal zona per lubang"), { type: "bar", data: { labels: lab, datasets: [{ label: "Limonit", data: hist(holes.map((h) => Number(h.tebal_limonit)), ed), backgroundColor: "#E8892B" }, { label: "Saprolit", data: hist(holes.map((h) => Number(h.tebal_saprolit)), ed), backgroundColor: "#1E9E69" }] }, options: { scales: { y: { title: { display: true, text: "jumlah lubang" } } } } });
   const nl = holes.reduce((s, h) => s + h.conto_limonit, 0), ns = holes.reduce((s, h) => s + h.conto_saprolit, 0), nt = holes.reduce((s, h) => s + h.jumlah_conto, 0);
@@ -1719,9 +1721,15 @@ async function dashView(v) {
   new Chart(box("c9", "Histogram recovery per lubang (%)"), { type: "bar", data: { labels: ["<50", "50–70", "70–80", "80–90", "90–95", "95–100"], datasets: [{ label: "lubang", data: hist(holes.map((h) => Number(h.recovery_pct)).filter(isFinite), re), backgroundColor: ["#C8281F", "#C8281F", "#E8892B", "#D4B12A", "#1E9E69", "#1E9E69"] }] } });
   const avg = (k) => { const xs = holes.map((h) => Number(h[k])).filter((x) => isFinite(x) && x > 0); return xs.length ? +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(3) : null; };
   new Chart(box("c10", "Rata-rata density kering per zona (t/m³)"), { type: "bar", data: { labels: ["Limonit", "Saprolit"], datasets: [{ label: "dry density", data: [avg("dry_density_limonit"), avg("dry_density_saprolit")], backgroundColor: ["#E8892B", "#1E9E69"] }] } });
+  await statistikConto(Chart, box, pf?.bhids ?? null); if (basi()) return;
+  pasangKlikGrafik(Chart);
 }
+// Akun client tidak melihat konsumsi BBM/oli (data biaya internal kontraktor): kolom dibuang dari semua tampilan & unduhan client
+const KOLOM_BBM = /(^|_)(bbm|oli)(_|$)|bbm_per_meter/i;
+const tanpaBBM = (rows) => (isClient() ? (rows ?? []).map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !KOLOM_BBM.test(k)))) : rows);
+const BARANG_BBM = /bbm|solar|bensin|pertalite|pertamax|dexlite|oli|pelumas|grease|hydraulic|hidrolik|fuel|minyak/i;
 const isClient = () => me?.role === "client", clientGeo = () => isClient() && !!myTugas?.akses_geologi;
-const CLIENT_RIG_DS = ["kinerja", "progres", "ddr", "jam", "bbm", "p2h", "aktivitas"], CLIENT_GEO_DS = ["collar", "survey", "geology", "density", "assay", "qaqc", "lubang", "profil"];
+const CLIENT_RIG_DS = ["kinerja", "progres", "ddr", "jam", "p2h", "aktivitas"], CLIENT_GEO_DS = ["collar", "survey", "geology", "density", "assay", "qaqc", "lubang", "profil"];
 const dsAllowed = () => isClient() ? [...CLIENT_RIG_DS, ...(clientGeo() ? CLIENT_GEO_DS : [])] : null;
 const GEO_KPI = ["Lubang berdata", "Jumlah conto", "Rata tebal limonit", "Rata tebal saprolit", "Conto bermasalah (QC)", "Foto core lengkap"];
 function computeKPI(days, tm, cu, holes) {
@@ -1749,6 +1757,68 @@ async function ambilLubangPeta() {
 }
 // ---------- Warna zona + konfirmasi zona baru ----------
 let ZONA = JSON.parse(localStorage.getItem("zonaWarna") || "[]");
+// ---------- Dashboard: tabel data di balik grafik (ketuk grafik) & statistik conto per layer ----------
+function tabelModal(judul, kolom, baris, sorot = -1, catatan = "") {
+  const m = modal(`<h3 style="margin-top:0">${esc(judul)}</h3>${catatan ? `<p class="muted">${catatan}</p>` : ""}
+    <div class="tw" style="max-height:60vh;overflow:auto"><table><tr>${kolom.map((k) => `<th>${esc(k)}</th>`).join("")}</tr>
+    ${baris.map((r, i) => `<tr${i === sorot ? ' style="background:#FFF1C2;font-weight:700"' : ""}>${r.map((x) => `<td>${esc(x == null ? "" : typeof x === "number" ? (+x.toFixed(3)).toLocaleString("id-ID") : String(x))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${kolom.length}" class="muted">Tidak ada data</td></tr>`}</table></div>
+    <div class="row" style="margin-top:8px"><button class="sec" id="tmx">Unduh Excel</button><button id="tmt">Tutup</button></div>`);
+  m.querySelector("#tmt").onclick = () => m.remove();
+  m.querySelector("#tmx").onclick = async () => { const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new(); X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([kolom, ...baris]), "Data"); X.writeFile(wb, `${judul.replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_").slice(0, 60)}.xlsx`); };
+  return m;
+}
+// semua grafik di #ch: ketuk -> tabel data grafik itu (label × seri), baris yang diketuk disorot
+function pasangKlikGrafik(Chart) {
+  for (const ch of Object.values(Chart.instances ?? {})) {
+    const cv = ch.canvas; if (!cv?.closest("#ch") || ch.$klik) continue; ch.$klik = true; cv.style.cursor = "pointer";
+    const judul = cv.closest(".card")?.querySelector("h3")?.textContent ?? "Data grafik";
+    if (!cv.closest(".card").querySelector(".ketuk")) cv.insertAdjacentHTML("afterend", `<p class="muted ketuk" style="margin:4px 0 0;font-size:12px">Ketuk grafik untuk melihat datanya.</p>`);
+    ch.options.onClick = (e, els) => {
+      if (typeof ch.$detail === "function" && els?.length) return ch.$detail(els[0].index, els[0].datasetIndex);
+      const L = ch.data.labels ?? [], D = ch.data.datasets ?? [];
+      const baris = L.map((l, i) => [l, ...D.map((d) => { const v = d.data[i]; return v && typeof v === "object" ? v.y : v; })]);
+      tabelModal(judul, [ch.config.type === "pie" ? "Kategori" : "Label", ...D.map((d, k) => d.label || (D.length === 1 ? "Nilai" : `Seri ${k + 1}`))], baris, els?.[0]?.index ?? -1);
+    };
+    ch.update("none");
+  }
+}
+const statRingkas = (xs) => { const v = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b), n = v.length; if (!n) return null;
+  const mean = v.reduce((a, b) => a + b, 0) / n, med = n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2, sd = n > 1 ? Math.sqrt(v.reduce((s, x) => s + (x - mean) ** 2, 0) / (n - 1)) : 0;
+  return { n, mean, med, min: v[0], max: v[n - 1], sd }; };
+async function statistikConto(Chart, box, bhids) {
+  let G = []; try { for (let i = 0; ; i += 1000) { const { data, error } = await sb.from("v_dh_geology").select("holeid,sample_no,sample_id,from,to,zone,lith1,recovery_pct,core_length").order("holeid").order("from").range(i, i + 999);
+      if (error) throw error; G.push(...data); if (data.length < 1000) break; } } catch { return; }
+  if (bhids) G = G.filter((g) => bhids.includes(g.holeid));
+  await muatZona().catch(() => {});
+  const BAKU = { TP: "Top soil", L: "Limonit", LIM: "Limonit", S: "Saprolit", SAP: "Saprolit", BR: "Bedrock", BD: "Bedrock", BZ: "Bluezone", SED: "Sedimen" };
+  const ZN = Object.fromEntries((ZONA ?? []).map((z) => [z.code, z])), nama = (k) => (k ? ZN[k]?.nama ?? (BAKU[k] ? `${BAKU[k]} (${k})` : k) : "(tanpa zona)"), warna = (k, i) => ZN[k]?.warna ?? ["#7A8B83", "#57B8C9", "#8E5BB5", "#D4B12A"][i % 4];
+  const URUT = { TP: 1, SED: 2, L: 3, LIM: 3, S: 4, SAP: 4, BZ: 5, BD: 6, BR: 6 };
+  const kunci = [...new Set(G.map((g) => g.zone ?? ""))].sort((a, b) => ((ZN[a]?.urut ?? URUT[a] ?? 99) - (ZN[b]?.urut ?? URUT[b] ?? 99)) || a.localeCompare(b));
+  const panjang = (g) => +g.to - +g.from, tengah = (g) => (+g.to + +g.from) / 2, rec = (g) => (g.recovery_pct != null ? +g.recovery_pct : g.core_length != null && panjang(g) > 0 ? Math.min(100, (100 * +g.core_length) / panjang(g)) : NaN);
+  const S = kunci.map((k, i) => { const xs = G.filter((g) => (g.zone ?? "") === k); return { k, nama: nama(k), warna: warna(k, i), xs, n: xs.length, lubang: new Set(xs.map((g) => g.holeid)).size,
+    P: statRingkas(xs.map(panjang)), D: statRingkas(xs.map(tengah)), R: statRingkas(xs.map(rec)) }; });
+  const f2 = (x) => (x == null ? "–" : (+x.toFixed(2)).toLocaleString("id-ID")), tot = G.length;
+  const daftar = (s) => tabelModal(`Conto ${s.nama} (${s.n})`, ["Lubang", "No. conto", "Dari (m)", "Sampai (m)", "Panjang (m)", "Zona", "Litologi", "Recovery %"],
+    s.xs.map((g) => [g.holeid, g.sample_no ?? g.sample_id ?? "", +g.from, +g.to, +panjang(g).toFixed(2), g.zone ?? "", g.lith1 ?? "", Number.isFinite(rec(g)) ? +rec(g).toFixed(1) : ""]), -1,
+    `Panjang: rata-rata ${f2(s.P?.mean)} · median ${f2(s.P?.med)} · min ${f2(s.P?.min)} · maks ${f2(s.P?.max)} m. Kedalaman tengah conto ${f2(s.D?.min)}–${f2(s.D?.max)} m.`);
+  const c = document.createElement("div"); c.className = "card";
+  c.innerHTML = `<h3 style="margin:0 0 6px">Statistik conto per layer <span class="muted" style="font-weight:400;font-size:13px">· ${tot} conto di ${new Set(G.map((g) => g.holeid)).size} lubang</span></h3>
+    ${tot ? `<div class="tw"><table><tr><th>Layer</th><th>Jumlah conto</th><th>%</th><th>Lubang</th><th>Panjang conto (m): rata-rata</th><th>median</th><th>min</th><th>maks</th><th>SD</th><th>Kedalaman tengah (m): rata-rata</th><th>min</th><th>maks</th><th>Recovery rata-rata %</th></tr>
+      ${S.map((s, i) => `<tr data-lay="${i}" style="cursor:pointer"><td><span style="display:inline-block;width:12px;height:12px;background:${esc(s.warna)};border-radius:3px;margin-right:6px;vertical-align:-1px"></span><b>${esc(s.nama)}</b></td><td><b>${s.n}</b></td><td>${((100 * s.n) / tot).toFixed(1)}</td><td>${s.lubang}</td>
+        <td>${f2(s.P?.mean)}</td><td>${f2(s.P?.med)}</td><td>${f2(s.P?.min)}</td><td>${f2(s.P?.max)}</td><td>${f2(s.P?.sd)}</td><td>${f2(s.D?.mean)}</td><td>${f2(s.D?.min)}</td><td>${f2(s.D?.max)}</td><td>${s.R ? f2(s.R.mean) : "–"}</td></tr>`).join("")}
+      <tr style="font-weight:700;background:#F1F5F3"><td>Total</td><td>${tot}</td><td>100</td><td>${new Set(G.map((g) => g.holeid)).size}</td>${(() => { const P = statRingkas(G.map(panjang)), D = statRingkas(G.map(tengah)), R = statRingkas(G.map(rec));
+        return `<td>${f2(P?.mean)}</td><td>${f2(P?.med)}</td><td>${f2(P?.min)}</td><td>${f2(P?.max)}</td><td>${f2(P?.sd)}</td><td>${f2(D?.mean)}</td><td>${f2(D?.min)}</td><td>${f2(D?.max)}</td><td>${R ? f2(R.mean) : "–"}</td>`; })()}</tr></table></div>
+      <p class="muted" style="font-size:12px">Ketuk baris layer untuk melihat daftar contonya. Layer atau litologi baru otomatis muncul begitu ada di Form Logging yang disetujui.</p>
+      <canvas id="cS1" height="200"></canvas>` : `<p class="muted">Belum ada conto di database (Form Logging yang disetujui verifier).</p>`}`;
+  $("#ch").prepend(c);
+  c.querySelectorAll("[data-lay]").forEach((tr) => (tr.onclick = () => daftar(S[+tr.dataset.lay])));
+  if (!tot) return;
+  const ch = new Chart(c.querySelector("#cS1"), { type: "bar", data: { labels: S.map((s) => s.nama), datasets: [{ label: "Jumlah conto", data: S.map((s) => s.n), backgroundColor: S.map((s) => s.warna), yAxisID: "y" },
+    { type: "line", label: "Panjang rata-rata (m)", data: S.map((s) => (s.P ? +s.P.mean.toFixed(2) : null)), yAxisID: "y2", borderColor: "#12251E", pointRadius: 4 }] },
+    options: { scales: { y: { title: { display: true, text: "conto" } }, y2: { position: "right", grid: { display: false }, title: { display: true, text: "m" } } } } });
+  ch.$detail = (i) => daftar(S[i]);
+}
+
 async function muatZona() {
   if (online()) { const { data } = await sb.from("zona_warna").select("*").order("urut"); if (data) { ZONA = data; localStorage.setItem("zonaWarna", JSON.stringify(data)); } }
   return ZONA;
@@ -1834,6 +1904,7 @@ async function kanvasCitra(bb, Wp, Hp, o = {}) {
   const X = (lon) => ((lon - x0) / (x1 - x0)) * c.width, Y = (lat) => ((y1 - lat) / (y1 - y0)) * c.height, cosl = Math.cos((((y0 + y1) / 2) * Math.PI) / 180);
   c.nama = [];
   for (const ct of o.citra === false ? [] : await daftarCitra()) {
+    if (o.hanya && !o.hanya.has(String(ct.id))) continue;
     const b = ct.bbox; if (b[2] < x0 || b[0] > x1 || b[3] < y0 || b[1] > y1) continue;
     if (ct.tiles) {
       const ax0 = Math.max(x0, b[0]), ax1 = Math.min(x1, b[2]), ay0 = Math.max(y0, b[1]), ay1 = Math.min(y1, b[3]), mpp = ((x1 - x0) * 111320 * cosl) / c.width;
@@ -1856,6 +1927,23 @@ async function kanvasCitra(bb, Wp, Hp, o = {}) {
 }
 // ---------- Peta pemboran statis (SVG) untuk laporan/PDF ----------
 let _konturCache = null, _elevCache = null;
+// Mosaik ubin peta web (citra satelit / OSM) untuk kotak lon/lat — dipakai ekspor PDF agar sama dengan latar peta di layar
+async function mosaikUbin(tpl, bb, lebarPx = 2400, maksUbin = 140) {
+  const txf = (lon, z) => ((lon + 180) / 360) * 2 ** z, tyf = (lat, z) => ((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) * 2 ** z;
+  let z = Math.min(19, Math.max(3, Math.ceil(Math.log2((lebarPx / 256) / ((bb[2] - bb[0]) / 360)))));
+  const hitung = (z) => (Math.floor(txf(bb[2], z)) - Math.floor(txf(bb[0], z)) + 1) * (Math.floor(tyf(bb[1], z)) - Math.floor(tyf(bb[3], z)) + 1);
+  while (z > 3 && hitung(z) > maksUbin) z--;
+  const X0 = Math.floor(txf(bb[0], z)), X1 = Math.floor(txf(bb[2], z)), Y0 = Math.floor(tyf(bb[3], z)), Y1 = Math.floor(tyf(bb[1], z)), nx = X1 - X0 + 1, ny = Y1 - Y0 + 1;
+  const c = Object.assign(document.createElement("canvas"), { width: nx * 256, height: ny * 256 }), g = c.getContext("2d"); let ada = 0;
+  await Promise.all(Array.from({ length: nx * ny }, (_, k) => new Promise((ok) => { const x = X0 + (k % nx), y = Y0 + Math.floor(k / nx), im = new Image(); im.crossOrigin = "anonymous";
+    const t = setTimeout(ok, 15000); im.onload = () => { clearTimeout(t); g.drawImage(im, (x - X0) * 256, (y - Y0) * 256); ada++; ok(); }; im.onerror = () => { clearTimeout(t); ok(); };
+    im.src = tpl.replace("{z}", z).replace("{x}", x).replace("{y}", y); })));
+  if (!ada) return null;
+  const lonT = (t) => (t / 2 ** z) * 360 - 180, latT = (t) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * t) / 2 ** z))) * 180) / Math.PI;
+  let url; try { url = c.toDataURL("image/jpeg", 0.9); } catch { return null; }
+  return { url, bb: [lonT(X0), latT(Y1 + 1), lonT(X1 + 1), latT(Y0)], z, lengkap: ada === nx * ny };
+}
+const UBIN_LATAR = { sat: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", osm: "https://tile.openstreetmap.org/{z}/{x}/{y}.png" };
 // Hillshade dari ubin DEM terrain-RGB (peta/dem) untuk kotak lon/lat: bayangan gelap + sorotan terang transparan (ditumpuk di atas peta)
 async function hillshadeKanvas(bb, o = {}) {
   const txf = (lon, z) => ((lon + 180) / 360) * 2 ** z, tyf = (lat, z) => ((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) * 2 ** z;
@@ -1927,8 +2015,9 @@ function petaA3Dialog(L, mode = {}) {
     <p class="muted">Isian disimpan di HP ini untuk ekspor berikutnya. Skala dipilih otomatis (bulat) agar semua titik bor dan batas IUP masuk.</p>
     <label>Logo perusahaan (PNG/JPG)</label><div class="row" style="align-items:center"><span id="paLg" style="flex:0 0 90px;height:44px;display:flex;align-items:center;justify-content:center;border:1px dashed #9aa;border-radius:6px;overflow:hidden">${logo ? `<img src="${logo}" style="max-height:42px;max-width:88px">` : `<span class="muted" style="font-size:11px">belum ada</span>`}</span><input id="paLf" type="file" accept="image/*" style="flex:1"></div>
     ${f("perusahaan", "Nama perusahaan (judul & kaki panel)")}${f("judul", "Judul peta")}${f("sub", "Sub-judul (proyek · tahun)")}
-    <div ${mode.g3d ? 'style="display:none"' : ""}><label>Cakupan peta</label><select data-k="cakupan"><option value="bor" ${S.cakupan !== "iup" ? "selected" : ""}>Area pemboran saja (skala lebih besar)</option><option value="iup" ${S.cakupan === "iup" ? "selected" : ""}>Seluruh batas IUP</option></select>
-    <label>Bayangan relief (hillshade)</label><select data-k="hillshade"><option value="ya" ${S.hillshade !== "tidak" ? "selected" : ""}>Tampilkan (kesan 3D)</option><option value="tidak" ${S.hillshade === "tidak" ? "selected" : ""}>Tidak</option></select></div>
+    <div ${mode.g3d ? 'style="display:none"' : ""}><label>Cakupan peta</label><select data-k="cakupan">${mode.tampilan ? `<option value="layar" ${!["bor", "iup"].includes(S.cakupan) ? "selected" : ""}>Sesuai tampilan peta di layar</option>` : ""}<option value="bor" ${S.cakupan === "bor" || (!mode.tampilan && S.cakupan !== "iup") ? "selected" : ""}>Area pemboran saja (skala lebih besar)</option><option value="iup" ${S.cakupan === "iup" ? "selected" : ""}>Seluruh batas IUP</option></select>
+    ${mode.tampilan ? `<p class="muted" style="font-size:12px;margin:2px 0 6px">Isi peta mengikuti tampilan di layar: latar ${({ sat: "citra satelit", osm: "peta jalan OSM", none: "tanpa latar" })[mode.tampilan.basemap] ?? ""}, lapisan yang dicentang, status lubang yang tampil${mode.tampilan.vis.hs ? ", bayangan relief" : ""}${mode.tampilan.vis.kontur ? ", kontur" : ""}. Ubah lewat tombol Lapisan sebelum mengekspor.</p>` : ""}
+    <label ${mode.tampilan ? 'style="display:none"' : ""}>Bayangan relief (hillshade)</label><select data-k="hillshade" ${mode.tampilan ? 'style="display:none"' : ""}><option value="ya" ${S.hillshade !== "tidak" ? "selected" : ""}>Tampilkan (kesan 3D)</option><option value="tidak" ${S.hillshade === "tidak" ? "selected" : ""}>Tidak</option></select></div>
     ${f("lampiran", "Keterangan lampiran")}<div class="row"><div>${f("nomor", "Nomor")}</div><div>${f("tanggal", "Tanggal")}</div></div>
     <div class="row"><div>${f("kota", "Kota (tanda tangan)", "mis. Luwuk")}</div><div>${f("jabatan", "Jabatan penandatangan")}</div></div>${f("nama", "Nama penandatangan", me?.full_name ?? "")}
     <label>Dasar / sumber tambahan (satu per baris, opsional)</label><textarea data-k="dasar" rows="3" placeholder="mis. SK IUP OP No. ...">${esc(S.dasar)}</textarea>
@@ -1941,8 +2030,9 @@ function petaA3Dialog(L, mode = {}) {
   m.querySelector("#pab").onclick = () => m.remove();
   if (mode.g3d) m.style.zIndex = 10000;
   const ambil = () => { const O = {}; m.querySelectorAll("[data-k]").forEach((x) => (O[x.dataset.k] = x.value.trim()));
+    if (mode.tampilan) O.tampilan = mode.tampilan;
     if (mode.g3d) { localStorage.setItem("petaA3judul3d", O.judul); const lama = JSON.parse(localStorage.getItem("petaA3") || "{}"); O.judulPeta2D = lama.judul; }
-    localStorage.setItem("petaA3", JSON.stringify(mode.g3d ? { ...O, judul: O.judulPeta2D ?? PETA_A3_DEF.judul } : O)); if (mode.g3d) O.g3d = mode.g3d; if (logoBaru) try { localStorage.setItem("petaA3Logo", logoBaru); } catch {} return { ...O, logo: logoBaru }; };
+    { const { tampilan: _t, ...simpan } = O; localStorage.setItem("petaA3", JSON.stringify(mode.g3d ? { ...simpan, judul: O.judulPeta2D ?? PETA_A3_DEF.judul } : simpan)); } if (mode.g3d) O.g3d = mode.g3d; if (logoBaru) try { localStorage.setItem("petaA3Logo", logoBaru); } catch {} return { ...O, logo: logoBaru }; };
   m.querySelector("#pav").onclick = () => { const O = ambil(); m.remove(); petaA3(L, O); if (mode.g3d) { const d = document.getElementById("dokLayer"); if (d) d.style.zIndex = 10001; } };
   m.querySelector("#pak").onclick = async () => {
     const O = ambil(), b = m.querySelector("#pak"), st = m.querySelector("#pap"); b.disabled = true; m.querySelector("#pae").textContent = "";
@@ -2028,17 +2118,19 @@ async function petaSituasi(lc, la, kA, kB) {
 async function petaA3HTML(L, O) {
   if (O.g3d) return petaA3HTML3D(L, O);
   const Wl = JSON.parse(localStorage.getItem("wilayah") || "[]");
-  const pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat)).map((x) => ({ ...x, u: UTM.ke(+x.lon, +x.lat) }));
-  const poly = Wl.filter((x) => (x.titik ?? []).length > 2).map((x) => ({ ...x, u: x.titik.map((t) => UTM.ke(+t.lon, +t.lat)) }));
+  const T = O.tampilan ?? null, V = T?.vis ?? null; // keadaan peta di layar (null = ekspor bawaan)
+  const pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat) && (!V || V.st?.[x.status] !== false)).map((x) => ({ ...x, u: UTM.ke(+x.lon, +x.lat) }));
+  const poly = (V && !V.iup ? [] : Wl).filter((x) => (x.titik ?? []).length > 2).map((x) => ({ ...x, u: x.titik.map((t) => UTM.ke(+t.lon, +t.lat)) }));
   const semua = [...pts.map((p) => p.u), ...poly.flatMap((p) => p.u)];
   if (!semua.length) return "<p style='padding:20px'>Belum ada titik bor atau batas IUP untuk dipetakan.</p>";
   // cakupan: area pemboran (bawaan) atau seluruh IUP
-  const fokus = O.cakupan !== "iup" && pts.length ? pts.map((p) => p.u) : semua;
+  const layar = O.cakupan === "layar" && T?.bounds ? [UTM.ke(T.bounds[0], T.bounds[1]), UTM.ke(T.bounds[2], T.bounds[3]), UTM.ke(T.bounds[0], T.bounds[3]), UTM.ke(T.bounds[2], T.bounds[1])] : null;
+  const fokus = layar ?? (O.cakupan !== "iup" && pts.length ? pts.map((p) => p.u) : semua);
   // bingkai peta (mm) dan skala bulat
   const FX = 20, FY = 20, FW = 279, FH = 257;
   let e0 = Math.min(...fokus.map((c) => c[0])), e1 = Math.max(...fokus.map((c) => c[0])), n0 = Math.min(...fokus.map((c) => c[1])), n1 = Math.max(...fokus.map((c) => c[1]));
-  const tepi = fokus === semua ? 0 : 150; // ruang 150 m di sekeliling titik bor
-  const gw = Math.max(300, (e1 - e0) * 1.08 + 2 * tepi), gh = Math.max(300, (n1 - n0) * 1.08 + 2 * tepi), Ec = (e0 + e1) / 2, Nc = (n0 + n1) / 2;
+  const tepi = fokus === semua || layar ? 0 : 150; // ruang 150 m di sekeliling titik bor
+  const gw = Math.max(300, (e1 - e0) * (layar ? 1 : 1.08) + 2 * tepi), gh = Math.max(300, (n1 - n0) * (layar ? 1 : 1.08) + 2 * tepi), Ec = (e0 + e1) / 2, Nc = (n0 + n1) / 2;
   const SK = [500, 1000, 2000, 2500, 5000, 7500, 10000, 12500, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 250000];
   const S = SK.find((s) => gw <= (FW / 1000) * s && gh <= (FH / 1000) * s) ?? 250000;
   const mm = 1000 / S; // mm per meter
@@ -2046,26 +2138,31 @@ async function petaA3HTML(L, O) {
   const Ea = Ec - FW / 2 / mm, Eb = Ec + FW / 2 / mm, Na = Nc - FH / 2 / mm, Nb = Nc + FH / 2 / mm;
   const PU = (c) => `${X(c[0]).toFixed(2)},${Y(c[1]).toFixed(2)}`, PL = (lon, lat) => PU(UTM.ke(lon, lat));
   const ll0 = UTM.dari(Ea, Na), ll1 = UTM.dari(Eb, Nb), bbLL = [Math.min(ll0[0], ll1[0]) - 0.002, Math.min(ll0[1], ll1[1]) - 0.002, Math.max(ll0[0], ll1[0]) + 0.002, Math.max(ll0[1], ll1[1]) + 0.002];
-  let g = "", gK = "", catSumber = [], adaKontur = false, adaCitra = false, adaHS = false, LAY = [];
+  let g = "", gK = "", catSumber = [], adaKontur = false, adaCitra = false, adaHS = false, adaElev = false, adaLereng = false, latar = "", LAY = [], latarKurang = false;
+  const taruh = (url, bb, op = 1) => { const a = UTM.ke(bb[0], bb[3]), b = UTM.ke(bb[2], bb[1]); return `<image href="${url}" x="${X(a[0])}" y="${Y(a[1])}" width="${X(b[0]) - X(a[0])}" height="${Y(b[1]) - Y(a[1])}" preserveAspectRatio="none" opacity="${op}"/>`; };
+  if (T && UBIN_LATAR[T.basemap]) { const mz = await mosaikUbin(UBIN_LATAR[T.basemap], bbLL).catch(() => null); // latar sama dengan di layar
+    if (mz) { g += taruh(mz.url, mz.bb); latar = T.basemap; latarKurang = !mz.lengkap; catSumber.push(T.basemap === "sat" ? "Citra satelit: Esri World Imagery (Maxar, Earthstar Geographics)" : "Peta dasar: © kontributor OpenStreetMap"); } else latarKurang = true; }
   try { // latar elevasi + kontur DEMNAS
     const I = await (await fetch("peta/kontur/index.json")).json(), bb = I.elevasi.bbox;
     if (!_elevCache) { const b = await (await fetch("peta/kontur/elevasi.png")).blob(); _elevCache = await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); }); }
-    const a = UTM.ke(bb[0], bb[3]), b = UTM.ke(bb[2], bb[1]);
-    g += `<image href="${_elevCache}" x="${X(a[0])}" y="${Y(a[1])}" width="${X(b[0]) - X(a[0])}" height="${Y(b[1]) - Y(a[1])}" preserveAspectRatio="none" opacity=".45"/>`;
-    if (!_konturCache) _konturCache = await (await fetch("peta/kontur/kontur.geojson")).json();
+    if (!V) g += taruh(_elevCache, bb, 0.45);
+    else if (V.elev) { g += taruh(_elevCache, bb, T.opRel ?? 0.65); adaElev = true; }
+    else if (V.lereng) { try { const lb = await (await fetch("peta/kontur/lereng.png")).blob(), lu = await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(lb); }); g += taruh(lu, I.lereng?.bbox ?? bb, T.opRel ?? 0.65); adaLereng = true; } catch {} }
+    const pakaiKontur = !V || V.kontur;
+    if (pakaiKontur && !_konturCache) _konturCache = await (await fetch("peta/kontur/kontur.geojson")).json();
     const inBox = (c) => c[0] > bbLL[0] && c[0] < bbLL[2] && c[1] > bbLL[1] && c[1] < bbLL[3];
-    for (const f of _konturCache.features) { const c = f.geometry.coordinates; if (!c.some(inBox)) continue; const idx = f.properties.i === 1; adaKontur = true;
+    for (const f of pakaiKontur ? _konturCache.features : []) { const c = f.geometry.coordinates; if (!c.some(inBox)) continue; const idx = f.properties.i === 1; adaKontur = true;
       gK += `<polyline points="${c.map((q) => PL(q[0], q[1])).join(" ")}" fill="none" stroke="${idx ? "#7a4a25" : "#a87a52"}" stroke-width="${idx ? 0.28 : 0.13}"/>`;
       if (idx) { const md = c[Math.floor(c.length / 2)]; if (inBox(md)) { const [x, y] = PL(md[0], md[1]).split(","); gK += `<text x="${x}" y="${y}" font-size="1.9" fill="#8a5a33" stroke="#fff" stroke-width=".5" paint-order="stroke">${esc(String(f.properties.z))}</text>`; } } }
-    catSumber.push("Topografi: DEMNAS (Badan Informasi Geospasial), kontur 25 m (indeks 100 m)");
+    if (adaKontur || adaElev || adaLereng || !V || V.hs) catSumber.push(`Topografi: DEMNAS (Badan Informasi Geospasial)${adaKontur ? ", kontur 25 m (indeks 100 m)" : ""}${adaLereng ? ", kelas lereng Van Zuidam (1985)" : ""}`);
   } catch {}
   try { // citra drone & lapisan peta yang diunggah di aplikasi
-    const kc = await kanvasCitra(bbLL, 2200, 2200 * (bbLL[3] - bbLL[1]) / (bbLL[2] - bbLL[0]) / Math.cos((((bbLL[1] + bbLL[3]) / 2) * Math.PI) / 180), { maksTile: 260 });
+    const kc = await kanvasCitra(bbLL, 2200, 2200 * (bbLL[3] - bbLL[1]) / (bbLL[2] - bbLL[0]) / Math.cos((((bbLL[1] + bbLL[3]) / 2) * Math.PI) / 180), { maksTile: 260, ...(T ? { hanya: new Set(T.citra ?? []), citra: (T.citra ?? []).length ? undefined : false } : {}) });
     if (kc.nama.length) { const a = UTM.ke(bbLL[0], bbLL[3]), b = UTM.ke(bbLL[2], bbLL[1]); g += `<image href="${kc.toDataURL("image/png")}" x="${X(a[0])}" y="${Y(a[1])}" width="${X(b[0]) - X(a[0])}" height="${Y(b[1]) - Y(a[1])}" preserveAspectRatio="none"/>`; adaCitra = true; catSumber.push("Citra drone: " + kc.nama.join(", ")); }
-    if (O.hillshade !== "tidak") { const hs = await hillshadeKanvas(bbLL, { kuat: adaCitra ? 0.55 : 0.75 }).catch(() => null);
+    if (V ? V.hs : O.hillshade !== "tidak") { const hs = await hillshadeKanvas(bbLL, { kuat: adaCitra ? 0.55 : 0.75 }).catch(() => null);
       if (hs) { const a = UTM.ke(hs.bb[0], hs.bb[3]), b = UTM.ke(hs.bb[2], hs.bb[1]); g += `<image href="${hs.url}" x="${X(a[0])}" y="${Y(a[1])}" width="${X(b[0]) - X(a[0])}" height="${Y(b[1]) - Y(a[1])}" preserveAspectRatio="none"/>`; adaHS = true; catSumber.push("Hillshade dari DEMNAS (cahaya barat laut 315°, tinggi 45°, relief ×2)"); } }
     g += gK; gK = "";
-    LAY = await daftarLapisan(); if (LAY.length) g += svgLapisan(LAY, (c) => PL(c[0], c[1]), 0.9).replace(/stroke-width="2"/g, 'stroke-width=".35"');
+    LAY = (await daftarLapisan()).filter((l) => !T || (T.lapisan ?? []).includes(String(l.id))); if (LAY.length) g += svgLapisan(LAY, (c) => PL(c[0], c[1]), 0.9).replace(/stroke-width="2"/g, 'stroke-width=".35"');
   } catch {}
   g += gK;
   // grid geografis (biru muda) — interval mengikuti luas peta
@@ -2085,10 +2182,12 @@ async function petaA3HTML(L, O) {
   for (let N = Math.ceil(Na / gs) * gs; N < Nb; N += gs) { const y = Y(N); lab += `<line x1="${FX}" y1="${y}" x2="${FX - 2}" y2="${y}" stroke="#111" stroke-width=".2"/><line x1="${FX + FW}" y1="${y}" x2="${FX + FW + 2}" y2="${y}" stroke="#111" stroke-width=".2"/><text transform="translate(${FX - 2.8},${y}) rotate(-90)" font-size="2" text-anchor="middle">${ribu(N)} mU</text><text transform="translate(${FX + FW + 2.8},${y}) rotate(90)" font-size="2" text-anchor="middle">${ribu(N)} mU</text>`; }
   // batas IUP
   for (const p of poly) g += `<polygon points="${p.u.map(PU).join(" ")}" fill="none" stroke="#e01b1b" stroke-width=".9"/>`;
+  if (!V || V.iupno) for (const p of poly) p.u.forEach((c, k) => { const [x, y] = PU(c).split(",").map(Number); if (x < FX || x > FX + FW || y < FY || y > FY + FH) return;
+    g += `<circle cx="${x}" cy="${y}" r=".55" fill="#e01b1b"/><text x="${x + 0.9}" y="${y - 0.7}" font-size="1.8" fill="#b00" stroke="#fff" stroke-width=".45" paint-order="stroke">${esc(String(p.titik[k]?.no ?? k + 1))}</text>`; });
   // titik bor
   const rT = Math.max(0.9, Math.min(1.6, 8 / Math.sqrt(Math.max(1, pts.length)))), fT = Math.max(1.6, Math.min(2.6, rT * 1.7));
   for (const p of [...pts].sort((a, b) => (a.status === "RENCANA" ? 0 : 1) - (b.status === "RENCANA" ? 0 : 1))) { const x = X(p.u[0]), y = Y(p.u[1]), r = p.status === "RENCANA" ? rT * 0.8 : rT;
-    g += `<circle cx="${x}" cy="${y}" r="${r}" fill="${WARNA_STATUS[p.status] ?? "#999"}" stroke="${p.di_dalam_iup === false ? "#e00" : "#111"}" stroke-width="${p.di_dalam_iup === false ? 0.5 : 0.22}"/><text x="${x + r + 0.6}" y="${y + fT * 0.35}" font-size="${fT}" font-weight="700" stroke="#fff" stroke-width=".55" paint-order="stroke">${esc(p.bhid)}</text>`; }
+    g += `<circle cx="${x}" cy="${y}" r="${r}" fill="${WARNA_STATUS[p.status] ?? "#999"}" stroke="${p.di_dalam_iup === false ? "#e00" : "#111"}" stroke-width="${p.di_dalam_iup === false ? 0.5 : 0.22}"/>${!V || V.lbl ? `<text x="${x + r + 0.6}" y="${y + fT * 0.35}" font-size="${fT}" font-weight="700" stroke="#fff" stroke-width=".55" paint-order="stroke">${esc(p.bhid)}</text>` : ""}`; }
   // rekap di pojok kiri bawah peta
   const nS = (k) => pts.filter((p) => (k === "EOH" ? ["EOH", "STB"].includes(p.status) : p.status === k)).length;
   const mBor = pts.reduce((s, p) => s + (+p.kedalaman || +p.kd || 0), 0), mRk = pts.reduce((s, p) => s + (+p.rencana_kedalaman || +p.rk || 0), 0);
@@ -2109,6 +2208,7 @@ async function petaA3HTML(L, O) {
   const sumber = [
     ...Wl.map((x) => `Batas IUP: ${x.nama ?? "wilayah"}${x.nomor_sk ? " — " + x.nomor_sk : ""}`),
     `Titik bor: database X-Terra, keadaan ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`, ...catSumber,
+    ...(latarKurang ? ["Sebagian latar peta tidak termuat (belum pernah dibuka saat ada sinyal)"] : []),
     ...(LAY.length ? [`Lapisan peta: ${LAY.map((l) => l.nama).join(", ")}`] : []), "Peta situasi: © kontributor OpenStreetMap",
     ...String(O.dasar || "").split("\n").map((s) => s.trim()).filter(Boolean)];
   const leg = (sym, t) => `<div style="display:flex;align-items:center;gap:2mm;margin:.6mm 0"><span style="flex:0 0 9mm;display:flex;justify-content:center">${sym}</span><span>${t}</span></div>`;
@@ -2141,7 +2241,10 @@ async function petaA3HTML(L, O) {
     <div><div class="kv" style="grid-template-columns:26mm 3mm 1fr;font-size:2.3mm"><span>Sistem Proyeksi</span><span>:</span><span>${zonaTxt}</span><span>Datum Horizontal</span><span>:</span><span>World Geodetic System 1984 (WGS 84)</span><span>Sistem Koordinat</span><span>:</span><span>Geografis (derajat) dan UTM (meter)</span><span>Interval Grid</span><span>:</span><span>Geografis ${gI >= 1 / 60 ? Math.round(gI * 60) + "'" : Math.round(gI * 3600) + '"'} ; UTM ${gs.toLocaleString("id-ID")} m</span></div></div>
     <div><h4>KETERANGAN</h4>
       ${poly.length ? leg(garis("#e01b1b", 0.9), "Batas IUP") : ""}
-      ${leg(dot(WARNA_STATUS.RENCANA, 1.3), "Titik rencana pemboran")}${leg(dot(WARNA_STATUS.PROGRES), "Titik bor progres (sedang dibor)")}${leg(dot(WARNA_STATUS.EOH), "Titik bor selesai (EOH / STB)")}
+      ${!V || V.st?.RENCANA !== false ? leg(dot(WARNA_STATUS.RENCANA, 1.3), "Titik rencana pemboran") : ""}${!V || V.st?.PROGRES !== false ? leg(dot(WARNA_STATUS.PROGRES), "Titik bor progres (sedang dibor)") : ""}${!V || V.st?.EOH !== false || V.st?.STB !== false ? leg(dot(WARNA_STATUS.EOH), "Titik bor selesai (EOH / STB)") : ""}
+      ${poly.length && (!V || V.iupno) ? leg(`<svg viewBox="0 0 4 4" style="width:2.4mm;height:2.4mm"><circle cx="2" cy="2" r="1.4" fill="#e01b1b"/></svg>`, "Titik koordinat batas IUP (nomor)") : ""}
+      ${latar === "sat" ? leg(`<span style="display:inline-block;width:6mm;height:3mm;background:linear-gradient(90deg,#4b5b3a,#8a8f6a,#5d6b4a)"></span>`, "Citra satelit") : latar === "osm" ? leg(`<span style="display:inline-block;width:6mm;height:3mm;background:#f2efe9;border:.2mm solid #bbb"></span>`, "Peta dasar OpenStreetMap") : ""}
+      ${adaElev ? leg(`<span style="display:inline-block;width:6mm;height:3mm;background:linear-gradient(90deg,#26734d,#e9d48a,#b5651d,#f5f5f5)"></span>`, "Warna elevasi (DEMNAS)") : ""}${adaLereng ? leg(`<span style="display:inline-block;width:6mm;height:3mm;background:linear-gradient(90deg,#2e8b57,#d4e157,#ff9800,#c62828)"></span>`, "Kemiringan lereng (datar → sangat curam)") : ""}
       ${pts.some((p) => p.di_dalam_iup === false) ? leg(`<svg viewBox="0 0 4 4" style="width:3.2mm;height:3.2mm"><circle cx="2" cy="2" r="1.6" fill="#fff" stroke="#e00" stroke-width=".6"/></svg>`, "Titik di luar batas IUP") : ""}
       ${adaKontur ? leg(garis("#8a5a33", 0.5), "Kontur indeks 100 m") + leg(garis("#b98a62", 0.25), "Kontur 25 m") : ""}
       ${LAY.map((l) => leg(garis(esc(l.warna || "#00b7ff"), 0.6), esc(l.nama))).join("")}
@@ -2531,9 +2634,9 @@ async function presentasiHTML(D) {
     <div><h3 style="margin:0 0 4px">Pembagian waktu kerja per rig</h3>${stackH(waktuRig, kegKunci, { lw: 70 })}</div></div>
     <h3 style="margin:10px 0 4px">Kalender meter bor harian per rig <span style="font-weight:400;color:#6b7a72;font-size:13px">· angka = meter · bingkai merah = tanpa P2H / P2H bermasalah</span></h3>${heatRig(days, RG)}
     <div class="dua" style="grid-template-columns:1fr 1fr;gap:10px 26px;margin-top:8px"><div><h3 style="margin:0 0 4px">Recovery core rata-rata per rig</h3>${barH(recRig, { lw: 70 })}</div><div><h3 style="margin:0 0 4px">Ganti mata bor & jumlah run</h3>${barH(ganti, { lw: 70 })}</div></div>`, "gabungan grafik dashboard"));
-  S.push(slide("Performa rig: biaya, kepatuhan & kendala", `<div class="dua" style="grid-template-columns:1fr 1fr;gap:16px 26px">
-    <div><h3 style="margin:0 0 4px">BBM per rig (total & per meter)</h3>${barH(bbmRig, { lw: 70 })}<h3 style="margin:12px 0 4px">Pemakaian cairan per jenis (DDR)</h3>${barH(cairRows, { lw: 120 })}</div>
-    <div><h3 style="margin:0 0 4px">Kepatuhan P2H & DDR bertanda tangan (hari aktif)</h3>${barH(kpRig, { lw: 110, rh: 22 })}<h3 style="margin:12px 0 4px">Penyebab standby & perbaikan</h3>${barH(sbCause, { lw: 170 })}</div></div>`, "BBM · cairan · P2H · DDR · standby"));
+  S.push(slide(klien ? "Performa rig: kepatuhan & kendala" : "Performa rig: biaya, kepatuhan & kendala", `<div class="dua" style="grid-template-columns:1fr 1fr;gap:16px 26px">
+    <div>${klien ? `<h3 style="margin:0 0 4px">Pemakaian cairan bor per jenis (DDR)</h3>${barH(cairRows.filter((r) => !BARANG_BBM.test(r.label)), { lw: 120 })}` : `<h3 style="margin:0 0 4px">BBM per rig (total & per meter)</h3>${barH(bbmRig, { lw: 70 })}<h3 style="margin:12px 0 4px">Pemakaian cairan per jenis (DDR)</h3>${barH(cairRows, { lw: 120 })}`}</div>
+    <div><h3 style="margin:0 0 4px">Kepatuhan P2H & DDR bertanda tangan (hari aktif)</h3>${barH(kpRig, { lw: 110, rh: 22 })}<h3 style="margin:12px 0 4px">Penyebab standby & perbaikan</h3>${barH(sbCause, { lw: 170 })}</div></div>`, klien ? "cairan · P2H · DDR · standby" : "BBM · cairan · P2H · DDR · standby"));
   // ===== 3. Peta pemboran + grafik per lubang =====
   S.push(slide("Peta pemboran & grafik per lubang", `<div class="peta">${petaGraf}</div>`, `${LB.length} titik · kotak = kolom zona / kedalaman vs rencana · Rec = recovery`));
   // ===== 4. Geologi =====
@@ -2726,7 +2829,7 @@ async function laporanProgres(st) {
     const gbr3D = await blok3D(LB, prof, { w: 960, h: 500 }).catch((e) => `<p>Tampilan 3D gagal: ${esc(e.message)}</p>`);
     const mPer = sum(days, "meter_bor"), mCum = sum(rdAll ?? [], "meter_bor");
     const klien = isClient();
-    const K = computeKPI(days, tm ?? [], [], holes).filter(([l]) => !klien || (l !== "Foto core lengkap" && (clientGeo() || !GEO_KPI.includes(l))));
+    const K = computeKPI(days, tm ?? [], [], holes).filter(([l]) => !klien || (l !== "Foto core lengkap" && !/BBM|Oli/i.test(l) && (clientGeo() || !GEO_KPI.includes(l))));
     // per rig
     const rigs = [...new Set(days.map((d) => d.rig))].sort();
     const rigRows = rigs.map((r) => { const xs = days.filter((d) => d.rig === r), act = xs.filter((d) => n(d.meter_bor) > 0), m = sum(xs, "meter_bor"), j = sum(xs, "jam_kerja_bor"), b = sum(xs, "bbm_liter");
@@ -2766,7 +2869,7 @@ async function laporanProgres(st) {
       ringkasan: [["Indikator", "Nilai"], ["Periode", `${st.from} s/d ${st.to}`], ["Proyek", PJ?.nama ?? "Semua proyek"], ["Rig", st.rig || "Semua rig"], ["Meter bor periode", mPer.toFixed(1) + " m"], ["Meter bor kumulatif", mCum.toFixed(1) + " m"],
         ["Target meter proyek", PJ?.target_meter ? `${PJ.target_meter} m (${pct(mCum, PJ.target_meter)}%)` : "belum diisi admin"], ["Lubang selesai / dikerjakan", `${nSelesai} / ${HR.length}`], ["Target lubang proyek", PJ?.target_lubang ? `${PJ.target_lubang} (${pct(nSelesai, PJ.target_lubang)}%)` : "belum diisi admin"],
         ...K.filter(([a]) => a !== "Total meter bor").map(([a, b]) => [a, b])],
-      rig: [["Rig", "Hari aktif", "Meter", "Run", "m/jam", "m/hari aktif", "Standby+perbaikan (jam)", "BBM (L)", "BBM (L/m)", "P2H", "DDR ber-TTD"], ...rigRows],
+      rig: [["Rig", "Hari aktif", "Meter", "Run", "m/jam", "m/hari aktif", "Standby+perbaikan (jam)", "BBM (L)", "BBM (L/m)", "P2H", "DDR ber-TTD"], ...rigRows].map((r) => (klien ? r.filter((_, i) => i !== 7 && i !== 8) : r)),
       harian: [["Tanggal", "Rig aktif", "Meter", "Kumulatif proyek"], ...dayRows],
       lubang: [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Logging (m)", "Conto", "Status logging", "Limonit (m)", "Saprolit (m)", "Recovery %", "Status lubang"],
         ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", +f2(h.logm) || 0, h.conto, h.lstat, h.tl == null ? "" : +f1(h.tl), h.ts == null ? "" : +f1(h.ts), h.rec == null ? "" : Math.round(h.rec), h.selesai ? "SELESAI" : "BERJALAN"])],
@@ -2834,7 +2937,7 @@ async function laporanProgres(st) {
 async function aksesKlien(box) {
   const [{ data: us }, { data: pn }, { data: pj }] = await Promise.all([sb.from("app_user").select("user_id,full_name,company,email").eq("role", "client").order("full_name"), sb.from("penugasan").select("*"), sb.from("project").select("code,nama,rigs,aktif").order("nama")]);
   const P = Object.fromEntries((pn ?? []).map((p) => [p.user_id, p]));
-  box.innerHTML = `<h3>Akses akun client</h3><p class="muted">Client bisa melihat dan mengunduh Dashboard, Laporan rig dan Database data rig (DDR, progres, BBM, P2H, aktivitas) serta Dokumen yang dibuka untuk peran client. Centang “boleh lihat & unduh data geologi” agar client juga mendapat collar, survey, geologi, density, assay dan QAQC <b>yang sudah disetujui</b> untuk lubang proyeknya. Foto core dan scan formulir hanya terbuka setelah Anda merilisnya (kotak di bawah); data operator tidak pernah dibuka untuk client. Pilih proyek: client melihat semua rig proyek itu; centang rig bila hanya rig tertentu.</p>
+  box.innerHTML = `<h3>Akses akun client</h3><p class="muted">Client bisa melihat dan mengunduh Dashboard, Laporan rig dan Database data rig (DDR, progres, P2H, aktivitas) serta Dokumen yang dibuka untuk peran client. Centang “boleh lihat & unduh data geologi” agar client juga mendapat collar, survey, geologi, density, assay dan QAQC <b>yang sudah disetujui</b> untuk lubang proyeknya. Foto core dan scan formulir hanya terbuka setelah Anda merilisnya (kotak di bawah); data operator tidak pernah dibuka untuk client. Pilih proyek: client melihat semua rig proyek itu; centang rig bila hanya rig tertentu.</p>
     <ul class="list">${(us ?? []).map((u) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:200px"><b>${esc(u.full_name ?? "")}</b><br><span class="muted">${esc(u.company ?? "")} · ${esc(u.email ?? "")}</span></span>
       ${proyekSel(u.user_id, pj, P[u.user_id]?.project ?? "", "— belum ada akses —")}
       <span data-rcw="${u.user_id}" style="display:flex;gap:10px;flex:0;align-items:center">${rigCek(u.user_id, P[u.user_id]?.project, pj, P[u.user_id]?.rigs)}</span>
@@ -2865,11 +2968,11 @@ async function klienView(v) {
   if (!(days ?? []).length && !(dl ?? []).length) { $("#kr").innerHTML = `<p>Belum ada data untuk periode ini. Bila tetap kosong, minta admin TGEP memastikan akses proyek/rig akun Anda sudah diatur.</p>`; return; }
   const f1 = (x) => (x == null ? "" : Number(x).toFixed(1)), n = (x) => Number(x) || 0;
   const rigs = [...new Set((days ?? []).map((d) => d.rig))].sort();
-  $("#kr").innerHTML = `<h3>Ringkasan per rig</h3><div class="tw"><table><tr><th>Rig</th><th>Hari aktif</th><th>Meter</th><th>m/jam</th><th>Standby (jam)</th><th>BBM (L)</th><th>L/m</th><th>P2H ada</th><th>DDR ber-TTD</th></tr>
+  $("#kr").innerHTML = `<h3>Ringkasan per rig</h3><div class="tw"><table><tr><th>Rig</th><th>Hari aktif</th><th>Meter</th><th>m/jam</th><th>Standby (jam)</th><th>P2H ada</th><th>DDR ber-TTD</th></tr>
     ${rigs.map((r) => { const xs = days.filter((d) => d.rig === r), a = xs.filter((d) => n(d.meter_bor) > 0), m = xs.reduce((s, d) => s + n(d.meter_bor), 0), j = xs.reduce((s, d) => s + n(d.jam_kerja_bor), 0), b = xs.reduce((s, d) => s + n(d.bbm_liter), 0);
-      return `<tr><td><b>${esc(r)}</b></td><td>${a.length}</td><td>${f1(m)}</td><td>${j ? (m / j).toFixed(2) : "-"}</td><td>${f1(xs.reduce((s, d) => s + n(d.standby_menit), 0) / 60)}</td><td>${b.toFixed(0)}</td><td>${m ? (b / m).toFixed(2) : "-"}</td><td>${a.filter((d) => d.ada_p2h).length}/${a.length}</td><td>${a.filter((d) => d.n_ddr_ttd > 0).length}/${a.length}</td></tr>`; }).join("")}</table></div>
-    <h3>Rekap harian</h3><div class="tw"><table><tr><th>Tanggal</th><th>Rig</th><th>Meter</th><th>Run</th><th>Recovery %</th><th>Jam bor</th><th>Standby (mnt)</th><th>m/jam</th><th>BBM (L)</th><th>P2H</th><th>DDR (TTD)</th><th>Kejadian</th></tr>
-    ${(days ?? []).map((d) => `<tr><td>${d.tanggal}</td><td>${esc(d.rig)}</td><td>${f1(d.meter_bor)}</td><td>${d.jumlah_run ?? ""}</td><td>${d.recovery_pct ?? ""}</td><td>${f1(d.jam_kerja_bor)}</td><td>${d.standby_menit ?? ""}</td><td>${d.meter_per_jam ?? ""}</td><td>${d.bbm_liter ?? ""}</td>
+      return `<tr><td><b>${esc(r)}</b></td><td>${a.length}</td><td>${f1(m)}</td><td>${j ? (m / j).toFixed(2) : "-"}</td><td>${f1(xs.reduce((s, d) => s + n(d.standby_menit), 0) / 60)}</td><td>${a.filter((d) => d.ada_p2h).length}/${a.length}</td><td>${a.filter((d) => d.n_ddr_ttd > 0).length}/${a.length}</td></tr>`; }).join("")}</table></div>
+    <h3>Rekap harian</h3><div class="tw"><table><tr><th>Tanggal</th><th>Rig</th><th>Meter</th><th>Run</th><th>Recovery %</th><th>Jam bor</th><th>Standby (mnt)</th><th>m/jam</th><th>P2H</th><th>DDR (TTD)</th><th>Kejadian</th></tr>
+    ${(days ?? []).map((d) => `<tr><td>${d.tanggal}</td><td>${esc(d.rig)}</td><td>${f1(d.meter_bor)}</td><td>${d.jumlah_run ?? ""}</td><td>${d.recovery_pct ?? ""}</td><td>${f1(d.jam_kerja_bor)}</td><td>${d.standby_menit ?? ""}</td><td>${d.meter_per_jam ?? ""}</td>
       <td style="${!d.ada_p2h || d.p2h_bermasalah ? "background:#F6C9C3" : ""}">${d.ada_p2h ? (d.p2h_bermasalah ? "ada masalah" : "OK") : "tidak ada"}</td><td>${d.n_ddr ?? 0} (${d.n_ddr_ttd ?? 0})</td><td>${esc(String(d.kejadian_bermasalah ?? ""))}</td></tr>`).join("")}</table></div>`;
   $("#kd").innerHTML = `<h3>DDR (${(dl ?? []).length})</h3><ul class="list">${(dl ?? []).map((d) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · ${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">${d.status === "SIGNED" ? "lengkap ditandatangani" : "draf"} · ${f1(d.coring_ddr_m)} m coring · ${esc(d.ttd ?? "belum ada TTD")}</span></span>
     <button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`).join("") || `<li class="muted">Belum ada DDR.</li>`}</ul>`;
@@ -2879,13 +2982,13 @@ async function klienView(v) {
     try {
       const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
       const flat = (rows) => (rows ?? []).map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (o[c] && typeof o[c] === "object") o[c] = Array.isArray(o[c]) && o[c].every((x) => typeof x !== "object") ? o[c].join("; ") : JSON.stringify(o[c]); return o; });
-      const src = [["Kinerja rig harian", "v_dash_rig_day", "tanggal"], ["Progres harian bor", "v_drill_progress_daily", "tanggal"], ["DDR", "v_ddr_list", "report_date"], ["Distribusi jam DDR", "v_ddr_hours", "tanggal"], ["BBM oli barang", "v_consumable_use", "report_date"], ["Aktivitas bor", "v_drill_event_qc", "captured_at"], ["P2H", "p2h_check", "captured_at"]];
+      const src = [["Kinerja rig harian", "v_dash_rig_day", "tanggal"], ["Progres harian bor", "v_drill_progress_daily", "tanggal"], ["DDR", "v_ddr_list", "report_date"], ["Distribusi jam DDR", "v_ddr_hours", "tanggal"], ["Aktivitas bor", "v_drill_event_qc", "captured_at"], ["P2H", "p2h_check", "captured_at"]];
       for (const [nm, vw, col] of src) {
         const out = []; for (let i = 0; ; i += 1000) { let q = sb.from(vw).select("*"); q = col === "captured_at" ? q.gte(col, `${st.from}T00:00:00+07:00`).lte(col, `${st.to}T23:59:59+07:00`) : q.gte(col, st.from).lte(col, st.to); if (st.rig) q = q.eq("rig", st.rig);
           const { data, error: e } = await q.order(col).range(i, i + 999); if (e) throw e; out.push(...data); if (data.length < 1000) break; }
-        X.utils.book_append_sheet(wb, out.length ? X.utils.json_to_sheet(flat(out)) : X.utils.aoa_to_sheet([["(kosong)"]]), nm);
+        X.utils.book_append_sheet(wb, out.length ? X.utils.json_to_sheet(flat(tanpaBBM(out))) : X.utils.aoa_to_sheet([["(kosong)"]]), nm);
       }
-      X.writeFile(wb, `TGEP_Rekap_Rig_${st.rig || "semua"}_${st.from}_${st.to}.xlsx`); $("#info").textContent = "Excel diunduh (7 sheet).";
+      X.writeFile(wb, `TGEP_Rekap_Rig_${st.rig || "semua"}_${st.from}_${st.to}.xlsx`); $("#info").textContent = "Excel diunduh (6 sheet).";
     } catch (e) { $("#info").textContent = e.message; }
   };
 }
@@ -3478,7 +3581,7 @@ function dbQuery(d, f) {
   return q;
 }
 async function fetchAll(d, f) {
-  const out = []; for (let i = 0; ; i += 1000) { const { data, error } = await dbQuery(d, f).range(i, i + 999); if (error) throw error; out.push(...data); if (data.length < 1000) return out; }
+  const out = []; for (let i = 0; ; i += 1000) { const { data, error } = await dbQuery(d, f).range(i, i + 999); if (error) throw error; out.push(...data); if (data.length < 1000) return tanpaBBM(out); }
 }
 // ---------- Database FIX (hanya data final) untuk Microsoft Access ----------
 // Final: sampel VERIFIED/SYNCED, DDR SIGNED, assay/QAQC yang sudah dilaporkan lab. Satu sheet = satu tabel Access.
@@ -3732,7 +3835,7 @@ async function petaView(v) {
     <div style="position:relative"><div id="pmap" style="height:70vh;margin-top:8px;border-radius:10px;overflow:hidden;background:#dfe5df"></div>
       <div id="pmLeg" style="position:absolute;left:8px;top:16px;background:rgba(255,255,255,.88);border-radius:8px;padding:6px 8px;font-size:12px;line-height:1.6">${[["RENCANA", "Rencana"], ["PROGRES", "Progres (continue)"], ["EOH", "EOH / STB (selesai bor)"]].map(([k, t]) => `<div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${WARNA_STATUS[k]};border:1.5px solid #111;vertical-align:-1px"></span> ${t}</div>`).join("")}<div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;border:2.5px solid #e00;vertical-align:-1px"></span> di luar IUP</div></div></div>
     <div class="muted" id="pmInfo" style="margin-top:6px;min-height:1.2em">Memuat peta…</div><div id="pm3info" style="font-size:12px;color:#12251E;margin-top:2px"></div>
-    <p class="muted" style="margin:4px 0 0">Relief: DEMNAS (BIG) ±8 m sampai pantai; di hutan bisa mengikuti puncak pohon. Citra: Esri World Imagery (perlu sinyal). GPS, relief, IUP, lubang & lapisan tetap jalan offline setelah “Simpan offline”.</p></div>`;
+    <p class="muted" style="margin:4px 0 0">Relief: DEMNAS (BIG) ±8 m sampai pantai; di hutan bisa mengikuti puncak pohon. Citra: Esri World Imagery. Bagian peta yang pernah tampil (citra satelit, OSM, relief, citra drone) otomatis tersimpan di HP dan bisa dibuka & diekspor saat offline; “Simpan offline” menyimpan seluruh relief & citra drone sekaligus.</p></div>`;
   try { if (!window.maplibregl) { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "vendor/maplibre-gl.css"; document.head.appendChild(l); await muatJS("vendor/maplibre-gl.js", () => window.maplibregl); } }
   catch (e) { return ($("#pmInfo").textContent = e.message); }
   const BB = [121.725, -1.8, 121.85, -1.622], demURL = new URL("peta/dem/", location.href).href + "{z}/{x}/{y}.png";
@@ -3983,7 +4086,13 @@ async function petaView(v) {
   $("#pm3").onclick = () => { const p = map.getPitch() > 5 ? 0 : 65, cs = L.filter((f) => +f.properties.kd > 0 || PRF.some((r) => r.bhid === f.properties.bhid)).map((f) => f.geometry.coordinates);
     if (p && cs.length) { const bb = new maplibregl.LngLatBounds(); cs.forEach((c) => bb.extend(c)); map.fitBounds(bb, { pitch: p, bearing: -20, padding: { top: 140, bottom: 60, left: 60, right: 60 }, maxZoom: 16.5, duration: 1000 }); }
     else map.easeTo({ pitch: p, bearing: p ? -20 : 0, duration: 800 }); $("#pm3").textContent = p ? "2D" : "3D"; };
-  $("#pmA3").onclick = () => petaA3Dialog(L.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], kedalaman: f.properties.kedalaman ?? f.properties.kd, rencana_kedalaman: f.properties.rencana_kedalaman ?? f.properties.rk })));
+  // keadaan peta di layar saat ini → ekspor PDF mengikuti tampilan (latar, lapisan tercentang, status lubang, nama, cakupan)
+  const tampilanPeta = () => { const b = map.getBounds(); return { basemap: $("#pmB").value,
+    vis: { hs: tampil("hs", true), iup: tampil("iup"), iupno: tampil("iupno", true), kontur: tampil("kontur", false), elev: tampil("elev", false), lereng: tampil("lereng", false), lbl: tampil("lbl"),
+      st: Object.fromEntries(Object.keys(LABEL_STATUS).map((k) => [k, tampil("st_" + k)])) },
+    citra: CT.filter((c) => tampil("ct_" + c.id, c.tampil !== false)).map((c) => String(c.id)), lapisan: LAY.filter((ly) => tampil("ly_" + ly.id)).map((ly) => String(ly.id)),
+    opRel: opRel(), opCt: opCt(), bounds: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()] }; };
+  $("#pmA3").onclick = () => petaA3Dialog(L.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], kedalaman: f.properties.kedalaman ?? f.properties.kd, rencana_kedalaman: f.properties.rencana_kedalaman ?? f.properties.rk })), { tampilan: tampilanPeta() });
   $("#pmBP").onclick = () => bawahPermukaan3D(L.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] })), PRF);
   $("#pmK").oninput = (e) => { localStorage.setItem("kolom3d", e.target.value); gambarKolom3D(); terapkanTopo(); };
   map.on("pitchend", () => { $("#pm3").textContent = map.getPitch() > 5 ? "2D" : "3D"; terapkanTopo(); });
@@ -4027,7 +4136,7 @@ async function petaView(v) {
         U = ["vendor/maplibre-gl.js", "vendor/maplibre-gl.css", "vendor/three.module.min.js", "vendor/OrbitControls.js", "vendor/shp.min.js", "vendor/togeojson.umd.js", "vendor/jszip.min.js", "peta/dem/index.json", "peta/kontur/index.json", "peta/kontur/kontur.geojson", "peta/kontur/elevasi.png", "peta/kontur/lereng.png", "peta/citra/index.json", ...ci.filter((x) => x.file).map((x) => x.file), ...idx.tiles];
       for (const x of ci.filter((x) => x.daftar)) { U.push(x.daftar); try { U.push(...(await (await fetch(x.daftar, { cache: "no-cache" })).json())); } catch {} }
       let i = 0; for (const u of U) { await c.add(u); if (++i % 10 === 0) $("#pmInfo").textContent = `Menyimpan peta offline… ${i}/${U.length}`; }
-      $("#pmInfo").textContent = `Peta offline tersimpan (${U.length} file). Relief, citra drone, GPS, batas IUP, lubang & lapisan tetap bisa dibuka tanpa sinyal; citra satelit Esri tetap perlu sinyal.`;
+      $("#pmInfo").textContent = `Peta offline tersimpan (${U.length} file). Relief, citra drone, GPS, batas IUP, lubang & lapisan tetap bisa dibuka tanpa sinyal; citra satelit tersimpan otomatis untuk area yang pernah ditampilkan.`;
     } catch (er) { $("#pmInfo").textContent = "Gagal menyimpan offline: " + er.message; }
   };
 }
@@ -4057,20 +4166,21 @@ async function dbView(v) {
   const show = async (page = 0) => {
     const f = read(); f.page = page; sessionStorage.setItem("dbst", JSON.stringify({ ...f, proj: undefined })); st.page = page;
     const d = DATASETS[f.ds]; $("#tb").innerHTML = `<p class="muted">Memuat…</p>`;
-    const { data, count, error } = await dbQuery(d, f).range(page * 200, page * 200 + 199);
+    const { data: data0, count, error } = await dbQuery(d, f).range(page * 200, page * 200 + 199), data = tanpaBBM(data0);
     if (error) return ($("#tb").innerHTML = `<p class="err">${esc(error.message)}</p>`);
     $("#info").textContent = `${count ?? 0} baris · halaman ${page + 1} dari ${Math.max(1, Math.ceil((count ?? 0) / 200))}`;
     $("#pv").disabled = page === 0; $("#nx").disabled = (page + 1) * 200 >= (count ?? 0);
     if (!data?.length) return ($("#tb").innerHTML = `<p class="muted">Tidak ada data.</p>`);
     const cols = Object.keys(data[0]).filter((c) => !["data", "related"].includes(c));
-    const canDel = me?.role === "admin" && d.del, canRes = me?.role === "admin" && f.ds === "arsip";
+    const canDel = me?.role === "admin" && d.del, canRes = me?.role === "admin" && f.ds === "arsip", canPr = f.ds === "ddr";
     const fc = FILE_COL[f.ds] ?? {}, DV = await petaDrive(data, fc);
     const cell = (c, x) => { if (fc[c] && x) { const dv = DV[fc[c] + ":" + x]; return `<td style="padding:4px 7px;white-space:nowrap"><button class="sec" data-fb="${fc[c]}" data-fp="${esc(x)}" style="padding:2px 10px">Buka</button> ${dv ? `<a href="${esc(dv)}" target="_blank" rel="noopener" class="pill" style="background:#C8EBD4;color:#12251E;text-decoration:none" title="Buka salinan di Google Drive">Drive</a> ` : `<span class="muted" title="Belum tersalin ke Google Drive (disalin otomatis tiap 10 menit)">·</span> `}<a href="#" data-fl="${esc(dv || linkFile(fc[c], x))}" title="Salin link permanen${dv ? " (Google Drive)" : ""}" style="text-decoration:none">🔗</a></td>`; }
       const s = x !== null && typeof x === "object" ? JSON.stringify(x) : x; const bad = c.startsWith("chk_") && x && !OKV.has(x); return `<td style="padding:4px 7px;white-space:nowrap;${bad ? "background:#F6C9C3" : ""}">${esc(s)}</td>`; };
-    $("#tb").innerHTML = `<div class="tw"><table><tr>${canDel || canRes ? "<th></th>" : ""}${cols.map((c) => `<th style="padding:4px 7px">${esc(c)}</th>`).join("")}</tr>
-      ${data.map((r) => `<tr>${canDel ? `<td><button class="danger" data-k="${esc(r[d.del[1]])}" style="padding:2px 8px">Hapus</button></td>` : ""}${canRes ? `<td>${r.restored_at ? "dipulihkan" : `<button class="sec" data-r="${r.id}" style="padding:2px 8px">Pulihkan</button>`}</td>` : ""}${cols.map((c) => cell(c, r[c])).join("")}</tr>`).join("")}</table></div>`;
+    $("#tb").innerHTML = `<div class="tw"><table><tr>${canDel || canRes || canPr ? "<th></th>" : ""}${cols.map((c) => `<th style="padding:4px 7px">${esc(c)}</th>`).join("")}</tr>
+      ${data.map((r) => `<tr>${canPr ? `<td><button class="sec" data-pr="${esc(r.id)}" style="padding:2px 8px;white-space:nowrap">Lihat / cetak</button></td>` : ""}${canDel ? `<td><button class="danger" data-k="${esc(r[d.del[1]])}" style="padding:2px 8px">Hapus</button></td>` : ""}${canRes ? `<td>${r.restored_at ? "dipulihkan" : `<button class="sec" data-r="${r.id}" style="padding:2px 8px">Pulihkan</button>`}</td>` : ""}${cols.map((c) => cell(c, r[c])).join("")}</tr>`).join("")}</table></div>`;
     $("#tb").querySelectorAll("[data-k]").forEach((b) => (b.onclick = async () => { if (await adminDelete(d.del[0], b.dataset.k, "conto")) show(page); }));
     $("#tb").querySelectorAll("[data-fb]").forEach((b) => (b.onclick = () => bukaFile(b.dataset.fb, b.dataset.fp)));
+    $("#tb").querySelectorAll("[data-pr]").forEach((b) => (b.onclick = () => printDDR(b.dataset.pr)));
     $("#tb").querySelectorAll("[data-fl]").forEach((a) => (a.onclick = async (e) => { e.preventDefault(); try { await navigator.clipboard.writeText(a.dataset.fl); a.textContent = "✓"; setTimeout(() => (a.textContent = "🔗"), 1200); } catch { prompt("Salin link ini:", a.dataset.fl); } }));
     $("#tb").querySelectorAll("[data-r]").forEach((b) => (b.onclick = async () => { const { error } = await sb.rpc("admin_restore", { p_id: Number(b.dataset.r) }); if (error) alert(error.message); else show(page); }));
   };
@@ -4097,10 +4207,10 @@ async function dbView(v) {
         X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), DATASETS[k].t.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
       }
       const { data: tmx } = await sb.from("v_dash_time").select("*");
-      got.lubang ??= []; const K = computeKPI(got.kinerja, tmx ?? [], got.bbm, got.lubang.filter((h) => h.jumlah_conto > 0)).filter(([l]) => !isClient() || (l !== "Foto core lengkap" && (clientGeo() || !GEO_KPI.includes(l))));
-      const aoa = [["DASHBOARD RINGKASAN — TGEP", "", `dibuat ${new Date().toLocaleString("id-ID")}`], [], ["Indikator", "Nilai"], ...K.map(([a, b]) => [a, b]), [], ["Meter & BBM per rig", "Meter", "BBM (L)", "L/m", "Jam bor", "m/jam"]];
+      got.lubang ??= []; const K = computeKPI(got.kinerja, tmx ?? [], got.bbm ?? [], got.lubang.filter((h) => h.jumlah_conto > 0)).filter(([l]) => !isClient() || (l !== "Foto core lengkap" && !/BBM|Oli/i.test(l) && (clientGeo() || !GEO_KPI.includes(l))));
+      const aoa = [["DASHBOARD RINGKASAN — TGEP", "", `dibuat ${new Date().toLocaleString("id-ID")}`], [], ["Indikator", "Nilai"], ...K.map(([a, b]) => [a, b]), [], isClient() ? ["Meter per rig", "Meter", "", "", "Jam bor", "m/jam"] : ["Meter & BBM per rig", "Meter", "BBM (L)", "L/m", "Jam bor", "m/jam"]];
       const rg = {}; for (const d of got.kinerja) { const r = (rg[d.rig] ??= { m: 0, b: 0, j: 0 }); r.m += +d.meter_bor || 0; r.b += +d.bbm_liter || 0; r.j += +d.jam_kerja_bor || 0; }
-      for (const [r, x] of Object.entries(rg)) aoa.push([r, +x.m.toFixed(2), +x.b.toFixed(1), x.m ? +(x.b / x.m).toFixed(2) : "", +x.j.toFixed(2), x.j ? +(x.m / x.j).toFixed(2) : ""]);
+      for (const [r, x] of Object.entries(rg)) aoa.push([r, +x.m.toFixed(2), isClient() ? "" : +x.b.toFixed(1), isClient() ? "" : x.m ? +(x.b / x.m).toFixed(2) : "", +x.j.toFixed(2), x.j ? +(x.m / x.j).toFixed(2) : ""]);
       aoa.push([], ["Tebal zona per lubang", "Limonit (m)", "Saprolit (m)", "Conto", "Recovery %"]);
       for (const h of got.lubang.filter((h) => h.jumlah_conto > 0)) aoa.push([h.bhid, h.tebal_limonit, h.tebal_saprolit, h.jumlah_conto, h.recovery_pct]);
       X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Dashboard");
