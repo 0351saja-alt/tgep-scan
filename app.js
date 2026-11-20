@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-21.02";
+const APP_VERSION = "2026-11-21.03";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2119,8 +2119,12 @@ async function petaA3HTML(L, O) {
   if (O.g3d) return petaA3HTML3D(L, O);
   const Wl = JSON.parse(localStorage.getItem("wilayah") || "[]");
   const T = O.tampilan ?? null, V = T?.vis ?? null; // keadaan peta di layar (null = ekspor bawaan)
-  const pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat) && (!V || V.st?.[x.status] !== false)).map((x) => ({ ...x, u: UTM.ke(+x.lon, +x.lat) }));
-  const poly = (V && !V.iup ? [] : Wl).filter((x) => (x.titik ?? []).length > 2).map((x) => ({ ...x, u: x.titik.map((t) => UTM.ke(+t.lon, +t.lat)) }));
+  // zona UTM mengikuti lokasi yang dipetakan (pusat tampilan layar, atau titik bor / IUP)
+  const pusat = O.cakupan === "layar" && T?.bounds ? [(T.bounds[0] + T.bounds[2]) / 2, (T.bounds[1] + T.bounds[3]) / 2]
+    : (() => { const q = L.filter((x) => Number.isFinite(+x.lon)); const w = Wl.flatMap((x) => x.titik ?? []); const A = q.length ? q : w; return A.length ? [A.reduce((s, x) => s + +x.lon, 0) / A.length, A.reduce((s, x) => s + +x.lat, 0) / A.length] : [123, -1]; })();
+  const ZU = zonaUTMDari(pusat[0], pusat[1]), UTM = buatUTM(ZU.zona, ZU.selatan);
+  let pts = L.filter((x) => Number.isFinite(+x.lon) && Number.isFinite(+x.lat) && (!V || V.st?.[x.status] !== false)).map((x) => ({ ...x, u: UTM.ke(+x.lon, +x.lat) }));
+  let poly = (V && !V.iup ? [] : Wl).filter((x) => (x.titik ?? []).length > 2).map((x) => ({ ...x, u: x.titik.map((t) => UTM.ke(+t.lon, +t.lat)) }));
   const semua = [...pts.map((p) => p.u), ...poly.flatMap((p) => p.u)];
   if (!semua.length) return "<p style='padding:20px'>Belum ada titik bor atau batas IUP untuk dipetakan.</p>";
   // cakupan: area pemboran (bawaan) atau seluruh IUP
@@ -2136,6 +2140,9 @@ async function petaA3HTML(L, O) {
   const mm = 1000 / S; // mm per meter
   const X = (E) => FX + FW / 2 + (E - Ec) * mm, Y = (N) => FY + FH / 2 - (N - Nc) * mm;
   const Ea = Ec - FW / 2 / mm, Eb = Ec + FW / 2 / mm, Na = Nc - FH / 2 / mm, Nb = Nc + FH / 2 / mm;
+  if (layar) { // hanya titik & IUP yang masuk area peta yang dihitung di rekap/panel
+    pts = pts.filter((p) => p.u[0] >= Ea && p.u[0] <= Eb && p.u[1] >= Na && p.u[1] <= Nb);
+    poly = poly.filter((p) => Math.max(...p.u.map((c) => c[0])) >= Ea && Math.min(...p.u.map((c) => c[0])) <= Eb && Math.max(...p.u.map((c) => c[1])) >= Na && Math.min(...p.u.map((c) => c[1])) <= Nb); }
   const PU = (c) => `${X(c[0]).toFixed(2)},${Y(c[1]).toFixed(2)}`, PL = (lon, lat) => PU(UTM.ke(lon, lat));
   const ll0 = UTM.dari(Ea, Na), ll1 = UTM.dari(Eb, Nb), bbLL = [Math.min(ll0[0], ll1[0]) - 0.002, Math.min(ll0[1], ll1[1]) - 0.002, Math.max(ll0[0], ll1[0]) + 0.002, Math.max(ll0[1], ll1[1]) + 0.002];
   let g = "", gK = "", catSumber = [], adaKontur = false, adaCitra = false, adaHS = false, adaElev = false, adaLereng = false, latar = "", LAY = [], latarKurang = false;
@@ -2204,9 +2211,9 @@ async function petaA3HTML(L, O) {
     ${[0, 1, 2, 3, 4].map((i) => `<text x="${6 + (i * sbW) / 4}" y="2.8" font-size="2" text-anchor="middle">${((i * sbW) / 4 / 10).toLocaleString("id-ID", { maximumFractionDigits: 1 })}</text><text x="${6 + (i * sbW) / 4}" y="9" font-size="2" text-anchor="middle">${((i * sbM) / 4).toLocaleString("id-ID")}</text>`).join("")}<text x="${sbW + 9}" y="2.8" font-size="2">cm</text><text x="${sbW + 9}" y="9" font-size="2">m</text></svg>`;
   const [lc, la] = UTM.dari(Ec, Nc);
   const { inset, situasiKet, IW, IH } = await petaSituasi(lc, la, UTM.dari(Ea, Nb), UTM.dari(Eb, Na));
-  const zonaTxt = `Universal Transverse Mercator (UTM) Zona 51 ${Nc < 1e7 && la >= 0 ? "Utara" : "Selatan"}`;
+  const zonaTxt = `Universal Transverse Mercator (UTM) Zona ${ZU.zona} ${ZU.selatan ? "Selatan" : "Utara"}`;
   const sumber = [
-    ...Wl.map((x) => `Batas IUP: ${x.nama ?? "wilayah"}${x.nomor_sk ? " — " + x.nomor_sk : ""}`),
+    ...poly.map((x) => `Batas IUP: ${x.nama ?? "wilayah"}${x.nomor_sk ? " — " + x.nomor_sk : ""}`),
     `Titik bor: database X-Terra, keadaan ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`, ...catSumber,
     ...(latarKurang ? ["Sebagian latar peta tidak termuat (belum pernah dibuka saat ada sinyal)"] : []),
     ...(LAY.length ? [`Lapisan peta: ${LAY.map((l) => l.nama).join(", ")}`] : []), "Peta situasi: © kontributor OpenStreetMap",
@@ -3650,7 +3657,8 @@ function unduhMacroAccess() {
 }
 // ---------- Peta: citra satelit + relief DEMNAS 3D + batas IUP + lubang bor ----------
 // UTM <-> geografis (WGS84), zona 51 selatan (EPSG:32751)
-const UTM = (() => { const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996, e2 = f * (2 - f), ep2 = e2 / (1 - e2), lon0 = (51 * 6 - 183) * Math.PI / 180, N0 = 10000000, E0 = 500000;
+// Konversi UTM WGS 84 untuk zona tertentu (bawaan 51 Selatan = lokasi TGEP); ekspor peta memilih zona dari lokasi yang ditampilkan
+function buatUTM(zona = 51, selatan = true) { const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996, e2 = f * (2 - f), ep2 = e2 / (1 - e2), lon0 = (zona * 6 - 183) * Math.PI / 180, N0 = selatan ? 10000000 : 0, E0 = 500000;
   const M = (p) => a * ((1 - e2 / 4 - 3 * e2 * e2 / 64 - 5 * e2 ** 3 / 256) * p - (3 * e2 / 8 + 3 * e2 * e2 / 32 + 45 * e2 ** 3 / 1024) * Math.sin(2 * p) + (15 * e2 * e2 / 256 + 45 * e2 ** 3 / 1024) * Math.sin(4 * p) - (35 * e2 ** 3 / 3072) * Math.sin(6 * p));
   const ke = (lon, lat) => { const p = lat * Math.PI / 180, l = lon * Math.PI / 180 - lon0, N = a / Math.sqrt(1 - e2 * Math.sin(p) ** 2), T = Math.tan(p) ** 2, C = ep2 * Math.cos(p) ** 2, A = Math.cos(p) * l;
     return [E0 + k0 * N * (A + (1 - T + C) * A ** 3 / 6 + (5 - 18 * T + T * T + 72 * C - 58 * ep2) * A ** 5 / 120),
@@ -3661,7 +3669,9 @@ const UTM = (() => { const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996, e2 =
     const lat = p1 - (N1 * Math.tan(p1) / R1) * (D * D / 2 - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * ep2) * D ** 4 / 24 + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * ep2 - 3 * C1 * C1) * D ** 6 / 720);
     const lon = lon0 + (D - (1 + 2 * T1 + C1) * D ** 3 / 6 + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * ep2 + 24 * T1 * T1) * D ** 5 / 120) / Math.cos(p1);
     return [lon * 180 / Math.PI, lat * 180 / Math.PI]; };
-  return { ke, dari }; })();
+  return { ke, dari, zona, selatan }; }
+const UTM = buatUTM(51, true);
+const zonaUTMDari = (lon, lat) => ({ zona: Math.min(60, Math.max(1, Math.floor((lon + 180) / 6) + 1)), selatan: lat < 0 });
 // Elevasi DEMNAS di satu titik: baca piksel tile terrain-RGB zoom 14 (sama dengan yang dipakai peta)
 const demCache = {};
 // ---------- Peta 3D bawah permukaan (three.js): topografi tembus pandang + lubang bor menembus ke bawah, bisa diputar ----------
