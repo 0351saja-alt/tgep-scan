@@ -845,7 +845,8 @@ async function coverage(bh) {
 
 // ---------- progres pemboran (foto bergeotag) & P2H ----------
 const EV = { MASUK: "Masuk shift", MULAI_BOR: "Mulai bor", RUN: "Angkat run (core)", GANTI_MATA_BOR: "Ganti mata bor", TAMBAH_STANG: "Tambah stang",
-  STANDBY: "Standby", PERBAIKAN: "Perbaikan / kerusakan", SELESAI_BOR: "Selesai bor", PINDAH_TITIK: "Pindah titik", KELUAR: "Keluar shift", LAINNYA: "Lainnya" };
+  STANDBY: "Standby", PERBAIKAN: "Perbaikan / kerusakan", SELESAI_BOR: "Selesai bor", PINDAH_TITIK: "Pindah titik", KELUAR: "Keluar shift", LAINNYA: "Lainnya",
+  FOTO_DRILL_PAD: "Foto drill pad (akhir lubang)", FOTO_PATOK: "Foto patok lubang (EOH/STB)", FOTO_AKHIR: "Drill pad & patok" };
 const P2H_DEFAULT = ["Oli mesin (level & bocoran)", "Oli hidrolik (level & bocoran)", "Air radiator / pendingin", "Bahan bakar", "Aki & kabel kelistrikan", "Selang hidrolik & sambungan",
   "Wire rope / winch / hoist", "Mast / menara & pengunci", "Stang bor (rod) & core barrel", "Pompa air & selang sirkulasi", "Pelindung bagian berputar (guard)", "Tombol emergency stop",
   "APAR (alat pemadam)", "Kotak P3K", "Rambu & barikade area bor", "Kebersihan & tumpahan oli (housekeeping)", "APD kru lengkap"];
@@ -975,6 +976,7 @@ async function progView(v) {
     <button data-ev="MULAI_BOR">Mulai bor<small>foto rig di titik bor</small></button>
     <button data-ev="ACT">Foto aktivitas<small>angkat run · ganti mata bor · tambah stang · standby · lainnya</small></button>
     <button data-ev="SELESAI_BOR">Selesai bor / stop<small>foto akhir</small></button>
+    <button data-ev="FOTO_AKHIR">📸 Drill pad & patok<small>wajib setelah EOH/STB · 2 foto: drill pad lalu patok</small></button>
     <button data-ev="KELUAR" class="sec">Keluar shift</button>
     ${isStaff() ? `<button data-mk="1" class="sec">📍 Marking titik<small>koordinat GPS + akurasi · boleh berkali-kali</small></button>` : ""}
    </div>
@@ -1001,8 +1003,10 @@ async function progView(v) {
     const m = modal(`<h3>Konfirmasi foto</h3><p class="muted">${fmtT(capturedAt)} · ${esc(r.rig)} · ${esc(r.bhid ?? "")}</p>
       ${age > 300 ? `<p class="err">Foto ini dibuat ${Math.round(age / 60)} menit lalu — kemungkinan dari galeri, akan ditandai.</p>` : ""}
       <label>Foto ini untuk:</label>
-      <div class="list" id="types">${(pending === "ACT" ? ["RUN", "GANTI_MATA_BOR", "TAMBAH_STANG", "STANDBY", "PERBAIKAN", "PINDAH_TITIK", "LAINNYA"] : [pending]).map((k, i) =>
-        `<label style="display:flex;gap:8px;align-items:center;padding:8px 0"><input type="radio" name="et" value="${k}" ${i === 0 ? "checked" : ""} style="width:auto">${EV[k]}</label>`).join("")}</div>
+      <div class="list" id="types">${(() => { const L = pending === "ACT" ? ["RUN", "GANTI_MATA_BOR", "TAMBAH_STANG", "STANDBY", "PERBAIKAN", "PINDAH_TITIK", "LAINNYA"] : pending === "FOTO_AKHIR" ? ["FOTO_DRILL_PAD", "FOTO_PATOK"] : [pending];
+        const pil = L.includes(sessionStorage.getItem("akhirNext")) ? sessionStorage.getItem("akhirNext") : L[0];
+        return L.map((k) => `<label style="display:flex;gap:8px;align-items:center;padding:8px 0"><input type="radio" name="et" value="${k}" ${k === pil ? "checked" : ""} style="width:auto">${EV[k]}</label>`).join(""); })()}</div>
+      <div id="akhirTip" class="card" style="display:none;background:#EEF6F1;margin:6px 0;font-size:13px"></div>
       <div id="runf" class="row"><div><label>FROM (m)</label><input id="rf" inputmode="decimal" value="${fmtD(lastTo)}"></div><div><label>TO (m)</label><input id="rt" inputmode="decimal"></div><div><label>Core (m)</label><input id="rc" inputmode="decimal"></div></div>
       <div id="akhirf" style="display:none"><label>Status akhir lubang *</label><select id="sa"><option value="">— pilih —</option><option value="EOH">EOH — sampai target / bedrock</option><option value="STB">STB — berhenti sebelum target</option></select>
         <label>Kedalaman akhir (m)</label><input id="sad" inputmode="decimal" value="${fmtD(lastTo)}"></div>
@@ -1013,7 +1017,11 @@ async function progView(v) {
       <p id="gps" class="muted">Mengambil GPS…</p>
       <div class="row" style="margin-top:10px"><button id="ok">Ya, simpan</button><button class="sec" id="cx">Batal</button></div><div id="me" class="err"></div>`);
     const tp = () => m.querySelector('input[name="et"]:checked').value;
-    const upd = () => { const t = tp(); m.querySelector("#runf").style.display = t === "RUN" ? "" : "none"; m.querySelector("#akhirf").style.display = t === "SELESAI_BOR" ? "" : "none"; m.querySelector("#dipf").style.display = t === "MULAI_BOR" ? "" : "none"; m.querySelector("#ok").textContent = `Ya, simpan sebagai ${EV[t]}`;
+    const TIP_AKHIR = { FOTO_DRILL_PAD: "<b>Foto drill pad</b>: ambil dari jarak ±5–10 m sehingga seluruh pad, lubang/casing dan sekitarnya terlihat; tunjukkan kondisi setelah rig pindah (sudah dibersihkan, lubang ditutup, sampah/oli tidak tertinggal).",
+      FOTO_PATOK: "<b>Foto patok</b>: patok berdiri di mulut lubang, tulisan <b>Hole ID</b>, kedalaman akhir dan tanggal harus terbaca jelas (dekatkan kamera ±1 m). Ketik tulisan di patok pada kolom Keterangan." };
+    const upd = () => { const t = tp(); const ta = m.querySelector("#akhirTip"); ta.style.display = TIP_AKHIR[t] ? "" : "none"; ta.innerHTML = TIP_AKHIR[t] ?? "";
+      m.querySelector("#rn").placeholder = t === "FOTO_PATOK" ? `tulisan di patok, mis. ${r.bhid ?? "TGEP-001"} · EOH ${fmtD(lastTo)} m` : t === "FOTO_DRILL_PAD" ? "kondisi pad, mis. sudah dibersihkan, lubang ditutup" : "mis. mata bor aus, pompa rusak, hujan";
+      m.querySelector("#runf").style.display = t === "RUN" ? "" : "none"; m.querySelector("#akhirf").style.display = t === "SELESAI_BOR" ? "" : "none"; m.querySelector("#dipf").style.display = t === "MULAI_BOR" ? "" : "none"; m.querySelector("#ok").textContent = `Ya, simpan sebagai ${EV[t]}`;
       const ps = t === "MASUK" || t === "KELUAR"; m.querySelector("#psn").style.display = ps ? "" : "none";
       if (ps && !m.querySelector("#psnBox").dataset.ok) { m.querySelector("#psnBox").dataset.ok = "1"; loadPersonil(); personilEditor(m.querySelector("#psnBox"), personilAwal(r.rig, t, capturedAt));
         m.querySelector("#psnT").textContent = t === "MASUK" ? "Personil hadir (WSG, driller, crew)" : "Personil yang keluar shift";
@@ -1041,6 +1049,12 @@ async function progView(v) {
         if (!row.status_akhir) return (m.querySelector("#me").textContent = "Pilih status akhir: EOH atau STB.");
         if (row.status_akhir === "STB" && !row.reason) { m.querySelector("#rn").focus(); return (m.querySelector("#me").textContent = "STB: tulis alasan berhenti di kolom Alasan."); }
       }
+      if (t === "FOTO_PATOK") {
+        const tulis = (m.querySelector("#rn").value || "").trim();
+        if (!tulis) { m.querySelector("#rn").focus(); return (m.querySelector("#me").textContent = "Ketik tulisan yang ada di patok (Hole ID & kedalaman akhir)."); }
+        const bersihkan = (x) => String(x ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        if (r.bhid && !bersihkan(tulis).includes(bersihkan(r.bhid)) && !confirm(`Tulisan patok "${tulis}" tidak memuat Hole ID ${r.bhid}. Patok salah tulis atau salah lubang? Tetap simpan (akan terlihat saat diperiksa)?`)) return;
+      }
       if (t === "MASUK" || t === "KELUAR") {
         const L = ambilPersonil(m.querySelector("#psnBox")), n = (j) => L.filter((x) => x.jabatan === j).length, dup = L.map((x) => x.nama.toUpperCase()).filter((x, i, a) => a.indexOf(x) !== i);
         if (!L.length) return (m.querySelector("#me").textContent = "Isi nama personil yang hadir.");
@@ -1066,6 +1080,16 @@ async function progView(v) {
       await qPut({ kind: "event", client_uuid: crypto.randomUUID(), row, blob });
       if (t === "RUN") localStorage.setItem(`lastTo_${r.bhid}`, row.depth_to);
       m.remove(); render(); sync();
+      // akhir lubang: langsung arahkan ke foto drill pad lalu foto patok
+      const next = t === "SELESAI_BOR" && row.status_akhir ? "FOTO_DRILL_PAD" : t === "FOTO_DRILL_PAD" ? "FOTO_PATOK" : null;
+      if (t === "FOTO_PATOK") sessionStorage.removeItem("akhirNext");
+      if (next) setTimeout(() => { sessionStorage.setItem("akhirNext", next);
+        const a = modal(`<h3>${next === "FOTO_DRILL_PAD" ? `Lubang ${esc(r.bhid ?? "")} ${esc(row.status_akhir ?? "")} — foto akhir` : "Drill pad tersimpan ✓"}</h3>
+          <p>${next === "FOTO_DRILL_PAD" ? "Wajib 2 foto penutup lubang: <b>1) drill pad</b> lalu <b>2) patok</b> di mulut lubang." : "Sekarang <b>foto patok</b> di mulut lubang. Tulisan Hole ID dan kedalaman akhir harus terbaca."}</p>
+          <div class="row"><button id="aGo">📷 Foto ${next === "FOTO_DRILL_PAD" ? "drill pad" : "patok"} sekarang</button><button class="sec" id="aNanti">Nanti</button></div>
+          <p class="muted" style="margin-top:6px">Bisa juga belakangan lewat tombol <b>📸 Drill pad & patok</b>.</p>`);
+        a.querySelector("#aNanti").onclick = () => a.remove();
+        a.querySelector("#aGo").onclick = () => { a.remove(); document.querySelector('[data-ev="FOTO_AKHIR"]')?.click(); }; }, 400);
     };
   };
   $("#sy").onclick = sync;
@@ -1075,7 +1099,8 @@ async function progView(v) {
       sb.from("v_drill_event_qc").select("event_type,bhid,depth_from,depth_to,core_length,captured_at,flags,photo_path,reason").eq("rig", localStorage.getItem("rig") || "-").eq("tanggal", day).order("captured_at"),
       sb.from("v_drill_progress_daily").select("bhid,meter_bor,jumlah_run,recovery_pct,standby_menit,jam_p2h,chk_harian").eq("rig", localStorage.getItem("rig") || "-").eq("tanggal", day),
     ]);
-    $("#today").innerHTML = `${(sum ?? []).map((s) => `<p><b>${esc(s.bhid)}</b>: ${s.meter_bor} m · ${s.jumlah_run} run · recovery ${s.recovery_pct ?? "-"}% · standby ${s.standby_menit} mnt · P2H ${s.jam_p2h ? fmtT(s.jam_p2h).slice(-8) : "BELUM"}${s.chk_harian ? `<br><span class="err">${esc(s.chk_harian)}</span>` : ""}</p>`).join("")}
+    const akhirKurang = [...new Set((evs ?? []).filter((x) => x.event_type === "SELESAI_BOR").map((x) => x.bhid))].map((b) => [b, ["FOTO_DRILL_PAD", "FOTO_PATOK"].filter((k) => !(evs ?? []).some((x) => x.bhid === b && x.event_type === k))]).filter(([, k]) => k.length);
+    $("#today").innerHTML = `${akhirKurang.map(([b, k]) => `<p class="err" style="font-weight:600">⚠ ${esc(b)} sudah selesai bor tetapi belum ada ${k.map((x) => (x === "FOTO_PATOK" ? "foto patok" : "foto drill pad")).join(" & ")} — tekan 📸 Drill pad & patok.</p>`).join("")}${(sum ?? []).map((s) => `<p><b>${esc(s.bhid)}</b>: ${s.meter_bor} m · ${s.jumlah_run} run · recovery ${s.recovery_pct ?? "-"}% · standby ${s.standby_menit} mnt · P2H ${s.jam_p2h ? fmtT(s.jam_p2h).slice(-8) : "BELUM"}${s.chk_harian ? `<br><span class="err">${esc(s.chk_harian)}</span>` : ""}</p>`).join("")}
       <ul class="list">${(evs ?? []).map((x) => `<li><span style="flex:1">${fmtT(x.captured_at).slice(-8)} · <b>${esc(EV[x.event_type])}</b>${x.event_type === "RUN" ? ` ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m (core ${fmtD(x.core_length)})` : ""}${x.reason ? " · " + esc(x.reason) : ""}${x.flags ? `<br><span class="err">${esc(x.flags)}</span>` : ""}</span>${x.photo_path ? `<button class="sec" data-ph="${esc(x.photo_path)}" style="flex:0">Foto</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada aktivitas terkirim hari ini untuk rig ini.</li>`}</ul><div id="phv"></div>`;
     $("#today").querySelectorAll("[data-ph]").forEach((b) => (b.onclick = async () => { const { data } = await sb.storage.from("progress-photos").createSignedUrl(b.dataset.ph, 600);
       if (data?.signedUrl) return ($("#phv").innerHTML = `<img src="${data.signedUrl}" alt="Foto aktivitas bor" style="width:100%;border-radius:8px">`);
