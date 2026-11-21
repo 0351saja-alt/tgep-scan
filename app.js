@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-21.05";
+const APP_VERSION = "2026-11-21.06";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1658,13 +1658,14 @@ async function dashView(v) {
     <div style="flex:1"><div style="font:700 11px Arial;letter-spacing:.16em;color:#7CE0B0">PT TERRA GRAPINDO ECO PRIMA</div><div style="font:800 21px Arial">Dashboard eksplorasi nikel laterit</div><div style="font-size:12px;opacity:.75">X-Terra · data dari lapangan, terverifikasi</div></div></div>
     <div class="card"><h2>Dashboard progres & evaluasi</h2>
     <style>.dfil>div{flex:1 1 140px;min-width:140px}.dfil>div select,.dfil>div input{width:100%}@media(max-width:520px){.dfil>button{flex:1 1 45%!important}}</style><div class="row dfil" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
-    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><div><label>Topografi 3D</label><select id="topo3d">${[["redup", "Redup (bor menonjol)"], ["sedang", "Sedang"], ["asli", "Asli (tajam)"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button><button id="pres" style="flex:0;white-space:nowrap;background:#12251E">🎞 Presentasi 16:9</button></div></div>
+    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><div><label>Topografi 3D</label><select id="topo3d">${[["redup", "Redup (bor menonjol)"], ["sedang", "Sedang"], ["asli", "Asli (tajam)"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button><button id="pres" style="flex:0;white-space:nowrap;background:#12251E">🎞 Presentasi 16:9</button>${isClient() ? "" : `<button id="waPr" style="flex:0;white-space:nowrap;background:#1FA855">💬 WA progres ke client</button>`}</div></div>
     <div id="dSlide" style="background:#3a4741;border-radius:14px;padding:6px 3px;margin-bottom:12px"><p style="color:#fff;font-family:Arial;padding:16px;margin:0">Menyusun tampilan presentasi…</p></div>
     <details class="card" id="rinci" open><summary style="font-weight:700;cursor:pointer">Indikator & grafik dashboard</summary><div id="kpi" style="margin-top:8px"></div>
     <div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-top:10px"></div></details>`;
   if (online()) laporanProgres({ from: st.from, to: st.to, rig: st.rig, proj: sessionStorage.getItem("filterProyek") || "", slide: true, wadah: wadahDi($("#dSlide"), "16:9") }).catch((e) => { if ($("#dSlide")) $("#dSlide").innerHTML = `<p style="color:#fff;padding:16px">Tampilan presentasi gagal: ${esc(e.message)}</p>`; });
   $("#topo3d").onchange = (e) => { localStorage.setItem("topo3d", e.target.value); $("#go").onclick(); };
   $("#lap").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value });
+  if ($("#waPr")) $("#waPr").onclick = () => waProgresClient({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value });
   $("#pres").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value, slide: true });
   $("#go").onclick = () => { sessionStorage.setItem("filterProyek", $("#fproj").value); sessionStorage.setItem("dash", JSON.stringify({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() })); dashView(v); };
   if (!online()) { $("#dSlide").innerHTML = `<p style="color:#fff;padding:16px;margin:0">Dashboard perlu sinyal internet.</p>`; return; }
@@ -2869,6 +2870,122 @@ async function blok3D(L, prof, o = {}) {
   const Zs = [...new Map(PRF.map((r) => [r.zona, r])).values()];
   const leg = `<div style="font-size:11px;color:#333;margin-top:4px">${catCitra}Topografi DEMNAS, tinggi ${zMin.toFixed(0)}–${zMax.toFixed(0)} m, perbesaran vertikal ${VE}× · <b>panjang lubang bor diperbesar ${HE}×</b> agar terlihat · garis putus = kedalaman rencana · dilihat dari arah ${["utara", "timur laut", "timur", "tenggara", "selatan", "barat daya", "barat", "barat laut"][Math.round((((o.az ?? 62) + 180) % 360) / 45) % 8]} · ${Zs.map((r) => `<span style="display:inline-block;width:12px;height:10px;background:${esc(r.warna)};border:1px solid #222;vertical-align:-1px"></span> ${esc(r.nama_zona)}`).join(" ")}</div>`;
   return `<svg width="${o.fit ? "100%" : W}" viewBox="0 0 ${W} ${H}" style="background:linear-gradient(#eaf2f7,#fff);font-family:Arial,sans-serif;${o.fit ? `max-height:${o.fit}px;` : ""}"><defs>${filt}<linearGradient id="tanah" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b98b62"/><stop offset=".55" stop-color="#8b5e3c"/><stop offset="1" stop-color="#5b4636"/></linearGradient></defs>${g}</svg>${leg}`;
+}
+// ---------- Pesan WhatsApp progres pekerjaan untuk client ----------
+// Disusun dari data X-Terra (meter bor, lubang, conto, recovery, kendala). Tanpa data internal: BBM/oli, biaya, nama crew, kepatuhan operator.
+async function waProgresClient(st0) {
+  if (!online()) return alert("Menyusun pesan WA perlu sinyal internet.");
+  const S = { jenis: "harian", salam: "Bapak/Ibu", pengirim: me?.full_name ?? "", lubang: true, kum: true, conto: true, kendala: true, rencana: "", catatan: "", ...JSON.parse(localStorage.getItem("waProgres") || "{}") };
+  S.rencana = ""; S.catatan = ""; // isi bebas tidak dibawa ke hari berikutnya
+  const m = modal(`<h3 style="margin-top:0">💬 Pesan WhatsApp progres untuk client</h3>
+    <p class="muted" style="margin-top:0">Disusun otomatis dari data X-Terra. Tidak memuat BBM/oli, biaya, nama crew maupun kepatuhan operator. Periksa dulu, teks boleh diubah sebelum dikirim.</p>
+    <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 140px"><label>Jenis laporan</label><select id="waJ"><option value="harian">Harian (satu tanggal)</option><option value="periode">Periode (dari–sampai)</option></select></div>
+      <div style="flex:1 1 130px" id="waFw"><label>Dari</label><input type="date" id="waF" value="${esc(st0.from)}"></div>
+      <div style="flex:1 1 130px"><label id="waTl">Tanggal</label><input type="date" id="waT" value="${esc(st0.to)}"></div></div>
+    <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 140px"><label>Sapaan</label><input id="waS" value="${esc(S.salam)}"></div><div style="flex:1 1 160px"><label>Nama pengirim</label><input id="waP" value="${esc(S.pengirim)}"></div></div>
+    <label>Rencana kerja berikutnya (opsional)</label><textarea id="waR" rows="2" placeholder="mis. RIG 1 lanjut TG-014, RIG 2 pindah ke TG-021"></textarea>
+    <label>Catatan lain (opsional)</label><textarea id="waC" rows="2" placeholder="mis. akses jalan ke blok B diperbaiki"></textarea>
+    <div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0;font-size:13px">${[["lubang", "Rincian per lubang"], ["kum", "Kumulatif vs target"], ["conto", "Conto & recovery (data geologi)"], ["kendala", "Kendala / standby"]].map(([k, l]) => `<label style="display:flex;gap:4px;align-items:center;margin:0"><input type="checkbox" data-wa="${k}" ${S[k] ? "checked" : ""} style="width:auto">${l}</label>`).join("")}</div>
+    <label>Pratinjau pesan (boleh diubah)</label><textarea id="waX" rows="14" style="font-family:ui-monospace,monospace;font-size:12.5px">Menyusun…</textarea>
+    <p class="muted" id="waI" style="font-size:12px;margin:4px 0"></p>
+    <div class="row"><button class="sec" id="waB">Tutup</button><button class="sec" id="waK">Salin</button><a class="btn" id="waW" target="_blank" rel="noopener" style="flex:1;text-align:center;background:#1FA855;color:#fff;border-radius:10px;padding:11px 8px;font-weight:700;text-decoration:none">💬 Kirim lewat WhatsApp</a></div>`);
+  const $m = (s) => m.querySelector(s); $m("#waJ").value = S.jenis;
+  const simpan = () => localStorage.setItem("waProgres", JSON.stringify({ jenis: $m("#waJ").value, salam: $m("#waS").value, pengirim: $m("#waP").value, ...Object.fromEntries([...m.querySelectorAll("[data-wa]")].map((c) => [c.dataset.wa, c.checked])) }));
+  let D = null, kunci = "", diubah = false;
+  const n = (x) => Number(x) || 0, fm = (x, d = 1) => n(x).toLocaleString("id-ID", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const tglPanjang = (t) => new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const tglPendek = (t) => new Date(t + "T12:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+  async function muat(from, to) {
+    const k = [from, to, st0.proj, st0.rig].join("|"); if (k === kunci && D) return D; kunci = k;
+    sessionStorage.setItem("filterProyek", st0.proj || "");
+    const pf = await proyekFilter(), PJs = JSON.parse(localStorage.getItem("projects") || "[]"), PJ = PJs.find((p) => p.code === st0.proj) ?? (PJs.length === 1 ? PJs[0] : null);
+    const { data: pj } = st0.proj ? await sb.from("project").select("*").eq("code", st0.proj).maybeSingle() : { data: null };
+    const R = (q) => (st0.rig ? q.eq("rig", st0.rig) : pf ? q.in("rig", pf.rigs.length ? pf.rigs : ["-"]) : q);
+    const inB = (q, col) => (pf ? q.in(col, pf.bhids.length ? pf.bhids : ["-"]) : q);
+    const [{ data: rd }, { data: rdAll }, { data: tm }, { data: hl }, { data: lg }, { data: dd }, LB0] = await Promise.all([
+      R(sb.from("v_dash_rig_day").select("tanggal,rig,meter_bor,recovery_pct").gte("tanggal", from).lte("tanggal", to)),
+      R(sb.from("v_dash_rig_day").select("meter_bor").lte("tanggal", to)),
+      R(sb.from("v_dash_time").select("kegiatan,alasan,menit").gte("tanggal", from).lte("tanggal", to)),
+      inB(sb.from("v_dash_hole").select("bhid,start_date,stop_date,eoh,jumlah_conto,recovery_pct"), "bhid"),
+      R(sb.from("v_logging_lubang").select("bhid,rig,kedalaman_bor,terakhir_bor")),
+      R(sb.from("ddr").select("bhid,rig,report_date,target_m,total_depth_m").lte("report_date", to)).order("report_date"),
+      ambilLubangPeta(),
+    ]);
+    const LB = (LB0.data ?? []).filter((x) => (!pf || pf.bhids.includes(x.bhid) || x.status === "RENCANA") && (!st0.rig || !x.rig || x.rig === st0.rig || x.status === "RENCANA"));
+    return (D = { from, to, PJ: pj ?? PJ, pf, rd: rd ?? [], mCum: (rdAll ?? []).reduce((s, x) => s + n(x.meter_bor), 0), tm: tm ?? [], hl: hl ?? [], lg: lg ?? [], dd: dd ?? [], LB });
+  }
+  const susun = () => {
+    const { from, to, PJ, rd, mCum, tm, hl, lg, dd, LB } = D, harian = from === to;
+    const L = []; const o = Object.fromEntries([...m.querySelectorAll("[data-wa]")].map((c) => [c.dataset.wa, c.checked]));
+    const proyek = PJ?.nama ?? "Proyek eksplorasi nikel", rigTeks = st0.rig ? ` · ${st0.rig}` : "";
+    L.push(`*LAPORAN PROGRES PEMBORAN${harian ? " HARIAN" : ""}*`, `*${proyek}*${rigTeks}`, harian ? tglPanjang(to) : `Periode ${tglPendek(from)} – ${tglPendek(to)} ${to.slice(0, 4)}`, "");
+    L.push(`Yth. ${$m("#waS").value.trim() || "Bapak/Ibu"},`, `berikut progres pekerjaan pemboran ${harian ? "hari ini" : "periode ini"}:`, "");
+    // periode
+    const mPer = rd.reduce((s, x) => s + n(x.meter_bor), 0), perRig = {};
+    for (const x of rd) perRig[x.rig] = (perRig[x.rig] ?? 0) + n(x.meter_bor);
+    const rigs = Object.keys(perRig).sort(), aktif = rigs.filter((r) => perRig[r] > 0);
+    const hariAktif = new Set(rd.filter((x) => n(x.meter_bor) > 0).map((x) => x.tanggal)).size;
+    L.push(`📍 *${harian ? "Hari ini" : "Periode ini"}*`);
+    L.push(`• Meter bor: *${fm(mPer)} m*${rigs.length > 1 ? ` (${rigs.map((r) => `${r} ${fm(perRig[r])} m`).join(" · ")})` : ""}`);
+    L.push(harian ? `• Rig beroperasi: ${aktif.length}${rigs.length ? ` dari ${rigs.length}` : ""}` : `• Hari bor aktif: ${hariAktif} hari · rata-rata ${hariAktif ? fm(mPer / hariAktif) : "0"} m/hari aktif`);
+    // lubang dikerjakan pada periode (dari DDR) + status terkini
+    const LG = Object.fromEntries(lg.map((x) => [x.bhid, x])), HL = Object.fromEntries(hl.map((x) => [x.bhid, x])), ST = Object.fromEntries(LB.map((x) => [x.bhid, x]));
+    const TG = {}; for (const d of dd) if (d.bhid) TG[d.bhid] = { target: d.target_m ?? TG[d.bhid]?.target, rig: d.rig ?? TG[d.bhid]?.rig };
+    const dikerjakan = [...new Set(dd.filter((d) => d.bhid && d.report_date >= from && d.report_date <= to).map((d) => d.bhid))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
+    const selesaiP = hl.filter((h) => h.stop_date && h.stop_date.slice(0, 10) >= from && h.stop_date.slice(0, 10) <= to).map((h) => h.bhid);
+    const kedalaman = (b) => n(LG[b]?.kedalaman_bor) || n(HL[b]?.eoh);
+    const statusL = (b) => { const s = ST[b]?.status; return s === "EOH" || s === "STB" ? s : HL[b]?.stop_date ? "selesai" : "berjalan"; };
+    L.push(`• Lubang dikerjakan: ${dikerjakan.length}${selesaiP.length ? ` · selesai ${selesaiP.length} (${selesaiP.join(", ")})` : ""}`);
+    if (o.lubang && dikerjakan.length) {
+      for (const b of dikerjakan.slice(0, 15)) { const t = n(TG[b]?.target), s = statusL(b);
+        L.push(`   – ${b}${TG[b]?.rig || LG[b]?.rig ? ` (${TG[b]?.rig || LG[b]?.rig})` : ""}: ${fm(kedalaman(b), 2)} m${t ? ` / target ${fm(t)} m` : ""} · ${s === "berjalan" ? "berjalan" : s === "selesai" ? "selesai" : s}`); }
+      if (dikerjakan.length > 15) L.push(`   – … dan ${dikerjakan.length - 15} lubang lain`);
+    }
+    if (o.conto) {
+      const recW = rd.filter((x) => x.recovery_pct != null && n(x.meter_bor) > 0), mw = recW.reduce((s, x) => s + n(x.meter_bor), 0);
+      if (mw) L.push(`• Recovery core: ${fm(recW.reduce((s, x) => s + n(x.recovery_pct) * n(x.meter_bor), 0) / mw, 0)}%`);
+    }
+    L.push("");
+    if (o.kum) {
+      const setSelesai = new Set([...LB.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)).map((x) => x.bhid), ...hl.filter((h) => h.stop_date && h.stop_date.slice(0, 10) <= to).map((h) => h.bhid)]);
+      const nSelesai = setSelesai.size, nProg = LB.filter((x) => x.status === "PROGRES" && !setSelesai.has(x.bhid)).length, nRen = LB.filter((x) => x.status === "RENCANA" && !setSelesai.has(x.bhid) && !hl.some((h) => h.bhid === x.bhid)).length;
+      const pc = (a, b) => (b ? ` (${Math.round((100 * a) / b)}%)` : "");
+      L.push(`📊 *Kumulatif s/d ${tglPendek(to)}*`);
+      L.push(`• Total meter bor: *${fm(mCum)} m*${PJ?.target_meter ? ` dari target ${fm(PJ.target_meter, 0)} m${pc(mCum, PJ.target_meter)}` : ""}`);
+      L.push(`• Lubang selesai: *${nSelesai}*${PJ?.target_lubang ? ` dari target ${PJ.target_lubang} lubang${pc(nSelesai, PJ.target_lubang)}` : ""}${nProg ? ` · sedang dibor ${nProg}` : ""}${nRen ? ` · rencana belum dibor ${nRen}` : ""}`);
+      if (o.conto) { const nc = hl.reduce((s, h) => s + n(h.jumlah_conto), 0), rw = hl.filter((h) => h.recovery_pct != null && n(h.eoh) > 0), em = rw.reduce((s, h) => s + n(h.eoh), 0);
+        if (nc) L.push(`• Conto/sample terkumpul: ${nc.toLocaleString("id-ID")}`);
+        if (em) L.push(`• Recovery core rata-rata: ${fm(rw.reduce((s, h) => s + n(h.recovery_pct) * n(h.eoh), 0) / em, 0)}%`); }
+      L.push("");
+    }
+    if (o.kendala) {
+      const K = {}; for (const x of tm.filter((x) => ["Standby", "Perbaikan"].includes(x.kegiatan))) { const k = x.alasan?.trim() || x.kegiatan; K[k] = (K[k] ?? 0) + n(x.menit); }
+      const top = Object.entries(K).sort((a, b) => b[1] - a[1]).filter(([, mn]) => mn >= 15).slice(0, 4);
+      L.push(`⏸️ *Kendala / standby*`, ...(top.length ? top.map(([k, mn]) => `• ${k}: ${fm(mn / 60)} jam`) : ["• Tidak ada kendala berarti"]), "");
+    }
+    const ren = $m("#waR").value.trim(), cat = $m("#waC").value.trim();
+    if (ren) L.push(`🗓️ *Rencana berikutnya*`, ...ren.split(/\n+/).map((x) => `• ${x.replace(/^[•\-–*]\s*/, "")}`), "");
+    if (cat) L.push(`📝 *Catatan*`, ...cat.split(/\n+/).map((x) => `• ${x.replace(/^[•\-–*]\s*/, "")}`), "");
+    L.push("Demikian disampaikan, terima kasih.", "", `Salam,`, `*${$m("#waP").value.trim() || "Tim lapangan"}*`, "PT Terra Grapindo Eco Prima", `_Data X-Terra per ${new Date().toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}; angka hari berjalan dapat bertambah setelah semua laporan masuk._`);
+    return L.join("\n");
+  };
+  const pasang = (teks) => { $m("#waX").value = teks; $m("#waW").href = "https://wa.me/?text=" + encodeURIComponent(teks); diubah = false;
+    $m("#waI").textContent = `${teks.length} karakter.${D?.rd.length ? "" : " Belum ada laporan harian (DDR/progres) untuk tanggal ini — periksa tanggalnya."}`; };
+  const perbarui = async () => {
+    const harian = $m("#waJ").value === "harian"; $m("#waFw").style.display = harian ? "none" : ""; $m("#waTl").textContent = harian ? "Tanggal" : "Sampai";
+    const to = $m("#waT").value || todayWIB(), from = harian ? to : $m("#waF").value || to;
+    if (from > to) return pasang("Tanggal 'Dari' lebih besar dari 'Sampai'.");
+    $m("#waI").textContent = "Mengambil data…";
+    try { await muat(from, to); pasang(susun()); } catch (e) { pasang("Gagal menyusun pesan: " + e.message); }
+    simpan();
+  };
+  let tunda; const nanti = () => { clearTimeout(tunda); tunda = setTimeout(perbarui, 350); };
+  for (const id of ["#waJ", "#waF", "#waT"]) $m(id).onchange = perbarui;
+  for (const el of [$m("#waS"), $m("#waP"), $m("#waR"), $m("#waC"), ...m.querySelectorAll("[data-wa]")]) el.oninput = el.onchange = () => { if (D) { pasang(susun()); simpan(); } };
+  $m("#waX").oninput = () => { diubah = true; $m("#waW").href = "https://wa.me/?text=" + encodeURIComponent($m("#waX").value); };
+  $m("#waB").onclick = () => m.remove();
+  $m("#waK").onclick = async () => { try { await navigator.clipboard.writeText($m("#waX").value); $m("#waK").textContent = "✓ Tersalin"; } catch { $m("#waX").select(); document.execCommand("copy"); $m("#waK").textContent = "✓ Tersalin"; } setTimeout(() => ($m("#waK").textContent = "Salin"), 1800); };
+  void nanti; await perbarui();
 }
 async function laporanProgres(st) {
   if (!online()) return alert("Laporan perlu sinyal internet.");
