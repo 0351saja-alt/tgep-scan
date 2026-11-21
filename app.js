@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-21.04";
+const APP_VERSION = "2026-11-21.05";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -257,13 +257,13 @@ async function syncCore(it) {
 }
 
 // ---------- tampilan ----------
-const LABEL_PERAN = { driller: "Driller", geologist: "Wellsite geologist", verifier: "Verifier", admin: "Admin", client: "Client", admin_lapangan: "Admin lapangan" };
+const LABEL_PERAN = { driller: "Driller", geologist: "Wellsite geologist", verifier: "Verifier", admin: "General admin", client: "Client", admin_lapangan: "Admin lapangan" };
 // nama akun yang sedang masuk, di kiri kepala aplikasi (semua peran)
 function tampilAkun() {
   const el = document.getElementById("akun"); if (!el) return;
   if (!session) { el.style.display = "none"; el.innerHTML = ""; return; }
   const nama = me?.full_name || session.user?.email || "", inisial = nama.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((x) => x[0].toUpperCase()).join("") || "?";
-  const sub = [LABEL_PERAN[me?.role] ?? (me ? me.role : "menunggu persetujuan"), myTugas?.project && me?.role !== "admin" ? myTugas.project : ""].filter(Boolean).join(" · ");
+  const sub = [(me?.is_owner ? "Owner" : null) ?? LABEL_PERAN[me?.role] ?? (me ? me.role : "menunggu persetujuan"), myTugas?.project && me?.role !== "admin" ? myTugas.project : ""].filter(Boolean).join(" · ");
   el.innerHTML = `<span class="av">${esc(inisial)}</span><span class="nm">${esc(nama)}<small>${esc(sub)}</small></span>`; el.title = `Masuk sebagai ${nama}${session.user?.email && session.user.email !== nama ? ` (${session.user.email})` : ""}`; el.style.display = "";
 }
 async function render() {
@@ -284,7 +284,7 @@ async function render() {
     $("#out").onclick = () => { localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); sb.auth.signOut(); }; return; }
   if (!["client", "admin", "verifier", "admin_lapangan"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
+  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
     ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
@@ -1221,19 +1221,22 @@ async function resetSandiAdmin(uid, nama) {
 async function usersView(v) {
   const { data: rq, error } = await sb.from("registration_request").select("*").order("created_at", { ascending: false });
   if (error) return (v.innerHTML = `<p class="err">${esc(error.message)}</p>`);
-  const [{ data: au }, { data: rs }] = await Promise.all([sb.from("app_user").select("user_id,role,dihapus_at,nonaktif_alasan,wajib_ganti_pw"), sb.rpc("admin_daftar_reset")]);
+  const [{ data: au }, { data: rs }] = await Promise.all([sb.from("app_user").select("user_id,role,dihapus_at,nonaktif_alasan,wajib_ganti_pw,is_owner"), sb.rpc("admin_daftar_reset")]);
   const roleOf = Object.fromEntries((au ?? []).map((x) => [x.user_id, x.role])), auOf = Object.fromEntries((au ?? []).map((x) => [x.user_id, x]));
   const dihapus = rq.filter((r) => auOf[r.user_id]?.dihapus_at);
   const pend = rq.filter((r) => r.status === "PENDING"), rest = rq.filter((r) => r.status !== "PENDING" && !auOf[r.user_id]?.dihapus_at);
   const link = new URL("daftar.html", location.href).href;
-  const opt = (sel) => ["driller", "geologist", "verifier", "admin", "client", "admin_lapangan"].map((r) => `<option ${r === sel ? "selected" : ""}>${r}</option>`).join("");
+  // Hanya Owner yang dapat memberi/mencabut peran General admin dan mengubah akun General admin (dijaga juga oleh server)
+  const owner = !!me?.is_owner, terkunci = (uid) => !owner && uid !== session?.user?.id && (roleOf[uid] === "admin" || auOf[uid]?.is_owner);
+  const opt = (sel) => ["driller", "geologist", "verifier", "admin", "client", "admin_lapangan"].filter((r) => owner || r !== "admin" || sel === "admin").map((r) => `<option value="${r}" ${r === sel ? "selected" : ""}>${LABEL_PERAN[r]}</option>`).join("");
+  const peranTeks = (uid) => auOf[uid]?.is_owner ? "Owner" : LABEL_PERAN[roleOf[uid]] ?? roleOf[uid];
   const row = (r, pending) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>${esc(r.full_name)}</b> · ${esc(r.email)}<br><span class="muted">${esc(r.position ?? "")} · ${esc(r.company ?? "")} · ${esc(r.phone ?? "")}${r.reason ? " · " + esc(r.reason) : ""}<br>
-      ${pending ? `minta: ${esc(r.requested_role)} · daftar ${new Date(r.created_at).toLocaleString("id-ID")}` : `status: ${roleOf[r.user_id] === "nonaktif" ? "<b style='color:#C8281F'>NONAKTIF</b>" : roleOf[r.user_id] ? "AKTIF (" + roleOf[r.user_id] + ")" : r.status === "REJECTED" ? "DITOLAK" : r.status}${r.decision_note ? " · " + esc(r.decision_note) : ""}`}</span></span>
-      <select data-role="${r.user_id}" style="flex:0;width:auto">${opt(roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif" ? roleOf[r.user_id] : r.requested_role)}</select>
+      ${pending ? `minta: ${esc(r.requested_role)} · daftar ${new Date(r.created_at).toLocaleString("id-ID")}` : `status: ${roleOf[r.user_id] === "nonaktif" ? "<b style='color:#C8281F'>NONAKTIF</b>" : roleOf[r.user_id] ? "AKTIF (" + esc(peranTeks(r.user_id)) + ")" : r.status === "REJECTED" ? "DITOLAK" : r.status}${r.decision_note ? " · " + esc(r.decision_note) : ""}`}</span></span>
+      ${auOf[r.user_id]?.is_owner ? `<b style="flex:0;color:#8a5a00;white-space:nowrap">👑 Owner</b>` : terkunci(r.user_id) ? `<span class="muted" style="flex:0;white-space:nowrap">🔒 hanya Owner yang dapat mengubah</span>` : `<select data-role="${r.user_id}" style="flex:0;width:auto">${opt(roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif" ? roleOf[r.user_id] : r.requested_role)}</select>
       <button data-ok="${r.user_id}" style="flex:0">${pending ? "Setujui" : roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif" ? "Ubah peran" : "Aktifkan"}</button>
       ${pending || (roleOf[r.user_id] && roleOf[r.user_id] !== "nonaktif") ? `<button class="danger" data-no="${r.user_id}" style="flex:0">${pending ? "Tolak" : "Nonaktifkan"}</button>` : ""}
       ${!pending && roleOf[r.user_id] && r.user_id !== session?.user?.id ? `<button class="sec" data-rpw="${r.user_id}" data-nm="${esc(r.full_name)}" style="flex:0" title="Buat kata sandi sementara (pengguna lupa kata sandi)">🔑 Reset sandi</button>` : ""}
-      ${r.user_id === session?.user?.id ? "" : `<button class="danger" data-del="${r.user_id}" data-nm="${esc(r.full_name)}" style="flex:0" title="Hapus akun. Bila sudah pernah mengirim data, datanya tetap tersimpan">Hapus akun</button>`}
+      ${r.user_id === session?.user?.id || auOf[r.user_id]?.is_owner ? "" : `<button class="danger" data-del="${r.user_id}" data-nm="${esc(r.full_name)}" style="flex:0" title="Hapus akun. Bila sudah pernah mengirim data, datanya tetap tersimpan">Hapus akun</button>`}`}
       ${auOf[r.user_id]?.wajib_ganti_pw ? `<span class="muted" style="width:100%">memakai kata sandi sementara, belum diganti</span>` : ""}</li>`;
   v.innerHTML = `<div class="card"><h2>Pengguna</h2>
     <p>Link pendaftaran untuk dibagikan: <b>${esc(link)}</b> <button class="sec" id="cp" style="padding:4px 10px">Salin</button></p>
@@ -4339,7 +4342,7 @@ async function editSample(no, done) {
 async function loadMe() {
   if (!session) { me = null; return; }
   if (session.offline) { me = JSON.parse(localStorage.getItem("me") || "null"); return; }
-  const { data, error } = await sb.from("app_user").select("full_name,role,wajib_ganti_pw,dihapus_at").eq("user_id", session.user.id).maybeSingle();
+  const { data, error } = await sb.from("app_user").select("full_name,role,wajib_ganti_pw,dihapus_at,is_owner").eq("user_id", session.user.id).maybeSingle();
   if (error) { me = JSON.parse(localStorage.getItem("me") || "null"); return; }   // gangguan jaringan: pakai identitas terakhir
   if (!data || data.role === "nonaktif") {
     // Tutup akses total HANYA bila server autentikasi memastikan akun dihapus/diblokir, atau peran tertulis "nonaktif".
