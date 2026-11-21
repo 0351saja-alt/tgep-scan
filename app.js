@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-21.07";
+const APP_VERSION = "2026-11-21.08";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -969,7 +969,7 @@ async function progView(v) {
    <div class="row"><div><label>Rig</label>${rigField()}</div>
    <div><label>Hole ID</label><input id="pb" data-bhid value="${esc(bh)}" autocapitalize="characters"></div>
    <div style="flex:0.7"><label>Shift</label><select id="sh"><option ${shift === "PAGI" ? "selected" : ""}>PAGI</option><option ${shift === "MALAM" ? "selected" : ""}>MALAM</option></select></div></div>
-   <p class="muted">Setiap tombol membuka kamera. Koordinat GPS dan jam dicatat otomatis dan dicetak di foto. GPS tetap jalan tanpa sinyal internet.</p>
+   <p class="muted">Setiap tombol membuka kamera (atau galeri bila kotak 🖼️ di bawah dicentang). Koordinat GPS dan jam dicatat otomatis dan dicetak di foto. GPS tetap jalan tanpa sinyal internet.</p>
    <div class="big">
     <button data-ev="MASUK">Masuk shift<small>foto kru di lokasi</small></button>
     <button data-p2h="1" class="sec">P2H rig<small>wajib sebelum mulai bor</small></button>
@@ -979,12 +979,11 @@ async function progView(v) {
     <button data-ev="FOTO_AKHIR">📸 Drill pad & patok<small>wajib setelah EOH/STB · 2 foto: drill pad lalu patok</small></button>
     <button data-ev="KELUAR" class="sec">Keluar shift</button>
     ${isStaff() ? `<button data-mk="1" class="sec">📍 Marking titik<small>koordinat GPS + akurasi · boleh berkali-kali</small></button>` : ""}
-    <button data-man="1" class="sec">✍️ Isi manual<small>tanpa kamera · jam diisi sendiri · foto boleh dari kamera/galeri</small></button>
    </div>
-   <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-weight:400"><input type="checkbox" id="pgal" style="width:auto;flex:0">🖼️ Ambil foto dari galeri<span class="muted">— bila foto kamera hilang/terhapus</span></label>
+   <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-weight:400"><input type="checkbox" id="pgal" style="width:auto;flex:0">🖼️ Ambil foto dari galeri<span class="muted">— bila foto kamera hilang/terhapus; jam & GPS dibaca dari foto</span></label>
    <input id="pf" type="file" accept="image/*" capture="environment" class="hide"><input id="pfG" type="file" accept="image/*" class="hide"><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean progres di HP (${q.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
-   <ul class="list">${q.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "p2h" ? "P2H " + (x.row.layak_operasi ? "LAYAK" : "TIDAK LAYAK") : x.kind === "marking" ? `Marking ±${x.row.akurasi_m} m` : EV[x.row.event_type] + (x.row.note ? (x.row.note.startsWith("INPUT MANUAL") ? " (manual)" : " (galeri)") : ""))} · ${esc(x.row.rig)} ${esc(x.row.bhid ?? "")}<br><span class="muted">${fmtT(x.row.captured_at)}${x.row.lat ? "" : " · tanpa GPS"}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
+   <ul class="list">${q.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "p2h" ? "P2H " + (x.row.layak_operasi ? "LAYAK" : "TIDAK LAYAK") : x.kind === "marking" ? `Marking ±${x.row.akurasi_m} m` : EV[x.row.event_type] + (x.row.note ? " (galeri)" : ""))} · ${esc(x.row.rig)} ${esc(x.row.bhid ?? "")}<br><span class="muted">${fmtT(x.row.captured_at)}${x.row.lat ? "" : " · tanpa GPS"}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
    <div class="card"><h3>Hari ini (terkirim)</h3><div id="today" class="muted">${navigator.onLine && !session.offline ? "Memuat…" : "Offline — tampil saat ada sinyal."}</div></div>`;
   const keep = () => { localStorage.setItem("rig", $("#rg").value.trim().toUpperCase()); localStorage.setItem("bhid", bakuBH($("#pb").value)); localStorage.setItem("shift", $("#sh").value); };
   let pending = null, dariGaleri = false;
@@ -994,7 +993,6 @@ async function progView(v) {
     $("#e").textContent = ""; pending = b.dataset.ev; dariGaleri = $("#pgal").checked; (dariGaleri ? $("#pfG") : $("#pf")).click();
   }));
   v.querySelector("[data-mk]")?.addEventListener("click", () => { keep(); markingForm(); });
-  v.querySelector("[data-man]").onclick = () => { keep(); if (!localStorage.getItem("rig")) return ($("#e").textContent = "Isi nama rig dulu."); manualProgForm(); };
   v.querySelector("[data-p2h]").onclick = () => { keep(); if (!localStorage.getItem("rig")) return ($("#e").textContent = "Isi nama rig dulu."); p2hForm(); };
   $("#pfG").onchange = (ev) => $("#pf").onchange(ev);
   $("#pf").onchange = async (ev) => {
@@ -1116,7 +1114,7 @@ async function progView(v) {
     ]);
     const akhirKurang = [...new Set((evs ?? []).filter((x) => x.event_type === "SELESAI_BOR").map((x) => x.bhid))].map((b) => [b, ["FOTO_DRILL_PAD", "FOTO_PATOK"].filter((k) => !(evs ?? []).some((x) => x.bhid === b && x.event_type === k))]).filter(([, k]) => k.length);
     $("#today").innerHTML = `${akhirKurang.map(([b, k]) => `<p class="err" style="font-weight:600">⚠ ${esc(b)} sudah selesai bor tetapi belum ada ${k.map((x) => (x === "FOTO_PATOK" ? "foto patok" : "foto drill pad")).join(" & ")} — tekan 📸 Drill pad & patok.</p>`).join("")}${(sum ?? []).map((s) => `<p><b>${esc(s.bhid)}</b>: ${s.meter_bor} m · ${s.jumlah_run} run · recovery ${s.recovery_pct ?? "-"}% · standby ${s.standby_menit} mnt · P2H ${s.jam_p2h ? fmtT(s.jam_p2h).slice(-8) : "BELUM"}${s.chk_harian ? `<br><span class="err">${esc(s.chk_harian)}</span>` : ""}</p>`).join("")}
-      <ul class="list">${(evs ?? []).map((x) => `<li><span style="flex:1">${fmtT(x.captured_at).slice(-8)} · <b>${esc(EV[x.event_type])}</b>${x.event_type === "RUN" ? ` ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m (core ${fmtD(x.core_length)})` : ""}${x.reason ? " · " + esc(x.reason) : ""}${x.note ? ` <span class="pill ANTRE">${x.note.startsWith("INPUT MANUAL") ? "manual" : "galeri"}</span>` : ""}${x.flags ? `<br><span class="err">${esc(x.flags)}</span>` : ""}</span>${x.photo_path ? `<button class="sec" data-ph="${esc(x.photo_path)}" style="flex:0">Foto</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada aktivitas terkirim hari ini untuk rig ini.</li>`}</ul><div id="phv"></div>`;
+      <ul class="list">${(evs ?? []).map((x) => `<li><span style="flex:1">${fmtT(x.captured_at).slice(-8)} · <b>${esc(EV[x.event_type])}</b>${x.event_type === "RUN" ? ` ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m (core ${fmtD(x.core_length)})` : ""}${x.reason ? " · " + esc(x.reason) : ""}${x.note ? ` <span class="pill ANTRE">galeri</span>` : ""}${x.flags ? `<br><span class="err">${esc(x.flags)}</span>` : ""}</span>${x.photo_path ? `<button class="sec" data-ph="${esc(x.photo_path)}" style="flex:0">Foto</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada aktivitas terkirim hari ini untuk rig ini.</li>`}</ul><div id="phv"></div>`;
     $("#today").querySelectorAll("[data-ph]").forEach((b) => (b.onclick = async () => { const { data } = await sb.storage.from("progress-photos").createSignedUrl(b.dataset.ph, 600);
       if (data?.signedUrl) return ($("#phv").innerHTML = `<img src="${data.signedUrl}" alt="Foto aktivitas bor" style="width:100%;border-radius:8px">`);
       const dv = await linkDrive("progress-photos", b.dataset.ph); $("#phv").innerHTML = dv ? `<p>Foto sudah dipindah ke Google Drive. <a href="${esc(dv)}" target="_blank" rel="noopener">Buka di Drive</a></p>` : `<p class="err">Foto tidak ditemukan.</p>`; }));
@@ -1153,94 +1151,6 @@ function exifTiff(b, t) {
     if (G[2] && G[4]) { const lat = dms(G[2]) * (str(G[1] ?? { c: 2, v: 0 }) === "S" ? -1 : 1), lon = dms(G[4]) * (G[3] && String.fromCharCode(b.getUint8(G[3].v)) === "W" ? -1 : 1);
       if (Number.isFinite(lat) && Number.isFinite(lon) && (lat || lon)) Object.assign(out, { lat, lon }); } }
   return out;
-}
-// ---------- Isi progres bor manual (terpisah dari alur kamera; tidak mengubah alur yang ada) ----------
-// Untuk mencatat kegiatan yang terlewat / foto hilang. Jam diisi sendiri, foto opsional (kamera atau galeri).
-// Ditandai "INPUT MANUAL" di kolom note agar verifier tahu; tanpa foto berarti tanpa GPS (ditandai TANPA GPS).
-function manualProgForm(awal = {}) {
-  const rig = localStorage.getItem("rig") || "", JENIS = Object.keys(EV).filter((k) => k !== "FOTO_AKHIR");
-  const m = modal(`<h3 style="margin-top:0">✍️ Isi progres manual</h3>
-    <p class="muted" style="margin-top:0">Rig <b>${esc(rig)}</b>. Untuk kegiatan yang terlewat difoto atau fotonya hilang. Data ditandai <b>INPUT MANUAL</b> untuk verifier.</p>
-    <div class="row"><div><label>Jenis kegiatan *</label><select id="mj">${JENIS.map((k) => `<option value="${k}" ${k === (awal.jenis ?? "RUN") ? "selected" : ""}>${esc(EV[k])}</option>`).join("")}</select></div>
-      <div><label>Hole ID</label><input id="mb" data-bhid value="${esc(awal.bhid ?? localStorage.getItem("bhid") ?? "")}" autocapitalize="characters"></div></div>
-    <label>Tanggal & jam kegiatan *</label><input id="mw" type="datetime-local" step="60" value="${jamLokal(awal.jam ?? new Date())}" max="${jamLokal(new Date())}">
-    <div id="mRun" class="row"><div><label>FROM (m)</label><input id="mf" inputmode="decimal"></div><div><label>TO (m)</label><input id="mt" inputmode="decimal"></div><div><label>Core (m)</label><input id="mc" inputmode="decimal"></div></div>
-    <div id="mAkhir"><label>Status akhir lubang *</label><select id="ms"><option value="">— pilih —</option><option value="EOH">EOH — sampai target / bedrock</option><option value="STB">STB — berhenti sebelum target</option></select>
-      <label>Kedalaman akhir (m)</label><input id="msd" inputmode="decimal"></div>
-    <div id="mDip" class="row"><div><label>Dip (°)</label><input id="mdip" inputmode="decimal"></div><div><label>Azimuth (°)</label><input id="maz" inputmode="decimal"></div></div>
-    <div id="mPs"><h3 style="margin:12px 0 2px" id="mPsT">Personil</h3><div id="mPsBox"></div></div>
-    <label>Keterangan *</label><input id="mr" placeholder="mis. lupa difoto, foto terhapus, HP mati">
-    <label>Foto (opsional)</label>
-    <div class="row"><button class="sec" id="mCam" type="button">📷 Kamera</button><button class="sec" id="mGal" type="button">🖼️ Galeri</button></div>
-    <div id="mFoto" class="muted" style="margin-top:6px">Belum ada foto — data tetap bisa disimpan tanpa foto.</div>
-    <input id="mfC" type="file" accept="image/*" capture="environment" class="hide"><input id="mfG" type="file" accept="image/*" class="hide">
-    <div class="row" style="margin-top:12px"><button id="mOk">Simpan</button><button class="sec" id="mLagi">Simpan & isi lagi</button></div>
-    <button class="sec" id="mX" style="margin-top:6px">Tutup</button><div id="mE" class="err"></div>`);
-  const q = (s) => m.querySelector(s), num = (s) => (String(s).trim() === "" ? null : Number(String(s).replace(",", ".")));
-  let foto = null; // { file, gal, ex, url }
-  const isiDefault = () => { const bh = bakuBH(q("#mb").value), lt = lastRunTo(bh), rc = rencanaLokal().find((z) => z.bhid === bh);
-    if (!q("#mf").value) q("#mf").value = fmtD(lt); if (!q("#msd").value) q("#msd").value = fmtD(lt);
-    if (!q("#mdip").value) q("#mdip").value = rc?.dip ?? -90; if (!q("#maz").value) q("#maz").value = rc?.azimuth ?? 0; };
-  const upd = () => { const t = q("#mj").value;
-    q("#mRun").style.display = t === "RUN" ? "" : "none"; q("#mAkhir").style.display = t === "SELESAI_BOR" ? "" : "none"; q("#mDip").style.display = t === "MULAI_BOR" ? "" : "none";
-    const ps = t === "MASUK" || t === "KELUAR"; q("#mPs").style.display = ps ? "" : "none";
-    if (ps && q("#mPsBox").dataset.t !== t) { q("#mPsBox").dataset.t = t; loadPersonil(); personilEditor(q("#mPsBox"), personilAwal(rig, t, new Date(q("#mw").value || Date.now())));
-      q("#mPsT").textContent = t === "MASUK" ? "Personil hadir (WSG, driller, crew)" : "Personil yang keluar shift"; }
-    isiDefault(); };
-  q("#mj").onchange = upd; q("#mb").addEventListener("change", () => { q("#mf").value = ""; q("#msd").value = ""; isiDefault(); }); upd();
-  if (awal.from != null) q("#mf").value = fmtD(awal.from);
-  const pasangFoto = async (f, gal) => { if (!f) return; const ok = await pratinjauFoto(f, `Foto ${EV[q("#mj").value]} (manual${gal ? ", galeri" : ""})`); if (!ok) return;
-    const ex = gal ? await bacaExif(ok) : {}; if (foto?.url) URL.revokeObjectURL(foto.url); foto = { file: ok, gal, ex, url: URL.createObjectURL(ok) };
-    if (gal && ex.time) q("#mw").value = jamLokal(ex.time);
-    q("#mFoto").innerHTML = `<img src="${foto.url}" style="width:96px;height:96px;object-fit:cover;border-radius:8px;vertical-align:middle"> ${gal ? "Foto galeri" : "Foto kamera"}${gal ? ` · jam ${ex.time ? "dari data foto (sudah diisikan)" : "tidak terbaca"} · GPS ${ex.lat != null ? "dari data foto" : "tidak ada"}` : " · GPS saat ini"} <a href="#" id="mHapus">hapus</a>`;
-    q("#mHapus").onclick = (e) => { e.preventDefault(); URL.revokeObjectURL(foto.url); foto = null; q("#mFoto").textContent = "Belum ada foto — data tetap bisa disimpan tanpa foto."; }; };
-  q("#mCam").onclick = () => q("#mfC").click(); q("#mGal").onclick = () => q("#mfG").click();
-  q("#mfC").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; pasangFoto(f, false); };
-  q("#mfG").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; pasangFoto(f, true); };
-  q("#mX").onclick = () => { if (foto?.url) URL.revokeObjectURL(foto.url); m.remove(); render(); };
-  const simpan = async (lagi) => {
-    const E = (s) => (q("#mE").textContent = s), t = q("#mj").value, bhid = bakuBH(q("#mb").value) || null, jam = q("#mw").value ? new Date(q("#mw").value) : null;
-    E("");
-    if (t !== "MASUK" && t !== "KELUAR" && !bhid) return E("Isi Hole ID.");
-    if (!jam || isNaN(jam)) return E("Isi tanggal & jam kegiatan.");
-    if (jam.getTime() > Date.now() + 60e3) return E("Jam kegiatan tidak boleh di masa depan.");
-    const reason = q("#mr").value.trim(); if (!reason) { q("#mr").focus(); return E("Tulis keterangan (mengapa diisi manual / apa yang terjadi)."); }
-    const row = { rig, bhid, event_type: t, reason, captured_at: jam.toISOString(), photo_age_s: null };
-    if (t === "RUN") {
-      Object.assign(row, { depth_from: num(q("#mf").value), depth_to: num(q("#mt").value), core_length: num(q("#mc").value) });
-      if (!(row.depth_to > row.depth_from)) return E("Isi FROM dan TO run (TO > FROM).");
-      if (row.core_length === null) return E("Isi panjang core yang terambil.");
-      const lt = lastRunTo(bhid); if (Math.abs(row.depth_from - lt) > 0.02 && !confirm(`FROM ${fmtD(row.depth_from)} m tidak menyambung dengan TO run terakhir ${fmtD(lt)} m. Tetap simpan?`)) return;
-    }
-    if (t === "MULAI_BOR") { row.dip = num(q("#mdip").value); row.azimuth = num(q("#maz").value);
-      if (row.dip === null || row.dip < -90 || row.dip > 0) return E("Dip antara −90 (tegak) dan 0 (mendatar).");
-      if (row.azimuth === null || row.azimuth < 0 || row.azimuth >= 360) return E("Azimuth antara 0 dan 359."); }
-    if (t === "SELESAI_BOR") { row.status_akhir = q("#ms").value || null; row.depth_to = num(q("#msd").value);
-      if (!row.status_akhir) return E("Pilih status akhir: EOH atau STB."); }
-    if (t === "MASUK" || t === "KELUAR") { const L = ambilPersonil(q("#mPsBox")), dup = L.map((x) => x.nama.toUpperCase()).filter((x, i, a) => a.indexOf(x) !== i);
-      if (!L.length) return E("Isi nama personil."); if (dup.length) return E("Nama ganda: " + [...new Set(dup)].join(", "));
-      if (t === "MASUK" && !L.some((x) => x.jabatan === "Driller")) return E("Isi minimal satu Driller.");
-      row.personil = L; simpanPersonilLokal(rig, jam, t, L); }
-    q("#mOk").disabled = q("#mLagi").disabled = true;
-    let pos = null, blob = null;
-    if (foto) {
-      pos = foto.gal ? (foto.ex.lat != null ? { lat: foto.ex.lat, lon: foto.ex.lon, acc: null, t: (foto.ex.time ?? jam).toISOString() } : null)
-        : await Promise.race([getPos(), new Promise((r2) => setTimeout(() => r2(null), 8000))]);
-      row.photo_age_s = Math.round((Date.now() - (foto.gal ? (foto.ex.time ?? new Date(foto.file.lastModified)).getTime() : foto.file.lastModified)) / 1000);
-      const line2 = t === "RUN" ? `RUN ${fmtD(row.depth_from)}–${fmtD(row.depth_to)} m · core ${fmtD(row.core_length)} m` : EV[t] + (row.status_akhir ? ` ${row.status_akhir}` : "") + (row.personil ? ` · ${row.personil.length} personil` : "");
-      blob = await stampPhoto(foto.file, [`TGEP · ${rig} · ${bhid ?? "-"} · ${me?.full_name ?? ""}`, `${line2} · ${reason}`,
-        `${fmtT(jam)} WIB · ${pos ? `${pos.lat.toFixed(6)}, ${pos.lon.toFixed(6)}` : "TANPA GPS"} · INPUT MANUAL${foto.gal ? " · FOTO GALERI" : ""}`]);
-    }
-    if (pos) Object.assign(row, { lat: pos.lat, lon: pos.lon, gps_accuracy_m: pos.acc, gps_time: pos.t });
-    row.note = `INPUT MANUAL · ${foto ? (foto.gal ? `foto galeri · GPS ${pos ? "dari data foto" : "tidak ada"}` : "foto kamera") : "tanpa foto"} · diisi ${fmtT(new Date())}`;
-    await qPut({ kind: "event", client_uuid: crypto.randomUUID(), row, blob });
-    if (t === "RUN") localStorage.setItem(`lastTo_${bhid}`, row.depth_to);
-    if (bhid) localStorage.setItem("bhid", bhid);
-    if (foto?.url) URL.revokeObjectURL(foto.url);
-    m.remove(); toast(`✓ ${EV[t]} (manual) masuk antrean`); sync();
-    if (lagi) manualProgForm({ jenis: t, bhid, jam, from: t === "RUN" ? row.depth_to : null }); else render();
-  };
-  q("#mOk").onclick = () => simpan(false); q("#mLagi").onclick = () => simpan(true);
 }
 // ---------- Marking titik: setiap pembacaan GPS = satu baris di database (akurasi ikut tersimpan) ----------
 function markingForm() {
