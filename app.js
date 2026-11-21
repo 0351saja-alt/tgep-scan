@@ -181,7 +181,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-21.06";
+const APP_VERSION = "2026-11-21.07";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -591,6 +591,12 @@ async function reviewDetail(v, id) {
   const data = structuredClone(j.merged ?? { header: {}, rows: [] });
   const flags = j.validation ?? [], cf = j.cell_flags ?? {};
   const hdrCols = j.form_type === "HEADER" ? HDR : j.form_type === "SHEET" ? SHDR : PHDR, rowCols = j.form_type === "LOG" ? LOG : j.form_type === "DENSITY" ? DEN : j.form_type === "SHEET" ? SHEET : [];
+  // Bila belum ada hasil baca otomatis (gagal/ERROR, MANUAL, atau masih diproses), siapkan tabel kosong agar bisa diisi manual dari foto.
+  if (!data.header) data.header = {};
+  if (!data.header.bhid && j.bhid_hint) data.header.bhid = j.bhid_hint;
+  if (j.form_type === "SHEET" && data.header.page == null && j.page_no) data.header.page = j.page_no;
+  const isiManual = rowCols.length > 0 && !(data.rows ?? []).length;
+  if (isiManual) data.rows = Array.from({ length: 15 }, (_, i) => ({ _row: i + 1 }));
   const cls = (k) => { const f = cf[k]; if (!f) return ""; return f.some((x) => x.type === "BEDA") ? "f-BEDA" : "f-ATURAN"; };
   const KF = j.konfirmasi ?? {};
   const tip = (k) => [...(cf[k] ?? []).map((x) => x.msg), ...(KF[k] ? [KF[k].tidak_tahu ? `Pengirim (${KF[k].nama}) juga tidak yakin` : `Dikonfirmasi pengirim (${KF[k].nama}): ${KF[k].nilai}`] : [])].join(" | ");
@@ -599,13 +605,15 @@ async function reviewDetail(v, id) {
    <p class="muted">Kuning = dua pembacaan berbeda · Merah = melanggar aturan validasi · Hijau = sudah Anda ubah · Bingkai hijau = sudah dikonfirmasi pengirim (${Object.keys(j.konfirmasi ?? {}).length}). Bandingkan dengan foto sebelum menyetujui.</p>
    ${j.status === "ERROR" ? `<p class="err">Gagal diproses: ${esc(j.error)}</p>` : ""}${j.status === "MANUAL" ? `<p class="err">${esc(j.error)}</p>` : ""}
    ${j.sumber === "EXCEL" ? `<p><b>Form Logging manual dari Excel</b> (tanpa pembacaan AI) · <a href="#" id="dlx">⬇ Unduh Excel asli${j.file_name ? " (" + esc(j.file_name) + ")" : ""}</a> — cocokkan setiap baris dengan foto lembar.</p>` : ""}
-   ${(j.ai_kali ?? 0) > 0 ? `<p class="muted">Dibaca otomatis ${j.ai_kali}× untuk foto ini · batas 2× per halaman.</p>` : ""}</div>
+   ${(j.ai_kali ?? 0) > 0 ? `<p class="muted">Dibaca otomatis ${j.ai_kali}× untuk foto ini · batas 2× per halaman.</p>` : ""}
+   ${isiManual ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px">✍️ <b>Belum ada hasil baca otomatis</b> — tabel kosong sudah disiapkan. Isi langsung dari foto di samping, lalu <b>Setujui & simpan</b>. Kolom <b>No</b> wajib diisi pada setiap baris yang berisi data; baris yang dibiarkan kosong tidak disimpan. Bisa juga tekan <b>Proses ulang</b> bila kunci baca otomatis sudah diperbaiki.</p>` : ""}</div>
    <div class="rv"><div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Foto</h3><input id="zm" type="range" min="1" max="4" step="0.25" value="1" style="flex:2"></div>
      <div class="photo" id="ph"><img id="im" src="${url?.signedUrl ?? ""}" alt="Foto formulir" style="width:100%"></div></div>
    <div class="card"><h3>Hasil scan (bisa diedit)</h3>
      <div class="tw"><table><tr>${hdrCols.map(([, t]) => `<th>${t}</th>`).join("")}</tr><tr>${hdrCols.map(([k]) => cell(data.header?.[k], k, null, null)).join("")}</tr></table></div>
      ${rowCols.length ? `<div class="tw" style="margin-top:10px"><table><tr><th>Baris</th>${rowCols.map(([, t]) => `<th>${t}</th>`).join("")}</tr>
-       ${(data.rows ?? []).map((r, i) => `<tr><td style="padding:4px 6px">${r._row ?? i + 1}</td>${rowCols.map(([k]) => cell(r[k], k, i, r._row)).join("")}</tr>`).join("")}</table></div>` : ""}
+       ${(data.rows ?? []).map((r, i) => `<tr><td style="padding:4px 6px">${r._row ?? i + 1}</td>${rowCols.map(([k]) => cell(r[k], k, i, r._row)).join("")}</tr>`).join("")}</table></div>
+       <button class="sec" id="addRow" style="width:auto;margin-top:6px">+ Tambah baris</button>` : ""}
    </div></div>
    <div class="card"><h3>Temuan (${flags.length})</h3><ul class="list flags">${flags.map((f) => `<li><span><b>${f.row ? "Baris " + f.row : "Kepala"}</b> · ${esc(f.field)} · ${esc(f.type)} — ${esc(f.msg)}
      ${f.saran !== undefined && f.saran !== null ? `<span class="ab"><button class="sec" data-sar="${esc(f.saran)}" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai saran: ${esc(f.saran)}</button></span>` : ""}
@@ -628,12 +636,19 @@ async function reviewDetail(v, id) {
   }
   $("#zm").oninput = (e) => ($("#im").style.width = `${e.target.value * 100}%`);
   const rowIdx = (r) => (data.rows ?? []).findIndex((x) => String(x._row) === String(r));
-  v.querySelectorAll("td input").forEach((inp) => (inp.oninput = () => {
+  const pasangInput = (inp) => (inp.oninput = () => {
     const k = inp.dataset.k, r = inp.dataset.r, raw = inp.value.trim();
     const val = raw === "" ? null : NUMERIC.has(k) ? Number(raw.replace(",", ".")) : raw;
     if (r === "") data.header[k] = val; else data.rows[Number(r)][k] = val;
     inp.parentElement.className = "edited";
-  }));
+  });
+  v.querySelectorAll("td input").forEach(pasangInput);
+  if ($("#addRow")) $("#addRow").onclick = () => {
+    const i = data.rows.length, no = Math.max(0, ...data.rows.map((x) => Number(x._row) || 0)) + 1; data.rows.push({ _row: no });
+    const tb = $("#addRow").previousElementSibling.querySelector("table");
+    tb.insertAdjacentHTML("beforeend", `<tr><td style="padding:4px 6px">${no}</td>${rowCols.map(([k]) => cell(null, k, i, no)).join("")}</tr>`);
+    tb.querySelectorAll("tr:last-child td input").forEach(pasangInput);
+  };
   v.querySelectorAll("[data-pick]").forEach((b) => (b.onclick = () => {
     const f = b.dataset.f, raw = String(b.dataset.pick === "a" ? flags.find((x) => x.field === f && String(x.row ?? "") === b.dataset.row)?.a : flags.find((x) => x.field === f && String(x.row ?? "") === b.dataset.row)?.b ?? "");
     const i = b.dataset.row === "" ? null : rowIdx(b.dataset.row);
@@ -646,6 +661,10 @@ async function reviewDetail(v, id) {
     if (inp) { inp.value = b.dataset.sar; inp.dispatchEvent(new Event("input")); b.disabled = true; }
   }));
   $("#ok").onclick = async () => {
+    const adaIsi = (r) => Object.entries(r).some(([k, x]) => k !== "_row" && x !== null && x !== undefined && x !== "");
+    const kurangNo = (data.rows ?? []).filter((r) => adaIsi(r) && (r.seq === null || r.seq === undefined));
+    if (kurangNo.length) return ($("#e").textContent = `Baris ${kurangNo.map((r) => r._row).join(", ")}: kolom No belum diisi.`);
+    if (!String(data.header?.bhid ?? "").trim()) return ($("#e").textContent = "Isi Hole ID di kepala tabel.");
     for (const r of data.rows ?? []) {
       if (j.form_type === "DENSITY") {
         const av = (xs) => { const n = xs.filter((x) => typeof x === "number" && isFinite(x)); return n.length ? +(n.reduce((a, b) => a + b, 0) / n.length).toFixed(2) : null; };
@@ -655,7 +674,7 @@ async function reviewDetail(v, id) {
     }
     if (j.form_type === "SHEET") for (const r of data.rows ?? []) { r.geolithcode_prc_2 = r.geolithcode_id_2 && typeof r.geolithcode_prc_1 === "number" ? +(100 - r.geolithcode_prc_1).toFixed(1) : null; r.d_wtr_volume_ml = typeof r.d_volume_measure_ml === "number" ? 1400 : null; }
     $("#ok").disabled = true;
-    const { data: res, error } = await sb.rpc("approve_scan", { p_job: id, p_data: data, p_note: $("#nt").value || null });
+    const { data: res, error } = await sb.rpc("approve_scan", { p_job: id, p_data: { ...data, rows: (data.rows ?? []).filter(adaIsi) }, p_note: $("#nt").value || null });
     $("#ok").disabled = false;
     if (error) return ($("#e").textContent = error.message);
     alert(`Tersimpan: ${res.rows_written} baris untuk ${res.bhid}. Cek hasil hitung di tab "Data & cek".`); reviewList(v);
