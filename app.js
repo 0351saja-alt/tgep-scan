@@ -149,6 +149,22 @@ const qDel = (k) => q("readwrite", (s) => s.delete(k));
 
 // ---------- notifikasi singkat ----------
 function toast(t) { const el = Object.assign(document.createElement("div"), { textContent: t }); el.style.cssText = "position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:70;background:#12251E;color:#fff;padding:9px 14px;border-radius:10px;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.3)"; document.body.appendChild(el); setTimeout(() => el.remove(), 3500); }
+// ---------- Kamera ditutup paksa oleh HP ----------
+// Di sebagian HP Android (memori kecil), browser ditutup saat aplikasi kamera terbuka; setelah memotret, halaman dimuat ulang dan
+// foto hilang tanpa pesan. Catat saat kamera dibuka; bila halaman dimuat ulang sebelum foto diterima, beri tahu dan arahkan ke galeri.
+document.addEventListener("click", (e) => { const t = e.target; if (t?.matches?.('input[type="file"][capture]')) try { localStorage.setItem("kameraDibuka", String(Date.now())); } catch {} }, true);
+document.addEventListener("change", (e) => { if (e.target?.matches?.('input[type="file"]')) try { localStorage.removeItem("kameraDibuka"); } catch {} }, true);
+// Kamera dibatalkan / kembali tanpa muat ulang: halaman masih hidup, jadi tanda dihapus.
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") setTimeout(() => { try { localStorage.removeItem("kameraDibuka"); } catch {} }, 1500); });
+setTimeout(() => { let t = 0; try { t = Number(localStorage.getItem("kameraDibuka")) || 0; localStorage.removeItem("kameraDibuka"); } catch {}
+  if (!t || Date.now() - t > 15 * 60e3) return;
+  const m = modal(`<h3 style="margin-top:0">📷 Foto tadi tidak sampai ke aplikasi</h3>
+    <p>HP menutup aplikasi X-Terra saat kamera terbuka (biasa terjadi bila memori HP penuh), sehingga foto tidak tersimpan di aplikasi.</p>
+    <p><b>Cara aman:</b> potret dengan <b>aplikasi Kamera HP biasa</b>, lalu masukkan dari galeri:</p>
+    <ul style="margin:4px 0 8px 18px;padding:0"><li><b>Progres bor</b> → centang <b>🖼️ Ambil foto dari galeri</b>, lalu tekan tombol kegiatannya</li>
+    <li><b>Foto formulir</b> → <b>🖼️ Unggah foto / PDF</b></li><li><b>Foto core</b> → <b>🖼️ Dari galeri</b></li></ul>
+    <p class="muted">Tutup aplikasi lain yang tidak dipakai agar kamera dalam aplikasi lebih jarang terputus.</p><button id="kmOk">Mengerti</button>`);
+  m.querySelector("#kmOk").onclick = () => m.remove(); }, 2500);
 // ---------- pratinjau foto: "Pakai foto ini" atau "Foto ulang" ----------
 function pratinjauFoto(file, judul = "Periksa foto") {
   return new Promise((res) => {
@@ -181,7 +197,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-21.09";
+const APP_VERSION = "2026-11-21.10";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
