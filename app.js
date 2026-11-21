@@ -197,7 +197,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-21.10";
+const APP_VERSION = "2026-11-21.11";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1595,8 +1595,9 @@ async function ddrView(v) {
     const { data } = await sb.from("v_ddr_list").select("id,report_date,shift,rig,bhid,status,meter_bor,coring_ddr_m,selisih_ddr_vs_foto_m,bbm_liter,bbm_per_meter,ttd").order("report_date", { ascending: false }).limit(30);
     $("#lst").innerHTML = `<ul class="list">${(data ?? []).map((d) => `<li style="flex-wrap:wrap"><span class="pill ${d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW"}">${d.status === "SIGNED" ? "LENGKAP" : "DRAF"}</span>
       <span style="flex:1">${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">Coring DDR ${d.coring_ddr_m ?? 0} m · foto RUN ${d.meter_bor ?? 0} m${Math.abs(d.selisih_ddr_vs_foto_m ?? 0) > 0.1 ? ` <span class="err">(selisih ${d.selisih_ddr_vs_foto_m} m)</span>` : ""} · Diesel ${d.bbm_liter} L${d.bbm_per_meter ? ` (${d.bbm_per_meter} L/m)` : ""}<br>${esc(d.ttd ?? "belum ada TTD")}</span></span>
-      ${!/CLIENT/.test(d.ttd ?? "") ? `<button class="sec" data-sg="${d.id}" style="flex:0">Tanda tangani</button>` : ""}<button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`).join("") || `<li class="muted">Belum ada.</li>`}</ul>`;
+      ${!/CLIENT/.test(d.ttd ?? "") ? `<button class="sec" data-sg="${d.id}" style="flex:0">Tanda tangani</button>` : ""}<button class="sec" data-ed="${d.id}" style="flex:0">✏️ Edit run</button><button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`).join("") || `<li class="muted">Belum ada.</li>`}</ul>`;
     $("#lst").querySelectorAll("[data-pr]").forEach((b) => (b.onclick = () => printDDR(b.dataset.pr)));
+    $("#lst").querySelectorAll("[data-ed]").forEach((b) => (b.onclick = () => editRunDDR(b.dataset.ed)));
     $("#lst").querySelectorAll("[data-sg]").forEach((b) => (b.onclick = async () => {
       const { data: sg } = await sb.from("ddr_signature").select("slot").eq("ddr_id", b.dataset.sg);
       const have = new Set((sg ?? []).map((x) => x.slot));
@@ -1608,6 +1609,54 @@ async function ddrView(v) {
       render();
     }));
   }
+}
+// ---------- Edit data run (coring) DDR yang sudah terkirim — tercatat di ddr_edit_log dengan alasan ----------
+async function editRunDDR(id) {
+  if (!online()) return alert("Perlu sinyal untuk mengubah DDR yang sudah terkirim.");
+  const [{ data: d, error }, { data: lg }] = await Promise.all([sb.from("ddr").select("id,rig,report_date,shift,bhid,status,coring").eq("id", id).single(),
+    sb.from("ddr_edit_log").select("reason,editor_name,edited_at,status_saat_edit,old_value,new_value").eq("ddr_id", id).order("edited_at", { ascending: false })]);
+  if (error) return alert(error.message);
+  const n2 = (x) => (x == null || x === "" ? "" : String(x).replace(".", ","));
+  const baris = (o = {}) => `<div class="row" data-run style="align-items:center;margin-top:4px"><input placeholder="From" inputmode="decimal" value="${esc(n2(o.from))}"><input placeholder="To" inputmode="decimal" value="${esc(n2(o.to))}">
+    <input placeholder="Core" inputmode="decimal" value="${esc(n2(o.core))}"><input placeholder="Remark" value="${esc(o.remark ?? "")}"><button class="sec" data-x style="flex:0">✕</button></div>`;
+  const m = modal(`<h3 style="margin-top:0">✏️ Edit data run DDR</h3>
+    <p class="muted" style="margin-top:0">${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")} · ${d.status === "SIGNED" ? "LENGKAP (sudah ditandatangani)" : "DRAF"}</p>
+    ${d.status === "SIGNED" ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px;font-size:13px">DDR ini sudah ditandatangani. Perubahan tetap disimpan, tetapi <b>dicatat</b> (siapa, kapan, alasan, nilai lama → baru) dan tampil di cetakan DDR.</p>` : ""}
+    <div class="row muted" style="font-size:12px"><span>From (m)</span><span>To (m)</span><span>Core (m)</span><span>Remark</span><span style="flex:0;min-width:40px"></span></div>
+    <div id="erL">${(d.coring ?? []).map(baris).join("")}</div>
+    <div class="row"><button class="sec" id="erAdd" style="flex:0;white-space:nowrap">+ baris run</button><button class="sec" id="erFoto" style="flex:0;white-space:nowrap">Ganti dari foto RUN</button></div>
+    <p class="muted" id="erSum"></p>
+    <label>Alasan perubahan *</label><input id="erR" placeholder="mis. salah ketik TO run ke-3, disesuaikan dengan patok">
+    <div class="row" style="margin-top:10px"><button id="erOk">Simpan perubahan</button><button class="sec" id="erX">Batal</button></div><div id="erE" class="err"></div>
+    ${(lg ?? []).length ? `<h3>Riwayat perubahan run (${lg.length})</h3><ul class="list">${lg.map((l) => `<li><span>${fmtT(l.edited_at)} · <b>${esc(l.editor_name ?? "")}</b>${l.status_saat_edit === "SIGNED" ? " · setelah TTD" : ""}<br>${esc(l.reason)}<br><span class="muted">${(l.old_value ?? []).length} → ${(l.new_value ?? []).length} baris</span></span></li>`).join("")}</ul>` : ""}`);
+  const q = (x) => m.querySelector(x), num = (x) => (String(x ?? "").trim() === "" ? null : Number(String(x).replace(",", ".")));
+  const ambil = () => [...m.querySelectorAll("[data-run]")].map((r) => [...r.querySelectorAll("input")].map((x) => x.value.trim())).filter((x) => x[0] || x[1] || x[2])
+    .map(([f, t, c, rm]) => ({ from: num(f), to: num(t), core: num(c), remark: rm || null }));
+  const hitung = () => { const L = ambil(), I = L.reduce((s, x) => s + (x.to > x.from ? x.to - x.from : 0), 0), C = L.reduce((s, x) => s + (Number(x.core) || 0), 0);
+    q("#erSum").textContent = `${L.length} run · interval ${I.toFixed(2)} m · core ${C.toFixed(2)} m · recovery ${I ? ((100 * Math.min(C, I)) / I).toFixed(1) : "-"}%`; };
+  const pasang = () => { m.querySelectorAll("[data-run]").forEach((r) => { r.querySelector("[data-x]").onclick = () => { r.remove(); hitung(); }; r.querySelectorAll("input").forEach((x) => (x.oninput = hitung)); }); hitung(); };
+  q("#erAdd").onclick = () => { const L = ambil(); q("#erL").insertAdjacentHTML("beforeend", baris({ from: L.length ? L[L.length - 1].to : "" })); pasang(); };
+  q("#erFoto").onclick = async () => {
+    const [a, b] = shiftWindow(d.report_date, d.shift);
+    const { data: ev } = await sb.from("v_drill_event_qc").select("depth_from,depth_to,core_length").eq("rig", d.rig).eq("event_type", "RUN").gte("captured_at", a).lt("captured_at", b);
+    const E = [...new Map((ev ?? []).map((e) => [`${e.depth_from}|${e.depth_to}`, e])).values()].sort((x, y) => x.depth_from - y.depth_from);
+    if (!E.length) return (q("#erE").textContent = "Belum ada foto RUN untuk rig dan shift ini.");
+    if (!confirm(`Ganti ${ambil().length} baris run dengan ${E.length} run dari foto RUN?`)) return;
+    q("#erL").innerHTML = E.map((e) => baris({ from: e.depth_from, to: e.depth_to, core: e.core_length })).join(""); pasang(); };
+  q("#erX").onclick = () => m.remove();
+  q("#erOk").onclick = async () => {
+    const L = ambil(), E = (t) => (q("#erE").textContent = t);
+    const salah = L.findIndex((x) => !(x.to > x.from)); if (salah >= 0) return E(`Baris ${salah + 1}: To harus lebih besar dari From.`);
+    const sc = L.findIndex((x) => x.core === null || x.core < 0 || x.core > (x.to - x.from) * 1.05); if (sc >= 0) return E(`Baris ${sc + 1}: core kosong atau lebih panjang dari interval run.`);
+    for (let i = 1; i < L.length; i++) if (Math.abs(L[i].from - L[i - 1].to) > 0.02 && !confirm(`Run ${i + 1} (From ${n2(L[i].from)}) tidak menyambung dengan To run ${i} (${n2(L[i - 1].to)}). Tetap simpan?`)) return;
+    if (!q("#erR").value.trim()) { q("#erR").focus(); return E("Tulis alasan perubahan."); }
+    q("#erOk").disabled = true;
+    const { data: r, error: er } = await sb.rpc("edit_ddr_coring", { p_ddr: id, p_coring: L, p_reason: q("#erR").value.trim() });
+    q("#erOk").disabled = false;
+    if (er) return E(er.message);
+    m.remove(); toast(r?.changed ? "✓ Data run DDR diperbarui" : "Tidak ada perubahan"); render();
+  };
+  pasang();
 }
 async function ddrSummary(rig, date, shift) {
   const [a, b] = shiftWindow(date, shift);
@@ -1679,6 +1728,7 @@ async function printDDR(id) {
   const S = d.summary ?? {}, T = (x) => (x ? fmtT(x) : "-"), f2 = (x) => (x == null ? "" : Number(x).toFixed(2));
   const sigBox = (k) => { const s = (sg ?? []).find((x) => x.slot === k); return `<td style="width:33%;vertical-align:top;height:120px"><b>${k === "WELLSITE" ? "WELL SITE" : k === "CLIENT" ? "CLIENT REPRESENTATIVE" : "DRILLER"}</b><br>${s ? `<img src="${tt[s.signature_path] ?? ""}" style="height:60px"><br>${esc(s.signer_name)}<br><small>${T(s.signed_at)} WIB · ${s.method} · verifikasi server ${T(s.verified_at)}</small>` : "<br><br><i>belum ditandatangani</i>"}</td>`; };
   const cor = d.coring ?? [], oh = d.open_hole ?? [], hrs = d.hours ?? [];
+  const { data: elog } = await sb.from("ddr_edit_log").select("reason,editor_name,edited_at,status_saat_edit").eq("ddr_id", id).order("edited_at");
   const sumI = (xs) => xs.reduce((s, x) => s + (x.to - x.from), 0), sumC = cor.reduce((s, x) => s + (Number(x.core) || 0), 0);
   const totMin = hrs.reduce((s, h) => s + (durMin(h.mulai, h.selesai) ?? 0), 0);
   const cons = (d.consumables ?? []).filter((c) => !(isClient() && BARANG_BBM.test(`${c.item} ${c.kategori}`))), cats = [...new Set(cons.map((c) => c.kategori))];
@@ -1694,7 +1744,7 @@ async function printDDR(id) {
   <h3>1. DRILLING</h3><div class="two"><table><tr><th colspan="3">OPEN HOLE (m)</th></tr><tr><th>From</th><th>To</th><th>Interval</th></tr>${oh.map((x) => `<tr><td>${f2(x.from)}</td><td>${f2(x.to)}</td><td>${f2(x.to - x.from)}</td></tr>`).join("")}<tr><th colspan="2">Total</th><th>${f2(sumI(oh))}</th></tr></table>
   <table><tr><th colspan="6">CORING (m) / CORE RESULT</th></tr><tr><th>From</th><th>To</th><th>Interval</th><th>Length</th><th>Recovery</th><th>REMARK</th></tr>${cor.map((x) => `<tr><td>${f2(x.from)}</td><td>${f2(x.to)}</td><td>${f2(x.to - x.from)}</td><td>${f2(x.core)}</td><td>${x.to > x.from ? Math.round((100 * x.core) / (x.to - x.from)) + "%" : ""}</td><td>${esc(x.remark ?? "")}</td></tr>`).join("")}
   <tr><th colspan="2">Total</th><th>${f2(sumI(cor))}</th><th>${f2(sumC)}</th><th>${sumI(cor) ? Math.round((100 * sumC) / sumI(cor)) + "%" : ""}</th><th></th></tr></table></div>
-  <p>Cek silang foto RUN aplikasi: ${S.jumlah_run ?? 0} run · ${S.meter_bor ?? 0} m · core ${S.core_m ?? 0} m${Math.abs(sumI(cor) - (S.meter_bor ?? 0)) > 0.1 ? ` — <b style="color:#b00">selisih ${f2(sumI(cor) - (S.meter_bor ?? 0))} m dengan tulisan DDR</b>` : " — sesuai"}</p>
+  <p>Cek silang foto RUN aplikasi: ${S.jumlah_run ?? 0} run · ${S.meter_bor ?? 0} m · core ${S.core_m ?? 0} m${Math.abs(sumI(cor) - (S.meter_bor ?? 0)) > 0.1 ? ` — <b style="color:#b00">selisih ${f2(sumI(cor) - (S.meter_bor ?? 0))} m dengan tulisan DDR</b>` : " — sesuai"}</p>${(elog ?? []).length ? `<p style="color:#8a5a00"><b>Data coring/run diubah setelah DDR terkirim:</b> ${elog.map((l) => `${esc(T(l.edited_at))} oleh ${esc(l.editor_name ?? "-")}${l.status_saat_edit === "SIGNED" ? " (setelah ditandatangani)" : ""} — ${esc(l.reason)}`).join("; ")}</p>` : ""}
   <h3>2. HOURLY DISTRIBUTION</h3><table><tr><th>Kelompok</th><th>Kegiatan</th><th>TIME</th><th>DESCRIPTION</th><th>TOTAL (jam)</th></tr>${HOUR_CAT.map(([g, xs]) => xs.map((c) => { const r = hrs.filter((h) => h.kategori === c); const m = r.reduce((s, h) => s + (durMin(h.mulai, h.selesai) ?? 0), 0); return `<tr><td>${g}</td><td>${c}</td><td>${r.map((h) => `${h.mulai}–${h.selesai}`).join(", ")}</td><td>${esc(r.map((h) => h.ket).filter(Boolean).join("; "))}</td><td>${m ? (m / 60).toFixed(2) : ""}</td></tr>`; }).join("")).join("")}<tr><th colspan="4">TOTAL HOURS</th><th>${(totMin / 60).toFixed(2)}</th></tr></table>
   <h3>3. ACCESSORIES AND CONSUMABLES</h3><table><tr><th>Item</th><th>QTY</th><th>UNIT</th><th>Catatan</th></tr>${cats.map((k) => `<tr><th colspan="4">${esc(k)}</th></tr>` + cons.filter((c) => c.kategori === k).map((c) => `<tr><td>${esc(c.item)}</td><td>${c.qty}</td><td>${esc(c.unit)}</td><td>${esc(c.note ?? "")}</td></tr>`).join("")).join("")}</table>
   <table><tr><th>${esc(d.hole_type ?? "")}</th><th>ROD</th><td>${d.rod_m ?? ""} m</td><th>TARGET</th><td>${d.target_m ?? ""} m</td><th>TOTAL DEPTH</th><td>${d.total_depth_m ?? ""} m</td><th>TOTAL HOURS</th><td>${(totMin / 60).toFixed(2)} hours</td></tr></table>
