@@ -197,7 +197,7 @@ async function cekAntreLama() {
   el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-21.11";
+const APP_VERSION = "2026-11-23.1";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1578,7 +1578,13 @@ async function ddrView(v) {
     if (row.hm_start !== null && row.hm_end !== null && row.hm_end < row.hm_start) return ($("#e").textContent = "HM akhir lebih kecil dari HM awal.");
     const cons = items.map((it, i) => ({ ...it, qty: num(v.querySelector(`[data-q="${i}"]`).value), note: v.querySelector(`[data-n="${i}"]`).value.trim() || null }));
     const kosong = cons.filter((c) => c.qty === null || !isFinite(c.qty));
-    if (kosong.length) return ($("#e").textContent = `Isi QTY (0 bila tidak dipakai): ${kosong.map((c) => c.item).join(", ")}`);
+    if (kosong.length) {
+      items.forEach((it, i) => { const q = v.querySelector(`[data-q="${i}"]`); q.style.borderColor = cons[i].qty === null || !isFinite(cons[i].qty) ? "#C0392B" : ""; });
+      if (!confirm(`${kosong.length} barang di PEMAKAIAN BARANG belum diisi QTY:\n${kosong.map((c) => c.item).join(", ")}\n\nTekan OK bila semua barang itu TIDAK dipakai hari ini (diisi 0 otomatis).\nTekan Batal untuk mengisi sendiri.`))
+        return ($("#e").textContent = `Isi QTY (0 bila tidak dipakai): ${kosong.map((c) => c.item).join(", ")} — kolom yang kosong ditandai merah.`);
+      for (const c of kosong) c.qty = 0;
+      items.forEach((it, i) => { const q = v.querySelector(`[data-q="${i}"]`); if (q.value.trim() === "") { q.value = "0"; q.style.borderColor = ""; } });
+    }
     row.consumables = cons;
     const tot = hours.reduce((s, h) => s + durMin(h.mulai, h.selesai), 0);
     if (tot > 720 && !confirm(`Total jam ${(tot / 60).toFixed(1)} > 12 jam. Tetap simpan?`)) return;
