@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-24.3";
+const APP_VERSION = "2026-11-24.5";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1095,7 +1095,8 @@ async function progView(v) {
       <div id="runf" class="row"><div><label>FROM (m)</label><input id="rf" inputmode="decimal" value="${fmtD(lastTo)}"></div><div><label>TO (m)</label><input id="rt" inputmode="decimal"></div><div><label>Core (m)</label><input id="rc" inputmode="decimal"></div></div>
       <div id="akhirf" style="display:none"><label>Status akhir lubang *</label><select id="sa"><option value="">— pilih —</option><option value="EOH">EOH — sampai target / bedrock</option><option value="STB">STB — berhenti sebelum target</option></select>
         <label>Kedalaman akhir (m)</label><input id="sad" inputmode="decimal" value="${fmtD(lastTo)}"></div>
-      <div id="dipf" style="display:none"><div class="row"><div><label>Kemiringan / dip (°)</label><input id="dip" inputmode="decimal" value="${esc(rencanaLokal().find((z) => z.bhid === r.bhid)?.dip ?? -90)}"></div><div><label>Azimuth (°)</label><input id="az" inputmode="decimal" value="${esc(rencanaLokal().find((z) => z.bhid === r.bhid)?.azimuth ?? 0)}"></div></div>
+      <div id="dipf" style="display:none"><div class="row"><div><label>Tujuan bor</label><select id="tjb"><option value="">REGULAR DRILLING</option>${TUJUAN_BOR.slice(1).map((k) => `<option ${k === "REDRILL" && asalRedrill(r.bhid) ? "selected" : ""}>${k}</option>`).join("")}</select></div><div id="rdaBox" style="display:${asalRedrill(r.bhid) ? "" : "none"}"><label>Lubang asal (redrill) *</label><input id="rda" value="${esc(asalRedrill(r.bhid) ?? "")}" autocapitalize="characters"></div></div>
+        <div class="row"><div><label>Kemiringan / dip (°)</label><input id="dip" inputmode="decimal" value="${esc(rencanaLokal().find((z) => z.bhid === r.bhid)?.dip ?? -90)}"></div><div><label>Azimuth (°)</label><input id="az" inputmode="decimal" value="${esc(rencanaLokal().find((z) => z.bhid === r.bhid)?.azimuth ?? 0)}"></div></div>
         <p class="muted" style="margin:2px 0 0">−90 = tegak lurus ke bawah. Ubah hanya bila lubang dibor miring.</p></div>
       <div id="psn" style="display:none"><h3 style="margin:12px 0 2px" id="psnT">Personil hadir</h3><p class="muted" id="psnTip" style="margin:0"></p><div id="psnBox"></div></div>
       <div id="rsn"><label>Alasan / keterangan</label><input id="rn" placeholder="mis. mata bor aus, pompa rusak, hujan"></div>
@@ -1117,6 +1118,7 @@ async function progView(v) {
         m.querySelector("#psnT").textContent = t === "MASUK" ? "Personil hadir (WSG, driller, crew)" : "Personil yang keluar shift";
         m.querySelector("#psnTip").textContent = t === "MASUK" ? "Tulis semua yang ada di foto. Terisi dari shift terakhir rig ini — hapus yang tidak hadir, tambah yang baru." : "Hapus nama yang sudah pulang lebih dulu."; } };
     m.querySelectorAll('input[name="et"]').forEach((x) => (x.onchange = upd)); upd();
+    m.querySelector("#tjb").onchange = () => { const rd = m.querySelector("#tjb").value === "REDRILL"; m.querySelector("#rdaBox").style.display = rd ? "" : "none"; if (rd && !m.querySelector("#rda").value) m.querySelector("#rda").value = asalRedrill(r.bhid) ?? ""; };
     let pos = null; posP.then((p) => { pos = p; m.querySelector("#gps").textContent = p ? `GPS${gal ? " (data foto)" : ""}: ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}${p.acc != null ? ` (±${p.acc} m)` : ""}` : gal ? "Tanpa GPS (tidak ada di data foto galeri)." : "GPS tidak didapat — aktifkan Lokasi di HP. Foto tetap disimpan dan ditandai.";
       const k = p && cekIUP(p.lon, p.lat); if (k && !k.dalam) m.querySelector("#gps").insertAdjacentHTML("afterend", `<p class="err" style="font-weight:600">⚠ Titik GPS ini berada DI LUAR batas IUP (${esc(k.nama)}). Pastikan lokasi bor benar sebelum mengebor; hubungi WSG/admin.</p>`); });
     m.querySelector("#cx").onclick = () => m.remove();
@@ -1136,6 +1138,14 @@ async function progView(v) {
         if (row.core_length === null) return (m.querySelector("#me").textContent = "Isi panjang core yang terambil.");
       }
       if (t === "MULAI_BOR") {
+        const tj = m.querySelector("#tjb").value;
+        if (tj) row.tujuan_bor = tj;
+        if (tj === "REDRILL") {
+          row.lubang_asal = bakuBH(m.querySelector("#rda").value) || null;
+          if (!asalRedrill(r.bhid)) return (m.querySelector("#me").textContent = `Redrill: Hole ID harus berakhiran R, mis. ${r.bhid ?? "DH-NPG 12"}R. Pilih Jenis pemboran REDRILL di atas.`);
+          if (!row.lubang_asal) return (m.querySelector("#me").textContent = "Redrill: isi lubang asal.");
+          if (!row.reason) { m.querySelector("#rn").focus(); return (m.querySelector("#me").textContent = "Redrill: tulis alasan redrill di kolom Alasan (mis. recovery rendah, lubang runtuh)."); }
+        } else if (asalRedrill(r.bhid) && !confirm(`Hole ID ${r.bhid} berakhiran R (redrill), tetapi tujuan bor bukan REDRILL. Tetap simpan?`)) return;
         row.dip = num(m.querySelector("#dip").value); row.azimuth = num(m.querySelector("#az").value);
         if (row.dip === null || row.dip < -90 || row.dip > 0) return (m.querySelector("#me").textContent = "Dip antara −90 (tegak) dan 0 (mendatar).");
         if (row.azimuth === null || row.azimuth < 0 || row.azimuth >= 360) return (m.querySelector("#me").textContent = "Azimuth antara 0 dan 359.");
@@ -1196,6 +1206,7 @@ async function progView(v) {
       sb.from("v_drill_progress_daily").select("bhid,meter_bor,jumlah_run,recovery_pct,standby_menit,jam_p2h,chk_harian").eq("rig", localStorage.getItem("rig") || "-").eq("tanggal", day),
     ]);
     const akhirKurang = [...new Set((evs ?? []).filter((x) => x.event_type === "SELESAI_BOR").map((x) => x.bhid))].map((b) => [b, ["FOTO_DRILL_PAD", "FOTO_PATOK"].filter((k) => !(evs ?? []).some((x) => x.bhid === b && x.event_type === k))]).filter(([, k]) => k.length);
+    if (tok !== progView.tok || !$("#today")) return; // layar sudah berganti
     $("#today").innerHTML = `${akhirKurang.map(([b, k]) => `<p class="err" style="font-weight:600">⚠ ${esc(b)} sudah selesai bor tetapi belum ada ${k.map((x) => (x === "FOTO_PATOK" ? "foto patok" : "foto drill pad")).join(" & ")} — tekan 📸 Drill pad & patok.</p>`).join("")}${(sum ?? []).map((s) => `<p><b>${esc(s.bhid)}</b>: ${s.meter_bor} m · ${s.jumlah_run} run · recovery ${s.recovery_pct ?? "-"}% · standby ${s.standby_menit} mnt · P2H ${s.jam_p2h ? fmtT(s.jam_p2h).slice(-8) : "BELUM"}${s.chk_harian ? `<br><span class="err">${esc(s.chk_harian)}</span>` : ""}</p>`).join("")}
       <ul class="list">${(evs ?? []).map((x) => `<li><span style="flex:1">${fmtT(x.captured_at).slice(-8)} · <b>${esc(EV[x.event_type])}</b>${x.event_type === "RUN" ? ` ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m (core ${fmtD(x.core_length)})` : ""}${x.reason ? " · " + esc(x.reason) : ""}${x.note ? ` <span class="pill ANTRE">galeri</span>` : ""}${x.flags ? `<br><span class="err">${esc(x.flags)}</span>` : ""}</span>${x.photo_path ? `<button class="sec" data-ph="${esc(x.photo_path)}" style="flex:0">Foto</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada aktivitas terkirim hari ini untuk rig ini.</li>`}</ul><div id="phv"></div>`;
     $("#today").querySelectorAll("[data-ph]").forEach((b) => (b.onclick = async () => { const { data } = await sb.storage.from("progress-photos").createSignedUrl(b.dataset.ph, 600);
@@ -1810,6 +1821,7 @@ async function ddrView(v) {
       crew: [...(val("#dn") ? [{ nama: val("#dn"), jabatan: "Driller" }] : []), ...ambilCrew(), ...crewDDR.filter((x) => x.jabatan === "WSG")],
       hm_start: num(val("#h1")), hm_end: num(val("#h2")), weather: $("#wx").value, notes: val("#nt") || null, hole_type: $("#ht").value, rod_m: num(val("#rd")),
       target_m: num(val("#tg")), total_depth_m: num(val("#td")), open_hole, coring, hours, captured_at: new Date().toISOString() };
+    if (asalRedrill(row.bhid)) Object.assign(row, { redrill: true, lubang_asal: bakuBH(asalRedrill(row.bhid)) }); // REDRILL: lubang asal = Hole ID tanpa R
     const miss = ["bhid", "rig", "report_date", "contractor", "driller_name", "crew_count"].filter((k) => row[k] === null || row[k] === "");
     if (miss.length) return ($("#e").textContent = "Lengkapi kolom bertanda * (" + miss.join(", ") + ").");
     if (row.crew_count < crewMin()) return ($("#e").textContent = `Nama crew baru ${row.crew_count} — minimal ${crewMin()} orang (driller + assistant). Tambah dengan "+ crew".`);
@@ -1865,7 +1877,7 @@ async function editRunDDR(id) {
   if (error) return alert(error.message);
   const n2 = (x) => (x == null || x === "" ? "" : String(x).replace(".", ","));
   const baris = (o = {}) => `<div class="row" data-run style="align-items:center;margin-top:4px"><input placeholder="From" inputmode="decimal" value="${esc(n2(o.from))}"><input placeholder="To" inputmode="decimal" value="${esc(n2(o.to))}">
-    <input placeholder="Core" inputmode="decimal" value="${esc(n2(o.core))}"><input placeholder="Remark" value="${esc(o.remark ?? "")}"><button class="sec" data-x style="flex:0">✕</button></div>`;
+    <input placeholder="Core" inputmode="decimal" value="${esc(n2(o.core))}"><input placeholder="Remark" value="${esc(o.remark ?? "")}"><input placeholder="Hole ID (bila beda)" list="dlBH" value="${esc(o.bhid ?? "")}" style="max-width:130px"><button class="sec" data-x style="flex:0">✕</button></div>`;
   const m = modal(`<h3 style="margin-top:0">✏️ Edit data run DDR</h3>
     <p class="muted" style="margin-top:0">${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")} · ${d.status === "SIGNED" ? "LENGKAP (sudah ditandatangani)" : "DRAF"}</p>
     ${d.status === "SIGNED" ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px;font-size:13px">DDR ini sudah ditandatangani. Perubahan tetap disimpan, tetapi <b>dicatat</b> (siapa, kapan, alasan, nilai lama → baru) dan tampil di cetakan DDR.</p>` : ""}
@@ -1878,7 +1890,7 @@ async function editRunDDR(id) {
     ${(lg ?? []).length ? `<h3>Riwayat perubahan run (${lg.length})</h3><ul class="list">${lg.map((l) => `<li><span>${fmtT(l.edited_at)} · <b>${esc(l.editor_name ?? "")}</b>${l.status_saat_edit === "SIGNED" ? " · setelah TTD" : ""}<br>${esc(l.reason)}<br><span class="muted">${(l.old_value ?? []).length} → ${(l.new_value ?? []).length} baris</span></span></li>`).join("")}</ul>` : ""}`);
   const q = (x) => m.querySelector(x), num = (x) => (String(x ?? "").trim() === "" ? null : Number(String(x).replace(",", ".")));
   const ambil = () => [...m.querySelectorAll("[data-run]")].map((r) => [...r.querySelectorAll("input")].map((x) => x.value.trim())).filter((x) => x[0] || x[1] || x[2])
-    .map(([f, t, c, rm]) => ({ from: num(f), to: num(t), core: num(c), remark: rm || null }));
+    .map(([f, t, c, rm, b]) => { const bh = b ? bakuBH(b) : ""; return { from: num(f), to: num(t), core: num(c), remark: rm || null, ...(bh && bh !== d.bhid ? { bhid: bh } : {}) }; }); // Hole ID per baris (DDR dua lubang) tidak hilang
   const hitung = () => { const L = ambil(), I = L.reduce((s, x) => s + (x.to > x.from ? x.to - x.from : 0), 0), C = L.reduce((s, x) => s + (Number(x.core) || 0), 0);
     q("#erSum").textContent = `${L.length} run · interval ${I.toFixed(2)} m · core ${C.toFixed(2)} m · recovery ${I ? ((100 * Math.min(C, I)) / I).toFixed(1) : "-"}%`; };
   const pasang = () => { m.querySelectorAll("[data-run]").forEach((r) => { r.querySelector("[data-x]").onclick = () => { r.remove(); hitung(); }; r.querySelectorAll("input").forEach((x) => (x.oninput = hitung)); }); hitung(); };
@@ -1895,7 +1907,7 @@ async function editRunDDR(id) {
     const L = ambil(), E = (t) => (q("#erE").textContent = t);
     const salah = L.findIndex((x) => !(x.to > x.from)); if (salah >= 0) return E(`Baris ${salah + 1}: To harus lebih besar dari From.`);
     const sc = L.findIndex((x) => x.core === null || x.core < 0 || x.core > (x.to - x.from) * 1.05); if (sc >= 0) return E(`Baris ${sc + 1}: core kosong atau lebih panjang dari interval run.`);
-    for (let i = 1; i < L.length; i++) if (Math.abs(L[i].from - L[i - 1].to) > 0.02 && !confirm(`Run ${i + 1} (From ${n2(L[i].from)}) tidak menyambung dengan To run ${i} (${n2(L[i - 1].to)}). Tetap simpan?`)) return;
+    for (let i = 1; i < L.length; i++) if ((L[i].bhid ?? "") === (L[i - 1].bhid ?? "") && Math.abs(L[i].from - L[i - 1].to) > 0.02 && !confirm(`Run ${i + 1} (From ${n2(L[i].from)}) tidak menyambung dengan To run ${i} (${n2(L[i - 1].to)}). Tetap simpan?`)) return;
     if (!q("#erR").value.trim()) { q("#erR").focus(); return E("Tulis alasan perubahan."); }
     q("#erOk").disabled = true;
     const { data: r, error: er } = await sb.rpc("edit_ddr_coring", { p_ddr: id, p_coring: L, p_reason: q("#erR").value.trim() });
@@ -1994,7 +2006,7 @@ async function printDDR(id) {
   <p>Cek silang foto RUN aplikasi: ${S.jumlah_run ?? 0} run · ${S.meter_bor ?? 0} m · core ${S.core_m ?? 0} m${Math.abs(sumI(cor) - (S.meter_bor ?? 0)) > 0.1 ? ` — <b style="color:#b00">selisih ${f2(sumI(cor) - (S.meter_bor ?? 0))} m dengan tulisan DDR</b>` : " — sesuai"}</p>${(elog ?? []).length ? `<p style="color:#8a5a00"><b>Data coring/run diubah setelah DDR terkirim:</b> ${elog.map((l) => `${esc(T(l.edited_at))} oleh ${esc(l.editor_name ?? "-")}${l.status_saat_edit === "SIGNED" ? " (setelah ditandatangani)" : ""} — ${esc(l.reason)}`).join("; ")}</p>` : ""}
   <h3>2. HOURLY DISTRIBUTION</h3><table><tr><th>Kelompok</th><th>Kegiatan</th><th>TIME</th><th>DESCRIPTION</th><th>TOTAL (jam)</th></tr>${HOUR_CAT.map(([g, xs]) => xs.map((c) => { const r = hrs.filter((h) => h.kategori === c); const m = r.reduce((s, h) => s + (durMin(h.mulai, h.selesai) ?? 0), 0); return `<tr><td>${g}</td><td>${c}</td><td>${r.map((h) => `${h.mulai}–${h.selesai}`).join(", ")}</td><td>${esc(r.map((h) => h.ket).filter(Boolean).join("; "))}</td><td>${m ? (m / 60).toFixed(2) : ""}</td></tr>`; }).join("")).join("")}<tr><th colspan="4">TOTAL HOURS</th><th>${(totMin / 60).toFixed(2)}</th></tr></table>
   <h3>3. ACCESSORIES AND CONSUMABLES</h3><table><tr><th>Item</th><th>QTY</th><th>UNIT</th><th>Catatan</th></tr>${cats.map((k) => `<tr><th colspan="4">${esc(k)}</th></tr>` + cons.filter((c) => c.kategori === k).map((c) => `<tr><td>${esc(c.item)}</td><td>${c.qty}</td><td>${esc(c.unit)}</td><td>${esc(c.note ?? "")}</td></tr>`).join("")).join("")}</table>
-  <table><tr><th>${esc(d.hole_type ?? "")}</th><th>ROD</th><td>${d.rod_m ?? ""} m</td><th>TARGET</th><td>${d.target_m ?? ""} m</td><th>TOTAL DEPTH</th><td>${d.total_depth_m ?? ""} m</td><th>TOTAL HOURS</th><td>${(totMin / 60).toFixed(2)} hours</td></tr></table>
+  ${d.redrill ? `<p><b>REDRILL</b> dari lubang asal <b>${esc(d.lubang_asal ?? "-")}</b></p>` : ""}<table><tr><th>${esc(d.hole_type ?? "")}</th><th>ROD</th><td>${d.rod_m ?? ""} m</td><th>TARGET</th><td>${d.target_m ?? ""} m</td><th>TOTAL DEPTH</th><td>${d.total_depth_m ?? ""} m</td><th>TOTAL HOURS</th><td>${(totMin / 60).toFixed(2)} hours</td></tr></table>
   <h3>4. COMMENTS</h3><p>${esc(d.notes ?? "-")}</p>
   <h3>5. SIGNATURE</h3><table><tr>${sigBox("DRILLER")}${sigBox("WELLSITE")}${sigBox("CLIENT")}</tr></table>
   <h3>Lampiran: foto aktivitas bergeotag</h3><table><tr><th>Jam</th><th>Kegiatan</th><th>Kedalaman</th><th>Koordinat</th><th>Catatan cek</th></tr>${(ev ?? []).map((e) => `<tr><td>${T(e.captured_at).slice(-8)}</td><td>${esc(EV[e.event_type])}${e.reason ? " · " + esc(e.reason) : ""}</td><td>${e.event_type === "RUN" ? `${e.depth_from}–${e.depth_to} (core ${e.core_length})` : ""}</td><td>${e.lat ? `${e.lat.toFixed(5)}, ${e.lon.toFixed(5)} ±${e.gps_accuracy_m}m` : "-"}</td><td>${esc(e.flags ?? "")}</td></tr>`).join("")}</table>
@@ -3319,14 +3331,14 @@ async function waProgresClient(st0) {
       L.push("", `🕳️ *Per titik bor*`);
       for (const b of titik) { const xs = per.filter((x) => x.bhid === b), mm = xs.reduce((s, x) => s + x.m, 0), cr = xs.filter((x) => x.coring && x.core != null), ci = cr.reduce((s, x) => s + x.m, 0);
         const rec = ci ? (100 * cr.reduce((s, x) => s + x.core, 0)) / ci : null, t = TG[b], st = statusL(b), nc = n(HL[b]?.jumlah_conto);
-        L.push(`*${b}*${/\dR$/.test(kunciBH(b)) ? " (redrill)" : ""} · ${[...new Set(xs.map((x) => x.rig))].join("/")}`);
+        L.push(`*${b}*${asalRedrill(b) ? " (redrill)" : ""} · ${[...new Set(xs.map((x) => x.rig))].join("/")}`);
         L.push(`   Kedalaman ${fm(dalam(b), 2)} m${t ? ` / target ${fm(t)} m` : ""} · +${fm(mm, 2)} m ${harian ? "hari ini" : "periode ini"}`);
         L.push(`   ${[o.conto && rec != null ? `Recovery ${fm(rec, 0)}%` : null, o.conto && nc ? `conto ${nc}` : null, `status ${st === "berjalan" ? "lanjut bor" : st}`].filter(Boolean).join(" · ")}`); }
     } else if (titik.length) L.push(`• Titik dikerjakan: ${titik.join(", ")}`);
     L.push("");
     if (o.kum) {
       const setSelesai = new Set([...LB.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)).map((x) => x.bhid), ...hl.filter((h) => h.stop_date && h.stop_date.slice(0, 10) <= to).map((h) => h.bhid)]);
-      const dibor = new Set(semua.map((x) => x.bhid)), mCum = semua.reduce((s, x) => s + x.m, 0), mRed = semua.filter((x) => /\dR$/.test(kunciBH(x.bhid))).reduce((s, x) => s + x.m, 0);
+      const dibor = new Set(semua.map((x) => x.bhid)), mCum = semua.reduce((s, x) => s + x.m, 0), mRed = semua.filter((x) => asalRedrill(x.bhid)).reduce((s, x) => s + x.m, 0);
       const nRen = LB.filter((x) => x.status === "RENCANA" && !dibor.has(x.bhid) && !setSelesai.has(x.bhid)).length, pc = (a, b) => (b ? ` (${Math.round((100 * a) / b)}%)` : "");
       L.push(`📊 *Kumulatif s/d ${tglPendek(to)}*`);
       L.push(`• Total meter bor: *${fm(mCum)} m*${PJ?.target_meter ? ` dari target ${fm(PJ.target_meter, 0)} m${pc(mCum, PJ.target_meter)}` : ""}${mRed ? ` (termasuk redrill ${fm(mRed)} m)` : ""}`);
@@ -3639,11 +3651,14 @@ async function muatRencana() {
 }
 // "DHNPG01", "dh-npg01", "DH NPG 1"? -> ejaan resmi rencana bila hurufnya sama
 const bakuBH = (x) => { const t = String(x ?? "").trim().toUpperCase(); if (!t) return ""; const L = rencanaLokal(), r = L.find((z) => kunciBH(z.bhid) === kunciBH(t)); if (r) return r.bhid;
-  const k = kunciBH(t); if (/R$/.test(k)) { const d = L.find((z) => kunciBH(z.bhid) === k.slice(0, -1)); if (d) return d.bhid + "R"; } // redrill: Hole ID dasar + R
+  const k = kunciBH(t), mr = /^(.*\d)(R\d*)$/.exec(k); if (mr) { const d = L.find((z) => kunciBH(z.bhid) === mr[1]); if (d) return d.bhid + mr[2]; } // redrill: Hole ID dasar + R / R2
   return t; };
 // Redrill = Hole ID dasar + sufiks R (mis. DH-NPG 08R): meter, FROM otomatis, conto dan peta terpisah dari lubang utama
-const jenisDariBH = (b) => (/\dR$/.test(kunciBH(b)) ? "REDRILL" : "UTAMA"); // Hole ID diakhiri angka + R = redrill
-const bhJenis = (b, jenis) => { const x = bakuBH(b); if (!x) return x; if (jenis === "REDRILL") return /R$/.test(kunciBH(x)) ? x : bakuBH(x + "R"); return jenisDariBH(x) === "REDRILL" ? bakuBH(x.replace(/\s*R$/i, "")) : x; };
+const TUJUAN_BOR = ["REGULAR DRILLING", "VERIFICATION DRILLING", "TWIN DRILLING", "REDRILL", "GEOSTATISTICS DRILLING", "SCOUT DRILLING"];
+// Redrill: Hole ID berakhiran R (mis. DH-NPG 12R, DH-NPG 12R2) → lubang asal = tanpa akhiran R
+const asalRedrill = (bh) => { const m = String(bh ?? "").trim().toUpperCase().match(/^(.*\d)\s*R\d*$/); return m ? m[1] : null; };
+const jenisDariBH = (b) => (asalRedrill(b) ? "REDRILL" : "UTAMA");
+const bhJenis = (b, jenis) => { const x = bakuBH(b); if (!x) return x; if (jenis === "REDRILL") return /R$/.test(kunciBH(x)) ? x : bakuBH(x + "R"); return asalRedrill(x) ? bakuBH(asalRedrill(x)) : x; };
 const pilihJenisBor = (id, b) => `<select id="${id}" title="UTAMA = lubang rencana; REDRILL = bor ulang di titik yang sama, Hole ID otomatis bersufiks R"><option value="UTAMA">UTAMA</option><option value="REDRILL" ${jenisDariBH(b) === "REDRILL" ? "selected" : ""}>REDRILL</option></select>`;
 const jarakM = (a, b) => { const R = 6371000, r = Math.PI / 180, dl = (b[1] - a[1]) * r, dn = (b[0] - a[0]) * r;
   const h = Math.sin(dl / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
