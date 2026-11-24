@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-24.6";
+const APP_VERSION = "2026-11-24.7";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1104,7 +1104,7 @@ async function progView(v) {
       <div class="row" style="margin-top:10px"><button id="ok">Ya, simpan</button><button class="sec" id="cx">Batal</button></div><div id="me" class="err"></div>`);
     // FROM run = TO terakhir lubang ini (server + HP); lubang EOH tidak dilanjutkan; boleh diubah
     m.querySelector("#rf").addEventListener("input", (e) => (e.target.dataset.manual = "1"));
-    if (r.bhid) kedalamanTerakhir(r.bhid).then((k) => { const f = m.querySelector("#rf"); if (!f || f.dataset.manual) return;
+    if (r.bhid) kedalamanTerakhir(r.bhid, "run").then((k) => { const f = m.querySelector("#rf"); if (!f || f.dataset.manual) return;
       if (k.eoh) { f.insertAdjacentHTML("afterend", `<small class="err">${esc(r.bhid)} sudah EOH</small>`); return; }
       if (k.to != null && k.to > lastTo) { lastTo = k.to; f.value = fmtD(lastTo); m.querySelector("#sad").value = fmtD(lastTo); } });
     const tp = () => m.querySelector('input[name="et"]:checked').value;
@@ -1731,7 +1731,7 @@ async function ddrView(v) {
   const bhBaris = (o) => `<input data-rbh list="dlBH" placeholder="Hole ID (bila beda)" value="${esc(o.bhid ?? "")}" autocapitalize="characters" style="max-width:130px">`;
   const ohRow = (o = {}) => sambung(addRow("#oh", `<input placeholder="From" inputmode="decimal" value="${fromAuto(o)}"><input placeholder="To" inputmode="decimal" value="${o.to ?? ""}">${bhBaris(o)}`));
   const crRow = (o = {}) => sambung(addRow("#cr", `<input placeholder="From" inputmode="decimal" value="${fromAuto(o)}"><input placeholder="To" inputmode="decimal" value="${o.to ?? ""}"><input placeholder="Core (m)" inputmode="decimal" value="${o.core ?? ""}"><input placeholder="Remark" value="${esc(o.remark ?? "")}">${bhBaris(o)}`));
-  const segarkanFrom = async () => { const b = bakuBH($("#bh").value); if (!b) return; dalamServer = await kedalamanTerakhir(b);
+  const segarkanFrom = async () => { const b = bakuBH($("#bh").value); if (!b) return; dalamServer = await kedalamanTerakhir(b, "ddr");
     const f = v.querySelector("#oh .row input, #cr .row input"); const semua = [...v.querySelectorAll("#oh .row, #cr .row")];
     if (semua.length <= 2 && semua.every((r) => !r.querySelectorAll("input")[1].value.trim())) semua.forEach((r) => { const i = r.querySelector("input"); if (!i.dataset.manual) i.value = dalamServer.eoh ? "" : fdK(dalamServer.to ?? 0); });
     const info = $("#fromInfo"); if (info) info.textContent = dalamServer.eoh ? `${b} sudah EOH — FROM tidak dilanjutkan otomatis.` : dalamServer.to != null ? `Kedalaman terakhir ${b} di server: ${fmtD(dalamServer.to)} m (FROM baris pertama).` : `${b}: belum ada data — FROM mulai 0.`; void f; };
@@ -1853,7 +1853,7 @@ async function ddrView(v) {
   if (online()) {
     const { data } = await sb.from("v_ddr_list").select("id,report_date,shift,rig,bhid,status,meter_bor,coring_ddr_m,selisih_ddr_vs_foto_m,bbm_liter,bbm_per_meter,ttd").order("report_date", { ascending: false }).limit(30);
     $("#lst").innerHTML = `<ul class="list">${(data ?? []).map((d) => `<li style="flex-wrap:wrap"><span class="pill ${d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW"}">${d.status === "SIGNED" ? "LENGKAP" : "DRAF"}</span>
-      <span style="flex:1">${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">Coring DDR ${d.coring_ddr_m ?? 0} m · foto RUN ${d.meter_bor ?? 0} m${Math.abs(d.selisih_ddr_vs_foto_m ?? 0) > 0.1 ? ` <span class="err">(selisih ${d.selisih_ddr_vs_foto_m} m)</span>` : ""} · Diesel ${d.bbm_liter} L${d.bbm_per_meter ? ` (${d.bbm_per_meter} L/m)` : ""}<br>${esc(d.ttd ?? "belum ada TTD")}</span></span>
+      <span style="flex:1">${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">Coring DDR ${d.coring_ddr_m ?? 0} m · Diesel ${d.bbm_liter} L${d.bbm_per_meter ? ` (${d.bbm_per_meter} L/m)` : ""}<br>${esc(d.ttd ?? "belum ada TTD")}</span></span>
       ${!/CLIENT/.test(d.ttd ?? "") ? `<button class="sec" data-sg="${d.id}" style="flex:0">Tanda tangani</button>` : ""}<button class="sec" data-ed="${d.id}" style="flex:0">✏️ Edit run</button><button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`).join("") || `<li class="muted">Belum ada.</li>`}</ul>`;
     $("#lst").querySelectorAll("[data-pr]").forEach((b) => (b.onclick = () => printDDR(b.dataset.pr)));
     $("#lst").querySelectorAll("[data-ed]").forEach((b) => (b.onclick = () => editRunDDR(b.dataset.ed)));
@@ -2003,7 +2003,7 @@ async function printDDR(id) {
   <h3>1. DRILLING</h3><div class="two"><table><tr><th colspan="3">OPEN HOLE (m)</th></tr><tr><th>From</th><th>To</th><th>Interval</th></tr>${oh.map((x) => `<tr><td>${f2(x.from)}</td><td>${f2(x.to)}</td><td>${f2(x.to - x.from)}</td></tr>`).join("")}<tr><th colspan="2">Total</th><th>${f2(sumI(oh))}</th></tr></table>
   <table><tr><th colspan="6">CORING (m) / CORE RESULT</th></tr><tr><th>From</th><th>To</th><th>Interval</th><th>Length</th><th>Recovery</th><th>REMARK</th></tr>${cor.map((x) => `<tr><td>${f2(x.from)}</td><td>${f2(x.to)}</td><td>${f2(x.to - x.from)}</td><td>${f2(x.core)}</td><td>${x.to > x.from ? Math.round((100 * x.core) / (x.to - x.from)) + "%" : ""}</td><td>${esc(x.remark ?? "")}</td></tr>`).join("")}
   <tr><th colspan="2">Total</th><th>${f2(sumI(cor))}</th><th>${f2(sumC)}</th><th>${sumI(cor) ? Math.round((100 * sumC) / sumI(cor)) + "%" : ""}</th><th></th></tr></table></div>
-  <p>Cek silang foto RUN aplikasi: ${S.jumlah_run ?? 0} run · ${S.meter_bor ?? 0} m · core ${S.core_m ?? 0} m${Math.abs(sumI(cor) - (S.meter_bor ?? 0)) > 0.1 ? ` — <b style="color:#b00">selisih ${f2(sumI(cor) - (S.meter_bor ?? 0))} m dengan tulisan DDR</b>` : " — sesuai"}</p>${(elog ?? []).length ? `<p style="color:#8a5a00"><b>Data coring/run diubah setelah DDR terkirim:</b> ${elog.map((l) => `${esc(T(l.edited_at))} oleh ${esc(l.editor_name ?? "-")}${l.status_saat_edit === "SIGNED" ? " (setelah ditandatangani)" : ""} — ${esc(l.reason)}`).join("; ")}</p>` : ""}
+  ${(elog ?? []).length ? `<p style="color:#8a5a00"><b>Data coring/run diubah setelah DDR terkirim:</b> ${elog.map((l) => `${esc(T(l.edited_at))} oleh ${esc(l.editor_name ?? "-")}${l.status_saat_edit === "SIGNED" ? " (setelah ditandatangani)" : ""} — ${esc(l.reason)}`).join("; ")}</p>` : ""}
   <h3>2. HOURLY DISTRIBUTION</h3><table><tr><th>Kelompok</th><th>Kegiatan</th><th>TIME</th><th>DESCRIPTION</th><th>TOTAL (jam)</th></tr>${HOUR_CAT.map(([g, xs]) => xs.map((c) => { const r = hrs.filter((h) => h.kategori === c); const m = r.reduce((s, h) => s + (durMin(h.mulai, h.selesai) ?? 0), 0); return `<tr><td>${g}</td><td>${c}</td><td>${r.map((h) => `${h.mulai}–${h.selesai}`).join(", ")}</td><td>${esc(r.map((h) => h.ket).filter(Boolean).join("; "))}</td><td>${m ? (m / 60).toFixed(2) : ""}</td></tr>`; }).join("")).join("")}<tr><th colspan="4">TOTAL HOURS</th><th>${(totMin / 60).toFixed(2)}</th></tr></table>
   <h3>3. ACCESSORIES AND CONSUMABLES</h3><table><tr><th>Item</th><th>QTY</th><th>UNIT</th><th>Catatan</th></tr>${cats.map((k) => `<tr><th colspan="4">${esc(k)}</th></tr>` + cons.filter((c) => c.kategori === k).map((c) => `<tr><td>${esc(c.item)}</td><td>${c.qty}</td><td>${esc(c.unit)}</td><td>${esc(c.note ?? "")}</td></tr>`).join("")).join("")}</table>
   ${d.redrill ? `<p><b>REDRILL</b> dari lubang asal <b>${esc(d.lubang_asal ?? "-")}</b></p>` : ""}<table><tr><th>${esc(d.hole_type ?? "")}</th><th>ROD</th><td>${d.rod_m ?? ""} m</td><th>TARGET</th><td>${d.target_m ?? ""} m</td><th>TOTAL DEPTH</th><td>${d.total_depth_m ?? ""} m</td><th>TOTAL HOURS</th><td>${(totMin / 60).toFixed(2)} hours</td></tr></table>
@@ -3754,13 +3754,14 @@ async function nextCore(bhid, type) {
   return { lastBox: box, lastTo: to, box: box + 1, from: to };
 }
 // Kedalaman terakhir lubang (maks. TO dari run Progres bor, baris DDR, dan catatan HP) + apakah sudah EOH. STB tetap dilanjutkan.
-async function kedalamanTerakhir(bhid) {
-  const b = bakuBH(bhid); let to = lastRunTo(b) || null, eoh = false;
+// SEMENTARA (24/11): DDR dan foto run TIDAK saling mengisi kedalaman. sumber "ddr" = hanya DDR; "run" = hanya foto run.
+async function kedalamanTerakhir(bhid, sumber = "run") {
+  const b = bakuBH(bhid); let to = sumber === "run" ? lastRunTo(b) || null : null, eoh = false;
   if (online()) try {
     const [{ data: ev }, { data: dd }] = await Promise.all([
       sb.from("drill_event").select("depth_to,event_type,status_akhir").eq("bhid", b).in("event_type", ["RUN", "SELESAI_BOR"]).order("depth_to", { ascending: false }).limit(50),
-      sb.from("ddr").select("coring,open_hole").eq("bhid", b).limit(200)]);
-    for (const e of ev ?? []) { if (+e.depth_to > (to ?? 0)) to = +e.depth_to; if (e.event_type === "SELESAI_BOR" && e.status_akhir === "EOH") eoh = true; }
+      sumber === "ddr" ? sb.from("ddr").select("coring,open_hole").eq("bhid", b).limit(200) : Promise.resolve({ data: [] })]);
+    for (const e of ev ?? []) { if (sumber === "run" && +e.depth_to > (to ?? 0)) to = +e.depth_to; if (e.event_type === "SELESAI_BOR" && e.status_akhir === "EOH") eoh = true; }
     for (const d of dd ?? []) for (const x of [...(d.coring ?? []), ...(d.open_hole ?? [])]) if (+x.to > (to ?? 0)) to = +x.to;
   } catch {}
   return { to, eoh };
