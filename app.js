@@ -196,33 +196,9 @@ async function cekAntreLama() {
   el.style.cssText = `position:static;margin:6px 8px 0;padding:4px 8px;border-radius:8px;font-size:12px;line-height:1.3;box-shadow:0 1px 4px rgba(0,0,0,.2);display:flex;gap:6px;align-items:center;color:#222`;
   const err = L.find((x) => x.error)?.error;
   el.style.background = lama.length ? "#F6C9C3" : "#FFE58A";
-  const info = `${!navigator.onLine ? "HP sedang offline. " : ""}Terkirim otomatis begitu ada sinyal.${err ? `<br>Galat terakhir: ${esc(err)}<br>Data yang gagal bisa dihapus lewat tombol <b>Lihat</b>.` : ""}`;
-  el.innerHTML = `<details style="flex:1;min-width:0"><summary style="cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${lama.length ? `⚠ <b>${lama.length}</b> antre &gt;1 jam` : `⏳ <b>${L.length}</b> antre`}${err ? " · ada galat" : ""}</summary><div style="font-size:11px;margin-top:2px">${info}</div></details><button style="flex:0;white-space:nowrap;padding:3px 8px;font-size:12px;min-height:0" id="antreKirim">Kirim</button><button class="sec" style="flex:0;white-space:nowrap;padding:3px 8px;font-size:12px;min-height:0" id="antreLihat">Lihat</button>`;
+  const info = `${!navigator.onLine ? "HP sedang offline. " : ""}Terkirim otomatis begitu ada sinyal.${err ? `<br>Galat terakhir: ${esc(err)}<br>Data yang gagal bisa dihapus di tab Progres → Antrean progres (tombol 🗑).` : ""}`;
+  el.innerHTML = `<details style="flex:1;min-width:0"><summary style="cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${lama.length ? `⚠ <b>${lama.length}</b> antre &gt;1 jam` : `⏳ <b>${L.length}</b> antre`}${err ? " · ada galat" : ""}</summary><div style="font-size:11px;margin-top:2px">${info}</div></details><button style="flex:0;white-space:nowrap;padding:3px 8px;font-size:12px;min-height:0" id="antreKirim">Kirim</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "…"; await sync(); cekAntreLama(); };
-  el.querySelector("#antreLihat").onclick = () => antreanModal();
-}
-// Daftar semua data di antrean HP: kirim ulang atau hapus item yang galat permanen (DDR, Form Logging, progres, foto, dll.)
-const JENIS_ANTRE = { ddr: "DDR", event: "Progres bor", p2h: "P2H", marking: "Marking", core: "Foto core", arsip: "Arsip foto", keu: "Keuangan", keubukti: "Bukti keuangan", absl: "Absensi tim" };
-const ringkasAntre = (x) => { const r = x.row ?? {};
-  if (x.kind === "ddr") return `${r.rig ?? ""} · ${r.report_date ?? ""} · ${r.shift === "MALAM" ? "Night" : "Day"} · ${r.bhid ?? ""} · TTD ${x.signs?.length ?? 0}`;
-  if (x.kind === "event") return `${EV[r.event_type] ?? r.event_type ?? ""} · ${r.rig ?? ""} ${r.bhid ?? ""}${r.depth_to != null ? ` · ${r.depth_from ?? ""}–${r.depth_to} m` : ""}`;
-  if (x.kind === "core") return `${x.bhid ?? ""} · kotak ${x.box_no ?? "?"} · ${x.depth_from ?? ""}–${x.depth_to ?? ""} m`;
-  if (!x.kind) return `${FORMS?.[x.form_type] ?? "Form Logging"} · ${x.bhid ?? ""}${x.page_no ? ` · hal. ${x.page_no}` : ""}`;
-  return `${r.rig ?? r.bhid ?? r.keterangan ?? ""}`; };
-async function antreanModal() {
-  const L = (await qAll()).sort((a, b) => (a.antre_at ?? 0) - (b.antre_at ?? 0));
-  const m = modal(`<h3 style="margin-top:0">Antrean data di HP (${L.length})</h3>
-    <p class="muted" style="margin-top:0">Data di sini belum sampai di server. Yang galat terus (mis. data ganda, sudah ditandatangani, isian ditolak server) bisa dihapus dari antrean — <b>data itu hilang dari HP</b>, jadi pastikan sudah dikirim ulang lewat cara lain atau memang tidak dipakai.</p>
-    <ul class="list">${L.map((x) => `<li style="flex-wrap:wrap"><span class="pill ${x.error ? "REJECTED" : "ANTRE"}">${esc(x.kind ? JENIS_ANTRE[x.kind] ?? x.kind : "Form Logging")}</span><span style="flex:1;min-width:180px">${esc(ringkasAntre(x))}<br><span class="muted">antre sejak ${x.antre_at ? fmtT(new Date(x.antre_at)) : "-"}</span>${x.error ? `<br><span class="err">${esc(x.error)}</span>` : ""}</span><button class="danger" data-hq="${esc(x.client_uuid)}" style="flex:0">Hapus dari antrean</button></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul>
-    <div class="row"><button class="sec" id="aqT">Tutup</button><button id="aqK">Kirim ulang semua</button></div>`);
-  m.querySelector("#aqT").onclick = () => m.remove();
-  m.querySelector("#aqK").onclick = async () => { m.querySelector("#aqK").textContent = "Mengirim…"; await sync(); m.remove(); antreanModal(); cekAntreLama(); };
-  m.querySelectorAll("[data-hq]").forEach((b) => (b.onclick = async () => {
-    const it = L.find((x) => x.client_uuid === b.dataset.hq); if (!it) return;
-    if (!confirm(`Hapus dari antrean?\n${it.kind ? JENIS_ANTRE[it.kind] ?? it.kind : "Form Logging"}: ${ringkasAntre(it)}\n\nData ini BELUM terkirim dan akan hilang dari HP.${it.kind === "ddr" ? " Tanda tangan di DDR ini ikut hilang." : ""}`)) return;
-    if (it.kind === "core") { const H = JSON.parse(localStorage.getItem("coreHist") || "{}"), k = `${it.photo_type}|${it.bhid}`;
-      if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
-    await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
 const APP_VERSION = "2026-11-24.2";
 if ("serviceWorker" in navigator) {
@@ -236,7 +212,7 @@ if ("serviceWorker" in navigator) {
     if (!hadCtrl) { hadCtrl = true; return; }
     if (document.getElementById("updBar")) return;
     const b = document.createElement("div"); b.id = "updBar";
-    b.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:70;background:#12251E;color:#fff;padding:12px 14px;border-radius:12px;display:flex;gap:10px;align-items:center;box-shadow:0 4px 14px rgba(0,0,0,.3)";
+    b.style.cssText = "position:fixed;left:8px;right:8px;bottom:8px;z-index:50;background:#12251E;color:#fff;padding:12px 14px;border-radius:12px;display:flex;gap:10px;align-items:center;box-shadow:0 4px 14px rgba(0,0,0,.3)";
     b.innerHTML = `<span style="flex:1">Versi baru aplikasi sudah tersedia. Data yang belum terkirim tetap aman di HP.</span><button style="flex:0;white-space:nowrap">Muat ulang</button>`;
     b.querySelector("button").onclick = () => location.reload(); document.body.appendChild(b);
   });
@@ -327,8 +303,8 @@ async function render() {
     $("#out").onclick = () => { localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); sb.auth.signOut(); }; return; }
   if (!["client", "admin", "verifier", "admin_lapangan"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["simpan", "Data tersimpan"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
-    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["simpan", "Data tersimpan"], ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
+  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"]] : []),
+    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
   const PANDUAN = { driller: "driller", geologist: "geologist", verifier: "verifier", admin: "admin", client: "client", admin_lapangan: "admin_lapangan" };
@@ -357,7 +333,6 @@ async function render() {
   if (tab === "ddr") return ddrView($("#v"));
   if (tab === "ttd") return ttdView($("#v"));
   if (tab === "dok") return dokView($("#v"));
-  if (tab === "simpan") return simpanView($("#v"));
   if (tab === "rekap") return rekapView($("#v"));
   if (tab === "dash") return dashView($("#v"));
   if (tab === "klien") return klienView($("#v"));
@@ -1030,16 +1005,12 @@ function simpanPersonilLokal(rig, capturedAt, t, L) {
   localStorage.setItem("namaPersonil", JSON.stringify([...r].sort().slice(-300)));
 }
 async function progView(v) {
-  const tok = (progView.tok = (progView.tok ?? 0) + 1);
   const rig = localStorage.getItem("rig") || "", bh = localStorage.getItem("bhid") || "", shift = localStorage.getItem("shift") || "PAGI";
   const q = (await qAll()).filter((x) => x.kind === "event" || x.kind === "p2h" || x.kind === "marking");
-  if (tok !== progView.tok) return;
   v.innerHTML = `<div class="card"><h2>Progres pemboran</h2>
    <div class="row"><div><label>Rig</label>${rigField()}</div>
    <div><label>Hole ID</label><input id="pb" data-bhid value="${esc(bh)}" autocapitalize="characters"></div>
-   <div style="flex:0.7"><label>Shift</label><select id="sh"><option ${shift === "PAGI" ? "selected" : ""}>PAGI</option><option ${shift === "MALAM" ? "selected" : ""}>MALAM</option></select></div>
-   <div style="flex:0.8"><label>Jenis pemboran</label>${pilihJenisBor("jb", bh)}</div></div>
-   <p class="muted" id="jbInfo" style="margin:2px 0 0"></p>
+   <div style="flex:0.7"><label>Shift</label><select id="sh"><option ${shift === "PAGI" ? "selected" : ""}>PAGI</option><option ${shift === "MALAM" ? "selected" : ""}>MALAM</option></select></div></div>
    <p class="muted">Setiap tombol membuka kamera (atau galeri bila kotak 🖼️ di bawah dicentang). Koordinat GPS dan jam dicatat otomatis dan dicetak di foto. GPS tetap jalan tanpa sinyal internet.</p>
    <div class="big">
     <button data-ev="MASUK">Masuk shift<small>foto kru di lokasi</small></button>
@@ -1060,9 +1031,7 @@ async function progView(v) {
     if (!confirm("Hapus data ini dari antrean HP? Data yang gagal tidak akan pernah terkirim; setelah dihapus, ambil/unggah ulang fotonya.")) return;
     await qDel(b.dataset.qdel); b.closest("li").remove(); cekAntreLama(); toast("Data dihapus dari antrean");
   }));
-  const keep = () => { const b = bhJenis($("#pb").value, $("#jb").value); if (b) $("#pb").value = b; localStorage.setItem("rig", $("#rg").value.trim().toUpperCase()); localStorage.setItem("bhid", b); localStorage.setItem("shift", $("#sh").value); jbInfo(); };
-  const jbInfo = () => { const b = $("#pb").value.trim(); $("#jbInfo").innerHTML = $("#jb").value === "REDRILL" ? `🔁 <b>REDRILL</b> — Hole ID <b>${esc(b || "…R")}</b>, run mulai dari 0 dan meternya terpisah dari lubang utama.` : ""; };
-  $("#jb").onchange = keep; $("#pb").addEventListener("change", () => { $("#jb").value = jenisDariBH(bakuBH($("#pb").value)); keep(); }); jbInfo();
+  const keep = () => { localStorage.setItem("rig", $("#rg").value.trim().toUpperCase()); localStorage.setItem("bhid", bakuBH($("#pb").value)); localStorage.setItem("shift", $("#sh").value); };
   let pending = null, dariGaleri = false;
   v.querySelectorAll("[data-ev]").forEach((b) => (b.onclick = () => {
     keep(); if (!localStorage.getItem("rig")) return ($("#e").textContent = "Isi nama rig dulu.");
@@ -1081,7 +1050,7 @@ async function progView(v) {
     let capturedAt = gal ? ex.time ?? new Date(file.lastModified) : new Date();
     let age = Math.round((Date.now() - (gal ? capturedAt.getTime() : file.lastModified)) / 1000);
     const posP = gal ? Promise.resolve(ex.lat != null ? { lat: ex.lat, lon: ex.lon, acc: null, t: capturedAt.toISOString() } : null) : getPos();
-    const r = { rig: localStorage.getItem("rig"), bhid: localStorage.getItem("bhid") || null }; r.jenis_bor = r.bhid ? jenisDariBH(r.bhid) : "UTAMA";
+    const r = { rig: localStorage.getItem("rig"), bhid: localStorage.getItem("bhid") || null };
     let lastTo = lastRunTo(r.bhid);
     const m = modal(`<h3>Konfirmasi foto</h3><p class="muted">${fmtT(capturedAt)} · ${esc(r.rig)} · ${esc(r.bhid ?? "")}</p>
       ${gal ? `<div class="card" style="background:#FFF4D6;margin:6px 0;font-size:13px">🖼️ <b>Foto dari galeri</b> — ditandai “FOTO GALERI” untuk verifier. Jam ${ex.time ? "terbaca dari data foto" : "<b>tidak terbaca</b> dari data foto (dipakai jam file) — periksa"}; GPS ${ex.lat != null ? "terbaca dari data foto" : "tidak ada di data foto (HP sering menghapusnya), disimpan tanpa GPS"}.
@@ -1095,17 +1064,13 @@ async function progView(v) {
       <div id="runf" class="row"><div><label>FROM (m)</label><input id="rf" inputmode="decimal" value="${fmtD(lastTo)}"></div><div><label>TO (m)</label><input id="rt" inputmode="decimal"></div><div><label>Core (m)</label><input id="rc" inputmode="decimal"></div></div>
       <div id="akhirf" style="display:none"><label>Status akhir lubang *</label><select id="sa"><option value="">— pilih —</option><option value="EOH">EOH — sampai target / bedrock</option><option value="STB">STB — berhenti sebelum target</option></select>
         <label>Kedalaman akhir (m)</label><input id="sad" inputmode="decimal" value="${fmtD(lastTo)}"></div>
-      <div id="dipf" style="display:none"><div class="row"><div><label>Kemiringan / dip (°)</label><input id="dip" inputmode="decimal" value="${esc(rencanaLokal().find((z) => z.bhid === r.bhid)?.dip ?? -90)}"></div><div><label>Azimuth (°)</label><input id="az" inputmode="decimal" value="${esc(rencanaLokal().find((z) => z.bhid === r.bhid)?.azimuth ?? 0)}"></div></div>
+      <div id="dipf" style="display:none"><div class="row"><div><label>Tujuan bor</label><select id="tjb"><option value="">REGULAR DRILLING</option>${TUJUAN_BOR.slice(1).map((k) => `<option ${k === "REDRILL" && asalRedrill(r.bhid) ? "selected" : ""}>${k}</option>`).join("")}</select></div><div id="rdaBox" style="display:${asalRedrill(r.bhid) ? "" : "none"}"><label>Lubang asal (redrill) *</label><input id="rda" value="${esc(asalRedrill(r.bhid) ?? "")}" autocapitalize="characters"></div></div>
+        <div class="row"><div><label>Kemiringan / dip (°)</label><input id="dip" inputmode="decimal" value="${esc(rencanaLokal().find((z) => z.bhid === r.bhid)?.dip ?? -90)}"></div><div><label>Azimuth (°)</label><input id="az" inputmode="decimal" value="${esc(rencanaLokal().find((z) => z.bhid === r.bhid)?.azimuth ?? 0)}"></div></div>
         <p class="muted" style="margin:2px 0 0">−90 = tegak lurus ke bawah. Ubah hanya bila lubang dibor miring.</p></div>
       <div id="psn" style="display:none"><h3 style="margin:12px 0 2px" id="psnT">Personil hadir</h3><p class="muted" id="psnTip" style="margin:0"></p><div id="psnBox"></div></div>
       <div id="rsn"><label>Alasan / keterangan</label><input id="rn" placeholder="mis. mata bor aus, pompa rusak, hujan"></div>
       <p id="gps" class="muted">Mengambil GPS…</p>
       <div class="row" style="margin-top:10px"><button id="ok">Ya, simpan</button><button class="sec" id="cx">Batal</button></div><div id="me" class="err"></div>`);
-    // FROM run = TO terakhir lubang ini (server + HP); lubang EOH tidak dilanjutkan; boleh diubah
-    m.querySelector("#rf").addEventListener("input", (e) => (e.target.dataset.manual = "1"));
-    if (r.bhid) kedalamanTerakhir(r.bhid).then((k) => { const f = m.querySelector("#rf"); if (!f || f.dataset.manual) return;
-      if (k.eoh) { f.insertAdjacentHTML("afterend", `<small class="err">${esc(r.bhid)} sudah EOH</small>`); return; }
-      if (k.to != null && k.to > lastTo) { lastTo = k.to; f.value = fmtD(lastTo); m.querySelector("#sad").value = fmtD(lastTo); } });
     const tp = () => m.querySelector('input[name="et"]:checked').value;
     const TIP_AKHIR = { FOTO_DRILL_PAD: "<b>Foto drill pad</b>: ambil dari jarak ±5–10 m sehingga seluruh pad, lubang/casing dan sekitarnya terlihat; tunjukkan kondisi setelah rig pindah (sudah dibersihkan, lubang ditutup, sampah/oli tidak tertinggal).",
       FOTO_PATOK: "<b>Foto patok</b>: patok berdiri di mulut lubang, tulisan <b>Hole ID</b>, kedalaman akhir dan tanggal harus terbaca jelas (dekatkan kamera ±1 m). Ketik tulisan di patok pada kolom Keterangan." };
@@ -1117,6 +1082,7 @@ async function progView(v) {
         m.querySelector("#psnT").textContent = t === "MASUK" ? "Personil hadir (WSG, driller, crew)" : "Personil yang keluar shift";
         m.querySelector("#psnTip").textContent = t === "MASUK" ? "Tulis semua yang ada di foto. Terisi dari shift terakhir rig ini — hapus yang tidak hadir, tambah yang baru." : "Hapus nama yang sudah pulang lebih dulu."; } };
     m.querySelectorAll('input[name="et"]').forEach((x) => (x.onchange = upd)); upd();
+    m.querySelector("#tjb").onchange = () => { const rd = m.querySelector("#tjb").value === "REDRILL"; m.querySelector("#rdaBox").style.display = rd ? "" : "none"; if (rd && !m.querySelector("#rda").value) m.querySelector("#rda").value = asalRedrill(r.bhid) ?? ""; };
     let pos = null; posP.then((p) => { pos = p; m.querySelector("#gps").textContent = p ? `GPS${gal ? " (data foto)" : ""}: ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}${p.acc != null ? ` (±${p.acc} m)` : ""}` : gal ? "Tanpa GPS (tidak ada di data foto galeri)." : "GPS tidak didapat — aktifkan Lokasi di HP. Foto tetap disimpan dan ditandai.";
       const k = p && cekIUP(p.lon, p.lat); if (k && !k.dalam) m.querySelector("#gps").insertAdjacentHTML("afterend", `<p class="err" style="font-weight:600">⚠ Titik GPS ini berada DI LUAR batas IUP (${esc(k.nama)}). Pastikan lokasi bor benar sebelum mengebor; hubungi WSG/admin.</p>`); });
     m.querySelector("#cx").onclick = () => m.remove();
@@ -1136,6 +1102,14 @@ async function progView(v) {
         if (row.core_length === null) return (m.querySelector("#me").textContent = "Isi panjang core yang terambil.");
       }
       if (t === "MULAI_BOR") {
+        const tj = m.querySelector("#tjb").value;
+        if (tj) row.tujuan_bor = tj;
+        if (tj === "REDRILL") {
+          row.lubang_asal = bakuBH(m.querySelector("#rda").value) || null;
+          if (!asalRedrill(r.bhid)) return (m.querySelector("#me").textContent = `Redrill: Hole ID harus berakhiran R, mis. ${r.bhid ?? "DH-NPG 12"}R. Ubah Hole ID di atas dulu.`);
+          if (!row.lubang_asal) return (m.querySelector("#me").textContent = "Redrill: isi lubang asal.");
+          if (!row.reason) { m.querySelector("#rn").focus(); return (m.querySelector("#me").textContent = "Redrill: tulis alasan redrill di kolom Alasan (mis. recovery rendah, lubang runtuh)."); }
+        } else if (asalRedrill(r.bhid) && !confirm(`Hole ID ${r.bhid} berakhiran R (redrill), tetapi tujuan bor bukan REDRILL. Tetap simpan?`)) return;
         row.dip = num(m.querySelector("#dip").value); row.azimuth = num(m.querySelector("#az").value);
         if (row.dip === null || row.dip < -90 || row.dip > 0) return (m.querySelector("#me").textContent = "Dip antara −90 (tegak) dan 0 (mendatar).");
         if (row.azimuth === null || row.azimuth < 0 || row.azimuth >= 360) return (m.querySelector("#me").textContent = "Azimuth antara 0 dan 359.");
@@ -1520,161 +1494,23 @@ async function signDialog(slot) {
   });
 }
 
-// ---------- Data tersimpan: semua data yang sudah masuk server (sesuai hak akses) + yang masih di antrean HP ----------
-// Progres resmi = meter DDR (coring + open hole); meter run Progres bor hanya pembanding. Client: DDR tanpa BBM/oli & nama crew (fungsi server ddr_proyek_client).
-const JENIS_SIMPAN = { ddr: "DDR", run: "Progres bor", core: "Foto core", scan: "Form Logging", arsip: "Arsip foto", p2h: "P2H", marking: "Marking" };
-async function simpanView(v) {
-  const klien = isClient(), staf = !klien;
-  const F = { dari: new Date(Date.now() - 6 * 864e5).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" }), sampai: todayWIB(), bh: "", rig: "", jenis: "", ...JSON.parse(sessionStorage.getItem("simpanF") || "{}") };
-  v.innerHTML = `<div class="card"><h2>Data tersimpan</h2>
-    <p class="muted" style="margin-top:0">Semua data yang sudah tersimpan${klien ? " untuk proyek Anda" : ""}, termasuk yang <b>masih di antrean HP</b> (belum terkirim). Progres resmi = <b>meter DDR</b> (coring + open hole); meter run hanya pembanding. Ketuk tombol di baris untuk membuka foto atau DDR.</p>
-    <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div style="flex:1 1 130px"><label>Dari</label><input type="date" id="sdF" value="${F.dari}"></div><div style="flex:1 1 130px"><label>Sampai</label><input type="date" id="sdT" value="${F.sampai}"></div>
-      <div style="flex:1 1 130px"><label>Hole ID</label><input id="sdB" data-bhid value="${esc(F.bh)}" placeholder="semua" autocapitalize="characters"></div>
-      <div style="flex:1 1 120px"><label>Rig</label><select id="sdR"><option value="">Semua rig</option>${daftarRig().map((r) => `<option ${r === F.rig ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></div>
-      <div style="flex:1 1 140px"><label>Jenis data</label><select id="sdJ"><option value="">Semua jenis</option>${Object.entries(JENIS_SIMPAN).filter(([k]) => staf || !["p2h", "marking"].includes(k)).map(([k, l]) => `<option value="${k}" ${k === F.jenis ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-      <button id="sdGo" style="flex:0 0 auto">Tampilkan</button></div></div>
-    <div class="card"><div id="sdSum" class="muted"></div><ul class="list" id="sdL"><li class="muted">Memuat…</li></ul></div>`;
-  const ambil = () => ({ dari: $("#sdF").value, sampai: $("#sdT").value, bh: bakuBH($("#sdB").value), rig: $("#sdR").value, jenis: $("#sdJ").value });
-  $("#sdGo").onclick = () => { sessionStorage.setItem("simpanF", JSON.stringify(ambil())); simpanView(v); };
-  const f = ambil(), wibA = `${f.dari}T00:00:00+07:00`, wibB = new Date(new Date(`${f.sampai}T00:00:00+07:00`).getTime() + 864e5).toISOString();
-  const mau = (k) => !f.jenis || f.jenis === k;
-  const Q = (q, colT = "captured_at", colBh = "bhid", colRig = "rig") => { q = q.gte(colT, colT === "report_date" ? f.dari : wibA).lt(colT, colT === "report_date" ? new Date(new Date(f.sampai).getTime() + 864e5).toISOString().slice(0, 10) : wibB);
-    if (f.bh && colBh) q = q.eq(colBh, f.bh); if (f.rig && colRig) q = q.eq(colRig, f.rig); return q.limit(400); };
-  const B = []; // baris: {t, jenis, judul, ket, status, kelas, aksi:[{l, fn}]}
-  // 1) antrean HP (belum terkirim)
-  for (const x of await qAll()) { const r = x.row ?? {}, jen = x.kind === "ddr" ? "ddr" : x.kind === "event" ? "run" : x.kind === "core" ? "core" : !x.kind ? "scan" : x.kind === "arsip" ? "arsip" : x.kind === "p2h" ? "p2h" : x.kind === "marking" ? "marking" : null;
-    if (!jen || !mau(jen)) continue; const bh = r.bhid ?? x.bhid ?? x.bhid_hint ?? "", rg = r.rig ?? "";
-    if (f.bh && bakuBH(bh) !== f.bh) continue; if (f.rig && rg && rg !== f.rig) continue;
-    B.push({ t: r.captured_at ?? x.captured_at ?? new Date(x.antre_at ?? Date.now()).toISOString(), jenis: jen, judul: ringkasAntre(x), ket: x.error ? `galat: ${x.error}` : "menunggu sinyal", status: "BELUM TERKIRIM", kelas: x.error ? "REJECTED" : "ANTRE", aksi: [{ l: "Antrean", fn: () => antreanModal() }] }); }
-  if (online()) {
-    const jobs = [];
-    // 2) DDR
-    if (mau("ddr")) jobs.push((async () => {
-      let rows = [];
-      if (klien) { const { data, error } = await sb.rpc("ddr_proyek_client", { p_dari: f.dari, p_sampai: f.sampai }); if (error) return B.push({ t: `${f.sampai}T23:59`, jenis: "ddr", judul: "DDR belum bisa ditampilkan", ket: error.message, status: "-", kelas: "NEEDS_REVIEW", aksi: [] }); rows = (data ?? []).filter((d) => (!f.rig || d.rig === f.rig) && (!f.bh || d.bhid === f.bh || [...(d.coring ?? []), ...(d.open_hole ?? [])].some((x) => x.bhid === f.bh))); }
-      else { const { data } = await Q(sb.from("ddr").select("id,report_date,shift,rig,bhid,status,coring,open_hole,consumables,crew_count,driller_name,created_at"), "report_date", null); rows = (data ?? []).filter((d) => !f.bh || d.bhid === f.bh || [...(d.coring ?? []), ...(d.open_hole ?? [])].some((x) => x.bhid === f.bh)); }
-      for (const d of rows) { const bs = [...(d.coring ?? []), ...(d.open_hole ?? [])].filter((x) => +x.to > +x.from), m = bs.reduce((s, x) => s + (+x.to - +x.from), 0);
-        const lb = [...new Set(bs.map((x) => x.bhid || d.bhid).filter(Boolean))], bbm = staf ? (d.consumables ?? []).filter((c) => c.kategori === "BBM").reduce((s, c) => s + (+c.qty || 0), 0) : null;
-        B.push({ t: `${d.report_date}T${d.shift === "MALAM" ? "18" : "06"}:00:00+07:00`, jenis: "ddr", judul: `${d.report_date} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${d.rig} · ${lb.join(", ") || d.bhid || "-"}`,
-          ket: `Meter DDR ${fmtD(m)} m (coring ${fmtD((d.coring ?? []).filter((x) => +x.to > +x.from).reduce((s, x) => s + (+x.to - +x.from), 0))} m)${staf ? ` · crew ${d.crew_count ?? "-"} · BBM ${bbm} L` : ""}`,
-          status: d.status === "SIGNED" ? "LENGKAP TTD" : "DRAF", kelas: d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW", aksi: [{ l: "Lihat DDR", fn: () => (staf ? printDDR(d.id) : ddrClientModal(d)) }] }); }
-    })());
-    // 3) Progres bor (run & kejadian)
-    if (mau("run")) jobs.push(Q(sb.from("drill_event").select("*").order("captured_at", { ascending: false })).then(({ data }) => { for (const e of data ?? []) B.push({ t: e.captured_at, jenis: "run", judul: `${EV[e.event_type] ?? e.event_type} · ${e.rig ?? ""} ${e.bhid ?? ""}${e.jenis_bor === "REDRILL" ? " (redrill)" : ""}`,
-      ket: [e.depth_to != null ? `${e.depth_from ?? "?"}–${e.depth_to} m${e.core_length != null ? ` · core ${e.core_length} m` : ""}` : null, e.status_akhir, e.lat ? "GPS ✓" : "tanpa GPS", e.reason].filter(Boolean).join(" · "), status: "TERKIRIM", kelas: "APPROVED", aksi: e.photo_path ? [{ l: "Foto", fn: () => bukaFile("progress-photos", e.photo_path) }] : [] }); }));
-    // 4) Foto core
-    if (mau("core")) jobs.push(Q(sb.from("core_photo").select("id,bhid,box_no,depth_from,depth_to,photo_type,status,ditolak,alasan_tolak,error,photo_path,preview_path,captured_at"), "captured_at", "bhid", null).then(({ data }) => { for (const c of data ?? []) B.push({ t: c.captured_at, jenis: "core", judul: `${c.bhid} · kotak ${c.box_no ?? "?"} · ${c.depth_from}–${c.depth_to} m${c.photo_type ? ` · ${c.photo_type}` : ""}`,
-      ket: c.ditolak ? `ditolak: ${c.alasan_tolak ?? "-"}` : c.error ?? "", status: c.ditolak ? "DITOLAK" : c.status, kelas: c.ditolak || c.status === "ERROR" ? "REJECTED" : c.status === "APPROVED" ? "APPROVED" : "NEEDS_REVIEW", aksi: [{ l: "Foto", fn: () => bukaFile("core-photos", c.preview_path || c.photo_path) }] }); }));
-    // 5) Form Logging
-    if (mau("scan")) jobs.push(Q(sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,error,photo_path,captured_at,sumber"), "captured_at", "bhid_hint", null).then(({ data }) => { for (const j of data ?? []) B.push({ t: j.captured_at, jenis: "scan", judul: `${FORMS?.[j.form_type] ?? "Form Logging"} · ${j.bhid_hint ?? ""} · hal. ${j.page_no ?? "?"}`,
-      ket: j.error ?? (j.sumber ? `sumber ${j.sumber}` : ""), status: j.status, kelas: j.status === "ERROR" || j.status === "REJECTED" ? "REJECTED" : j.status === "APPROVED" ? "APPROVED" : "NEEDS_REVIEW", aksi: j.photo_path ? [{ l: "Foto", fn: () => bukaFile("scan-photos", j.photo_path) }] : [] }); }));
-    // 6) Arsip foto
-    if (mau("arsip")) jobs.push(Q(sb.from("form_photo").select("id,jenis,rig,bhid,tanggal,shift,halaman,jumlah_halaman,keterangan,photo_path,captured_at")).then(({ data }) => { for (const a of data ?? []) B.push({ t: a.captured_at, jenis: "arsip", judul: `${ARSIP?.[a.jenis] ?? a.jenis} · ${a.rig ?? ""} ${a.bhid ?? ""}${a.halaman ? ` · hal. ${a.halaman}${a.jumlah_halaman ? "/" + a.jumlah_halaman : ""}` : ""}`,
-      ket: [a.tanggal, a.keterangan].filter(Boolean).join(" · "), status: "TERKIRIM", kelas: "APPROVED", aksi: a.photo_path ? [{ l: "Foto", fn: () => bukaFile("scan-photos", a.photo_path) }] : [] }); }));
-    // 7) P2H & marking (staf)
-    if (staf && mau("p2h")) jobs.push(Q(sb.from("p2h_check").select("id,rig,shift,unit,hour_meter,n_not_ok,layak_operasi,photo_path,captured_at"), "captured_at", null).then(({ data }) => { for (const p of data ?? []) B.push({ t: p.captured_at, jenis: "p2h", judul: `P2H ${p.rig ?? ""} · ${p.shift ?? ""}${p.unit ? ` · ${p.unit}` : ""}`,
-      ket: `${p.n_not_ok ?? 0} item tidak OK${p.hour_meter ? ` · HM ${p.hour_meter}` : ""}`, status: p.layak_operasi ? "LAYAK" : "TIDAK LAYAK", kelas: p.layak_operasi ? "APPROVED" : "REJECTED", aksi: p.photo_path ? [{ l: "Foto", fn: () => bukaFile("progress-photos", p.photo_path) }] : [] }); }));
-    if (staf && mau("marking")) jobs.push(Q(sb.from("marking").select("id,bhid,lat,lon,akurasi_m,x_utm,y_utm,catatan,rig,captured_at")).then(({ data }) => { for (const k of data ?? []) B.push({ t: k.captured_at, jenis: "marking", judul: `Marking ${k.bhid ?? ""} · ${k.rig ?? ""}`,
-      ket: `${(+k.lat).toFixed(6)}, ${(+k.lon).toFixed(6)} ±${k.akurasi_m ?? "?"} m${k.catatan ? ` · ${k.catatan}` : ""}`, status: "TERKIRIM", kelas: "APPROVED", aksi: [] }); }));
-    await Promise.all(jobs.map((p) => p.catch((e) => B.push({ t: "", jenis: "-", judul: "Sebagian data gagal dimuat", ket: e.message, status: "-", kelas: "REJECTED", aksi: [] }))));
-  } else B.push({ t: "", jenis: "-", judul: "Offline", ket: "Data di server tampil saat ada sinyal. Yang di bawah ini hanya antrean di HP.", status: "-", kelas: "ANTRE", aksi: [] });
-  B.sort((a, b) => String(b.t).localeCompare(String(a.t)));
-  const hit = {}; for (const b of B) hit[b.jenis] = (hit[b.jenis] ?? 0) + 1;
-  const mDDR = B.filter((b) => b.jenis === "ddr" && b.status !== "BELUM TERKIRIM").reduce((s, b) => s + (Number(/Meter DDR ([\d,]+)/.exec(b.ket)?.[1]?.replace(",", ".")) || 0), 0);
-  $("#sdSum").innerHTML = `${B.length} baris · ${Object.entries(hit).filter(([k]) => JENIS_SIMPAN[k]).map(([k, n]) => `${JENIS_SIMPAN[k]} ${n}`).join(" · ")}${hit.ddr ? ` · <b>meter DDR ${fmtD(mDDR)} m</b>` : ""}`;
-  $("#sdL").innerHTML = B.map((b, i) => `<li style="flex-wrap:wrap"><span class="pill ${b.kelas}">${esc(b.status ?? "")}</span><span style="flex:1;min-width:200px"><b>${esc(JENIS_SIMPAN[b.jenis] ?? "")}</b> · ${esc(b.judul)}<br><span class="muted">${b.t ? esc(fmtT(new Date(b.t))) : ""}${b.ket ? " · " + esc(b.ket) : ""}</span></span>${b.aksi.map((a, k) => `<button class="sec" data-sa="${i}:${k}" style="flex:0;white-space:nowrap">${esc(a.l)}</button>`).join("")}</li>`).join("") || `<li class="muted">Tidak ada data untuk filter ini.</li>`;
-  $("#sdL").querySelectorAll("[data-sa]").forEach((el) => (el.onclick = () => { const [i, k] = el.dataset.sa.split(":").map(Number); B[i].aksi[k].fn(); }));
-}
-// DDR untuk client: tanpa BBM/oli dan nama crew
-function ddrClientModal(d) {
-  const bs = (a) => (a ?? []).filter((x) => +x.to > +x.from);
-  const m = modal(`<h3 style="margin-top:0">DDR ${esc(d.rig)} · ${esc(d.report_date)} · ${d.shift === "MALAM" ? "Night" : "Day"}</h3><p class="muted">Status: ${d.status === "SIGNED" ? "lengkap ditandatangani" : "draf"} · Hole ID ${esc(d.bhid ?? "-")}${d.jenis_bor === "REDRILL" ? " · redrill" : ""}</p>
-    <div class="tw"><table><tr><th>Jenis</th><th>Hole ID</th><th>From</th><th>To</th><th>Interval</th><th>Core</th><th>Rec %</th></tr>${[...bs(d.coring).map((x) => ["Coring", x]), ...bs(d.open_hole).map((x) => ["Open hole", x])].map(([j, x]) => `<tr><td>${j}</td><td>${esc(x.bhid || d.bhid || "")}</td><td>${fmtD(x.from)}</td><td>${fmtD(x.to)}</td><td>${fmtD(x.to - x.from)}</td><td>${x.core != null ? fmtD(x.core) : ""}</td><td>${x.core != null ? Math.round((100 * x.core) / (x.to - x.from)) : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">Tidak ada meter bor.</td></tr>`}</table></div>
-    <h4>Distribusi jam</h4><div class="tw"><table><tr><th>Mulai</th><th>Selesai</th><th>Kegiatan</th><th>Keterangan</th></tr>${(d.hours ?? []).map((h) => `<tr><td>${esc(h.mulai ?? "")}</td><td>${esc(h.selesai ?? "")}</td><td>${esc(h.kategori ?? "")}</td><td>${esc(h.ket ?? "")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">-</td></tr>`}</table></div>
-    <div style="margin-top:8px"><button id="dcT">Tutup</button></div>`);
-  m.querySelector("#dcT").onclick = () => m.remove();
-}
-
-// ---------- Edit langsung dari Dashboard: klik kanan (komputer) / tekan lama ±0,6 detik (HP) pada grafik atau baris tabel ----------
-// Menu: Lihat DDR · Edit DDR (DRAF: pengirim/verifier/admin; DDR bertanda tangan dikunci, admin bisa Buka TTD dengan alasan) · Lihat foto run.
-async function menuEditData(o) {
-  if (isClient() || !online()) return;
-  const ver = ["verifier", "admin"].includes(me?.role), adm = me?.role === "admin";
-  let q = sb.from("ddr").select("id,report_date,shift,rig,bhid,status,coring,open_hole,created_by").eq("report_date", o.tanggal); if (o.rig) q = q.eq("rig", o.rig);
-  const [{ data: dd }, { data: ev }] = await Promise.all([q.order("rig").order("shift"), (() => { let e = sb.from("v_drill_event_qc").select("bhid,depth_from,depth_to,photo_path,captured_at,rig").eq("event_type", "RUN").eq("tanggal", o.tanggal); if (o.rig) e = e.eq("rig", o.rig); return e.order("captured_at"); })()]);
-  const meter = (d) => [...(d.coring ?? []), ...(d.open_hole ?? [])].filter((x) => +x.to > +x.from).reduce((s, x) => s + (+x.to - +x.from), 0);
-  const m = modal(`<h3 style="margin-top:0">Data ${esc(o.rig ?? "semua rig")} · ${esc(o.tanggal)}</h3>
-    ${o.konteks ? `<p class="muted" style="margin-top:0">Dari: ${esc(o.konteks)}</p>` : ""}
-    <ul class="list">${(dd ?? []).map((d) => { const milik = d.created_by === session?.user?.id, bisa = d.status !== "SIGNED" && (milik || ver);
-      return `<li style="flex-wrap:wrap"><span class="pill ${d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW"}">${d.status === "SIGNED" ? "TTD" : "DRAF"}</span><span style="flex:1;min-width:170px"><b>DDR ${esc(d.rig)} · ${d.shift === "MALAM" ? "Night" : "Day"}</b> · ${esc(d.bhid ?? "")}<br><span class="muted">meter DDR ${fmtD(meter(d))} m</span></span>
-        <button class="sec" data-lh="${d.id}" style="flex:0">Lihat DDR</button>
-        ${bisa ? `<button data-ed2="${d.id}" style="flex:0">✏️ Edit DDR</button>` : d.status === "SIGNED" ? `<button class="sec" disabled style="flex:0;opacity:.55" title="Sudah ditandatangani">Sudah ditandatangani — minta admin buka kunci</button>${adm ? `<button class="danger" data-bt="${d.id}" style="flex:0">🔓 Buka TTD</button>` : ""}` : `<button class="sec" disabled style="flex:0;opacity:.55">Hanya pengirim/verifier/admin</button>`}</li>`; }).join("") || `<li class="muted">Belum ada DDR untuk ${esc(o.rig ?? "rig ini")} pada tanggal ini.</li>`}</ul>
-    <h4 style="margin:10px 0 4px">Foto run (pembanding)</h4><ul class="list">${(ev ?? []).map((e, i) => `<li><span style="flex:1">${esc(e.rig)} · ${esc(e.bhid ?? "")} · ${fmtD(e.depth_from)}–${fmtD(e.depth_to)} m <span class="muted">${fmtT(new Date(e.captured_at))}</span></span>${e.photo_path ? `<button class="sec" data-fr="${i}" style="flex:0">Foto</button>` : ""}</li>`).join("") || `<li class="muted">Tidak ada foto run.</li>`}</ul>
-    <div style="margin-top:8px"><button class="sec" id="meT">Tutup</button></div>`);
-  m.querySelector("#meT").onclick = () => m.remove();
-  m.querySelectorAll("[data-lh]").forEach((b) => (b.onclick = () => printDDR(b.dataset.lh)));
-  m.querySelectorAll("[data-fr]").forEach((b) => (b.onclick = () => bukaFile("progress-photos", ev[+b.dataset.fr].photo_path)));
-  m.querySelectorAll("[data-ed2]").forEach((b) => (b.onclick = () => { m.remove(); editDDR(b.dataset.ed2, o.sorot); }));
-  m.querySelectorAll("[data-bt]").forEach((b) => (b.onclick = async () => {
-    const alasan = prompt("Alasan membuka tanda tangan DDR ini (wajib, tercatat di log):"); if (!alasan || alasan.trim().length < 5) return alert("Alasan wajib diisi (minimal 5 huruf).");
-    if (!confirm("Semua tanda tangan DDR ini akan dicabut dan DDR kembali menjadi DRAF. Setelah diperbaiki, DDR perlu ditandatangani ulang. Lanjutkan?")) return;
-    const { error } = await sb.rpc("admin_buka_ttd", { p_ddr: b.dataset.bt, p_alasan: alasan.trim() }); if (error) return alert("Gagal: " + error.message);
-    toast("Tanda tangan dibuka — DDR kembali DRAF."); m.remove(); menuEditData(o); }));
-}
-// Buka formulir DDR terisi dari server. Simpan = kirim ulang rig/tanggal/shift yang sama; server mengganti isi DDR DRAF dan menyimpan versi lama (v23).
-function editDDR(id, sorot) { sessionStorage.setItem("ddrEdit", JSON.stringify({ id, sorot: sorot ?? null, dari: tab })); tab = "ddr"; localStorage.setItem("tab", "ddr"); render(); }
-// Pasang klik kanan / tekan lama pada grafik Chart.js dan baris tabel di dalam wadah
-function pasangMenuEdit(wadah, Chart) {
-  if (!wadah || wadah.dataset.menuEdit || isClient()) return; wadah.dataset.menuEdit = "1";
-  const TGL = /\b(20\d\d-\d\d-\d\d)\b/, RIG = /\bRIG\s*\d+\b/i;
-  const dariTitik = (el, ev) => {
-    if (el.tagName === "CANVAS" && Chart) { const ch = Chart.getChart?.(el) ?? Object.values(Chart.instances ?? {}).find((c) => c.canvas === el); if (!ch) return null;
-      const pts = ch.getElementsAtEventForMode(ev, "nearest", { intersect: false }, true); if (!pts.length) return null;
-      const p = pts[0], lbl = String(ch.data.labels?.[p.index] ?? ""), ds = String(ch.data.datasets?.[p.datasetIndex]?.label ?? "");
-      const t = TGL.exec(lbl)?.[1] ?? TGL.exec(ds)?.[1]; if (!t) return null;
-      return { tanggal: t, rig: (RIG.exec(ds) ?? RIG.exec(lbl))?.[0]?.toUpperCase().replace(/\s+/, " ") ?? null, konteks: `${ch.options?.plugins?.title?.text || el.closest("div")?.querySelector("h3,h4,b")?.textContent || "grafik"} · ${ds || lbl}`, sorot: "meter" }; }
-    const tr = el.closest("tr"); if (!tr) return null; const tx = [...tr.children].map((c) => c.textContent.trim()).join(" | ");
-    const t = TGL.exec(tx)?.[1]; if (!t) return null;
-    return { tanggal: t, rig: RIG.exec(tx)?.[0]?.toUpperCase().replace(/\s+/, " ") ?? null, konteks: tx.slice(0, 80), sorot: "meter" }; };
-  const buka = (el, ev) => { const o = dariTitik(el, ev); if (o) { ev.preventDefault?.(); menuEditData(o); return true; } return false; };
-  wadah.addEventListener("contextmenu", (ev) => { buka(ev.target, ev); });
-  let tm = null, awal = null;
-  wadah.addEventListener("touchstart", (ev) => { const t = ev.touches[0]; awal = [t.clientX, t.clientY]; const el = ev.target;
-    tm = setTimeout(() => { tm = null; buka(el, { native: ev, x: t.clientX - el.getBoundingClientRect().left, y: t.clientY - el.getBoundingClientRect().top, type: "click", preventDefault() {} }); }, 600); }, { passive: true });
-  const batal = (ev) => { if (!tm) return; if (ev.type === "touchmove") { const t = ev.touches[0]; if (Math.hypot(t.clientX - awal[0], t.clientY - awal[1]) < 10) return; } clearTimeout(tm); tm = null; };
-  wadah.addEventListener("touchmove", batal, { passive: true }); wadah.addEventListener("touchend", batal);
-}
-
 // ---------- DDR (Daily Drilling Report) ----------
 const HOUR_CAT = [["DRILLING SYSTEM", ["CORING DRILLING", "OPEN HOLE DRILLING"]],
   ["WORKING", ["RIG SET UP/DOWN/PREPARATION", "HOLE CONDITION/CEMENTING", "REAMING, CASING, INSTALLING", "RUNNING/PULL UP/STUCK ROD", "HANDLING HOLE"]],
-  ["ACTIVE/STANDBY", ["TRAVELLING CREW", "P2H+P5M", "DRILL SITE PREPARATION", "WEATHER/UNSAVE CONDITION", "WAITING WATER", "WAITING ACCESS", "SERVICE/MAINTENANCE", "GEOSERVICES/LOGGING"]],
-  ["ISTIRAHAT", ["ISTIRAHAT SIANG"]]]; // bukan standby/perbaikan, bukan jam bor efektif
+  ["ACTIVE/STANDBY", ["TRAVELLING CREW", "P2H+P5M", "DRILL SITE PREPARATION", "WEATHER/UNSAVE CONDITION", "WAITING WATER", "WAITING ACCESS", "SERVICE/MAINTENANCE", "GEOSERVICES/LOGGING"]]];
 const SLOT_LABEL = { DRILLER: "Driller", WELLSITE: "Well site", CLIENT: "Client representative" };
-// "12,30" "12.30" "12:30" "1230" "12" "7.5" → "12:30" / "07:00"; teks tak terbaca dikembalikan apa adanya (server juga merapikan, v21a)
-const bakuJam = (s) => { const t = String(s ?? "").trim().replace(/\s+/g, ""); if (!t) return "";
-  let m = /^(\d{1,2})[:.,;](\d{1,2})$/.exec(t), h, mi;
-  if (m) { h = +m[1]; mi = m[2].length === 1 ? +m[2] * 10 : +m[2]; }
-  else if ((m = /^(\d{3,4})$/.exec(t))) { h = +t.slice(0, -2); mi = +t.slice(-2); }
-  else if ((m = /^(\d{1,2})$/.exec(t))) { h = +t; mi = 0; }
-  else return t;
-  if (h === 24 && mi === 0) h = 0;
-  return h < 24 && mi < 60 ? `${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}` : t; };
-const hm2min = (s) => { const m = /^(\d{2}):(\d{2})$/.exec(bakuJam(s)); return m ? +m[1] * 60 + +m[2] : null; };
-const JAM15 = Array.from({ length: 96 }, (_, i) => `${String(Math.floor(i / 4)).padStart(2, "0")}:${String((i % 4) * 15).padStart(2, "0")}`);
+const hm2min = (s) => { const m = /^(\d{1,2})[:.](\d{2})$/.exec(String(s).trim()); return m && +m[1] < 24 && +m[2] < 60 ? +m[1] * 60 + +m[2] : null; };
 const durMin = (a, b) => { const x = hm2min(a), y = hm2min(b); return x === null || y === null ? null : (y - x + 1440) % 1440; };
 async function ddrView(v) {
-  const tok = (ddrView.tok = (ddrView.tok ?? 0) + 1); // hanya render terbaru yang dilanjutkan
   const items = await cached("ddrItems2", async () => (await sb.from("consumable_item").select("item,unit,kategori").eq("active", true).order("sort")).data);
   cached("signers", async () => (await sb.from("signature_profile").select("user_id,full_name,title")).data);
   const q = (await qAll()).filter((x) => x.kind === "ddr");
-  if (tok !== ddrView.tok) return;
   const shiftNow = shiftDari(new Date()), rig = localStorage.getItem("rig") || "", shift = shiftNow.shift, last = JSON.parse(localStorage.getItem("ddrLast") || "{}"); if (last.v !== 2) delete last.contractor;
   const cats = [...new Set(items.map((i) => i.kategori))];
   v.innerHTML = `<div class="card"><h2>DAILY DRILLING REPORT</h2>
-    <p class="muted">Urutan sama dengan formulir DDR lapangan. Kolom * wajib. Kolom <b>Client</b> diisi nama perusahaan client. Pemakaian barang: isi yang dipakai saja — kolom jumlah yang <b>dikosongkan berarti tidak dipakai</b>. Jam boleh ditulis 12,30 / 12.30 / 1230. FROM baris berikutnya terisi otomatis dari TO sebelumnya.</p>
-    <div class="row"><div><label>PROJECT</label>${myTugas?.project ? `<input id="pj" value="${esc(myTugas.nama ? `${myTugas.project}` : myTugas.project)}" readonly title="Terisi otomatis dari penugasan">` : `<input id="pj" value="${esc(last.project ?? "")}" placeholder="boleh kosong — diisi server dari penugasan">`}</div><div><label>LOCATION</label><input id="lc" value="${esc(last.location ?? "")}"></div></div>
-    <div class="row"><div><label>HOLE ID *</label><input id="bh" data-bhid value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters"></div><div><label>RIG NO *</label>${rigField()}</div><div style="flex:.8"><label>Jenis pemboran</label>${pilihJenisBor("jbd", localStorage.getItem("bhid") || "")}</div><div><label>RIG TYPE</label><input id="rt" value="${esc(last.rig_type ?? "")}"></div></div>
+    <p class="muted">Urutan sama dengan formulir DDR lapangan. Kolom * wajib. Kolom <b>Client</b> diisi nama perusahaan client. Pemakaian barang wajib diisi semua (0 bila tidak dipakai).</p>
+    <div class="row"><div><label>PROJECT</label>${rigTerkunci() ? `<input id="pj" value="${esc(myTugas.project ?? "")}" readonly title="Diatur admin">` : `<input id="pj" value="${esc(last.project ?? "")}">`}</div><div><label>LOCATION</label><input id="lc" value="${esc(last.location ?? "")}"></div></div>
+    <div class="row"><div><label>HOLE ID *</label><input id="bh" data-bhid value="${esc(localStorage.getItem("bhid") || "")}" autocapitalize="characters"></div><div><label>RIG NO *</label>${rigField()}</div><div><label>RIG TYPE</label><input id="rt" value="${esc(last.rig_type ?? "")}"></div></div>
     <div class="row"><div><label>DATE *</label><input id="dt" type="date" value="${shiftNow.tanggal}"></div><div><label>TIME *</label><select id="sh"><option value="PAGI" ${shift === "PAGI" ? "selected" : ""}>Day (06–18)</option><option value="MALAM" ${shift === "MALAM" ? "selected" : ""}>Night (18–06)</option></select></div><div><label>Client *</label><input id="ct" value="${esc(last.contractor ?? "")}"></div></div>
     <div class="row"><div><label>DRILLER *</label>${me?.role === "driller" ? `<input id="dn" value="${esc(me.full_name ?? "")}" readonly title="Nama akun Anda">` : `<input id="dn" value="${esc(last.driller_name ?? "")}">`}</div><div style="flex:.5"><label>CREW *</label><input id="cc" inputmode="numeric" readonly title="Dihitung otomatis: driller + assistant" value="${esc(last.crew_count ?? "")}"></div></div>
     <label>ASSISTANT / CREW lain * <span class="muted">(minimal ${crewMin()} orang termasuk driller)</span></label>
@@ -1683,16 +1519,17 @@ async function ddrView(v) {
     <p class="muted" id="crewInfo" style="margin:4px 0 0"></p>
 
     <h3>1. DRILLING</h3>
-    <p class="muted" id="fromInfo" style="margin:0 0 4px"></p><b>OPEN HOLE (m)</b><div id="oh"></div><button class="sec" id="ohAdd" style="width:auto">+ baris open hole</button>
+    <b>OPEN HOLE (m)</b><div id="oh"></div><button class="sec" id="ohAdd" style="width:auto">+ baris open hole</button>
     <p style="margin:10px 0 0"><b>CORING (m)</b> <span class="muted">Interval = To − From; Recovery = Core / Interval (dihitung otomatis)</span></p>
     <div id="cr"></div><div class="row"><button class="sec" id="crAdd" style="flex:0;white-space:nowrap">+ baris coring</button><button class="sec" id="crFoto" style="flex:0;white-space:nowrap">Isi dari foto RUN</button></div>
 
     <h3>2. HOURLY DISTRIBUTION</h3>
-    <datalist id="dlJam">${JAM15.map((j) => `<option value="${j}">`).join("")}</datalist><div id="hr"></div><button class="sec" id="hrAdd" style="width:auto">+ baris jam</button><div id="hrSum" class="muted" style="margin-top:6px"></div>
+    <div id="hr"></div><button class="sec" id="hrAdd" style="width:auto">+ baris jam</button><div id="hrSum" class="muted" style="margin-top:6px"></div>
 
     <h3>3. ACCESSORIES AND CONSUMABLES</h3>
-    <div class="tw"><table><tr><th>Barang</th><th>QTY</th><th>UNIT</th><th>Catatan</th></tr>${cats.map((k) => `<tr><th colspan="4" style="text-align:left">${esc(k)}</th></tr>` + items.map((it, i) => (it.kategori !== k ? "" : `<tr><td style="padding:4px 6px">${esc(it.item)}</td><td><input data-q="${i}" inputmode="decimal" style="width:80px" placeholder="—"></td><td style="padding:4px 6px">${esc(it.unit)}</td><td><input data-n="${i}"></td></tr>`)).join("")).join("")}</table></div>
-    <div class="row"><div><label>Jenis lubang</label><select id="ht"><option value="VERTICAL/HORIZONTAL">VERTICAL/HORIZONTAL</option><option value="INCLINE">INCLINE</option></select></div><div><label>ROD (m) <span class="muted" title="Panjang total stang bor (rod) yang terpasang di lubang saat akhir shift">ⓘ</span></label><input id="rd" inputmode="decimal" placeholder="panjang stang terpasang"></div></div>
+    <div class="tw"><table><tr><th>Barang</th><th>QTY</th><th>UNIT</th><th>Catatan</th></tr>${cats.map((k) => `<tr><th colspan="4" style="text-align:left">${esc(k)}</th></tr>` + items.map((it, i) => (it.kategori !== k ? "" : `<tr><td style="padding:4px 6px">${esc(it.item)}</td><td><input data-q="${i}" inputmode="decimal" style="width:80px"></td><td style="padding:4px 6px">${esc(it.unit)}</td><td><input data-n="${i}"></td></tr>`)).join("")).join("")}</table></div>
+    <div class="row"><div><label>Redrill?</label><select id="rdr"><option value="">Tidak</option><option value="1">Ya — REDRILL</option></select></div><div id="rdrBox" style="display:none"><label>Lubang asal *</label><input id="rdra" autocapitalize="characters" placeholder="mis. DH-NPG 12"></div></div>
+    <div class="row"><div><label>Jenis lubang</label><select id="ht"><option value="VERTICAL/HORIZONTAL">VERTICAL/HORIZONTAL</option><option value="INCLINE">INCLINE</option></select></div><div><label>ROD (m)</label><input id="rd" inputmode="decimal"></div></div>
     <div class="row"><div><label>TARGET (m)</label><input id="tg" inputmode="decimal" value="${esc(last.target_m ?? "")}"></div><div><label>TOTAL DEPTH (m)</label><input id="td" inputmode="decimal"></div></div>
     <div class="row"><div><label>HM awal</label><input id="h1" inputmode="decimal"></div><div><label>HM akhir</label><input id="h2" inputmode="decimal"></div><div><label>Cuaca</label><select id="wx"><option>Cerah</option><option>Berawan</option><option>Hujan</option><option>Hujan lebat</option></select></div></div>
 
@@ -1703,62 +1540,15 @@ async function ddrView(v) {
     <ul class="list">${q.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.row.rig)} · ${esc(x.row.report_date)} · ${esc(x.row.shift)} · TTD ${x.signs.length}${x.error ? `<br><span class="err">${esc(x.error)}</span>` : ""}</span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
     <div class="card"><h3>DDR terkirim</h3><div id="lst" class="muted">${online() ? "Memuat…" : "Offline."}</div></div>`;
   const num = (s) => (String(s ?? "").trim() === "" ? null : Number(String(s).replace(",", ".")));
-  const EDIT = JSON.parse(sessionStorage.getItem("ddrEdit") || "null"); // mode edit dari Dashboard / Data tersimpan
   const addRow = (box, html) => { const d = document.createElement("div"); d.className = "row"; d.style.alignItems = "center"; d.innerHTML = html + `<button class="sec" style="flex:0" title="hapus">✕</button>`; d.lastChild.onclick = () => { d.remove(); hrSum(); }; $(box).appendChild(d); return d; };
-  // FROM otomatis = TO terdalam baris yang sudah ada (open hole + coring), atau kedalaman terakhir lubang di server; kecuali lubang sudah EOH. Boleh diubah.
-  let dalamServer = { to: null, eoh: false };
-  const toTerakhir = () => { const rs = [...v.querySelectorAll("#oh .row, #cr .row")], akhir = rs[rs.length - 1]?.querySelector("[data-rbh]")?.value.trim() ?? "";
-    const xs = rs.filter((r) => (r.querySelector("[data-rbh]")?.value.trim() ?? "") === akhir).map((r) => num(r.querySelectorAll("input")[1].value)).filter((x) => Number.isFinite(x));
-    return xs.length ? Math.max(...xs) : akhir ? 0 : dalamServer.eoh ? null : dalamServer.to; };
-  const fdK = (x) => (x == null || !Number.isFinite(+x) ? "" : fmtD(x));
-  const fromAuto = (o) => { if (o.bhid === undefined && !o.kosong) { const rs = [...v.querySelectorAll("#oh .row, #cr .row")]; o.bhid = rs[rs.length - 1]?.querySelector("[data-rbh]")?.value.trim() ?? ""; } return o.from ?? (o.kosong ? "" : fdK(toTerakhir())); };
-  const sambung = (d) => { const [f, t] = d.querySelectorAll("input"); t.addEventListener("change", () => { const nx = d.nextElementSibling?.querySelector("input"); if (nx && !nx.value.trim()) nx.value = t.value.trim(); }); f.addEventListener("input", () => (f.dataset.manual = "1")); return d; };
-  // kolom Hole ID per baris: kosong = Hole ID di atas; diisi bila satu shift mengebor dua lubang (mis. pindah titik setelah STB/EOH)
-  const bhBaris = (o) => `<input data-rbh list="dlBH" placeholder="Hole ID (bila beda)" value="${esc(o.bhid ?? "")}" autocapitalize="characters" style="max-width:130px">`;
-  const ohRow = (o = {}) => sambung(addRow("#oh", `<input placeholder="From" inputmode="decimal" value="${fromAuto(o)}"><input placeholder="To" inputmode="decimal" value="${o.to ?? ""}">${bhBaris(o)}`));
-  const crRow = (o = {}) => sambung(addRow("#cr", `<input placeholder="From" inputmode="decimal" value="${fromAuto(o)}"><input placeholder="To" inputmode="decimal" value="${o.to ?? ""}"><input placeholder="Core (m)" inputmode="decimal" value="${o.core ?? ""}"><input placeholder="Remark" value="${esc(o.remark ?? "")}">${bhBaris(o)}`));
-  const segarkanFrom = async () => { const b = bakuBH($("#bh").value); if (!b) return; dalamServer = await kedalamanTerakhir(b);
-    const f = v.querySelector("#oh .row input, #cr .row input"); const semua = [...v.querySelectorAll("#oh .row, #cr .row")];
-    if (semua.length <= 2 && semua.every((r) => !r.querySelectorAll("input")[1].value.trim())) semua.forEach((r) => { const i = r.querySelector("input"); if (!i.dataset.manual) i.value = dalamServer.eoh ? "" : fdK(dalamServer.to ?? 0); });
-    const info = $("#fromInfo"); if (info) info.textContent = dalamServer.eoh ? `${b} sudah EOH — FROM tidak dilanjutkan otomatis.` : dalamServer.to != null ? `Kedalaman terakhir ${b} di server: ${fmtD(dalamServer.to)} m (FROM baris pertama).` : `${b}: belum ada data — FROM mulai 0.`; void f; };
-  // jam: ketik bebas (12,30 / 1230) atau pilih dari daftar per 15 menit; dirapikan ke HH:MM saat keluar kolom; jam mulai baris baru = jam selesai baris sebelumnya
-  const jamTerakhir = () => { const r = [...$("#hr").querySelectorAll(".row")].pop(); return r ? bakuJam(r.querySelectorAll("input")[1].value) : ""; };
-  const hrRow = (o = {}) => { const d = addRow("#hr", `<input placeholder="Mulai 06:00" list="dlJam" inputmode="decimal" value="${esc(o.mulai ?? jamTerakhir())}" style="max-width:96px"><input placeholder="Selesai" list="dlJam" inputmode="decimal" value="${esc(o.selesai ?? "")}" style="max-width:96px"><select>${HOUR_CAT.map(([g, xs]) => `<optgroup label="${g}">${xs.map((c) => `<option ${c === o.kategori ? "selected" : ""}>${c}</option>`).join("")}</optgroup>`).join("")}</select><input placeholder="Description">`); d.querySelectorAll("input,select").forEach((el) => (el.oninput = hrSum));
-    const [ja, jb] = d.querySelectorAll("input");
-    for (const j of [ja, jb]) j.addEventListener("blur", () => { j.value = bakuJam(j.value); hrSum(); });
-    jb.addEventListener("change", () => { jb.value = bakuJam(jb.value); const nx = d.nextElementSibling?.querySelector("input"); if (nx && !nx.value.trim()) nx.value = jb.value; hrSum(); });
-    return d; };
-  const hrSum = () => { let t = 0, bad = 0, urut = 0, prev = null; $("#hr").querySelectorAll(".row").forEach((r) => { const [a, b] = r.querySelectorAll("input"); if (!a.value.trim() && !b.value.trim()) return; const m = durMin(a.value, b.value); if (m === null) bad++; else t += m; if (prev !== null && hm2min(a.value) !== null && hm2min(a.value) !== prev) urut++; prev = hm2min(b.value); });
-    const kuning = (x) => ` <span style="background:#FFF1C2;color:#7a5600;padding:1px 6px;border-radius:6px">${x}</span>`;
-    $("#hrSum").innerHTML = `TOTAL HOURS: <b>${(t / 60).toFixed(2)} jam</b>${t > 720 ? kuning("lebih dari 12 jam satu shift — periksa") : ""}${bad ? kuning(`${bad} baris jam belum terbaca (mis. 06:30) — tetap bisa disimpan`) : ""}${urut ? kuning(`${urut} baris tidak menyambung dengan jam selesai baris sebelumnya`) : ""}`; };
+  const ohRow = (o = {}) => addRow("#oh", `<input placeholder="From" inputmode="decimal" value="${o.from ?? ""}"><input placeholder="To" inputmode="decimal" value="${o.to ?? ""}">`);
+  const crRow = (o = {}) => addRow("#cr", `<input placeholder="From" inputmode="decimal" value="${o.from ?? ""}"><input placeholder="To" inputmode="decimal" value="${o.to ?? ""}"><input placeholder="Core (m)" inputmode="decimal" value="${o.core ?? ""}"><input placeholder="Remark" value="${esc(o.remark ?? "")}">`);
+  const hrRow = (o = {}) => { const d = addRow("#hr", `<input placeholder="Mulai 06:00" inputmode="numeric" value="${o.mulai ?? ""}" style="max-width:90px"><input placeholder="Selesai" inputmode="numeric" value="${o.selesai ?? ""}" style="max-width:90px"><select>${HOUR_CAT.map(([g, xs]) => `<optgroup label="${g}">${xs.map((c) => `<option ${c === o.kategori ? "selected" : ""}>${c}</option>`).join("")}</optgroup>`).join("")}</select><input placeholder="Description">`); d.querySelectorAll("input,select").forEach((el) => (el.oninput = hrSum)); return d; };
+  const hrSum = () => { let t = 0, bad = 0; $("#hr").querySelectorAll(".row").forEach((r) => { const [a, b] = r.querySelectorAll("input"); const m = durMin(a.value, b.value); if (m === null) bad++; else t += m; }); $("#hrSum").innerHTML = `TOTAL HOURS: <b>${(t / 60).toFixed(2)} jam</b>${t > 720 ? ` <span class="err">— lebih dari 12 jam satu shift</span>` : ""}${bad ? ` <span class="err">— ${bad} baris jam belum benar (format 06:30)</span>` : ""}`; };
   $("#ohAdd").onclick = () => ohRow(); $("#crAdd").onclick = () => crRow(); $("#hrAdd").onclick = () => hrRow();
-  ohRow({ kosong: true }); crRow({ kosong: true }); hrRow({ mulai: shift === "PAGI" ? "06:00" : "18:00", kategori: "P2H+P5M" }); hrSum();
-  $("#jbd").onchange = () => { const b = bhJenis($("#bh").value, $("#jbd").value); if (b) $("#bh").value = b; segarkanFrom(); };
-  $("#bh").addEventListener("change", () => { $("#jbd").value = jenisDariBH(bakuBH($("#bh").value)); });
-  $("#bh").addEventListener("change", segarkanFrom); if (!EDIT) segarkanFrom();
-  async function isiEditDDR() {
-    const { data: d, error } = online() ? await sb.from("ddr").select("*").eq("id", EDIT.id).single() : { error: { message: "offline" } };
-    if (error || !d) { sessionStorage.removeItem("ddrEdit"); return alert("DDR untuk diedit tidak bisa dimuat: " + (error?.message ?? "tidak ditemukan")); }
-    if (d.status === "SIGNED") { sessionStorage.removeItem("ddrEdit"); return alert("DDR ini sudah ditandatangani. Minta admin membuka tanda tangan (Buka TTD) dulu."); }
-    const set = (id, x) => { const el = $(id); if (el && x != null) el.value = x; };
-    if (![...$("#rg").options ?? []].some((o) => o.value === d.rig) && $("#rg").tagName === "SELECT") $("#rg").insertAdjacentHTML("afterbegin", `<option>${esc(d.rig)}</option>`);
-    set("#rg", d.rig); set("#dt", d.report_date); set("#sh", d.shift); set("#bh", d.bhid); set("#jbd", d.jenis_bor ?? jenisDariBH(d.bhid ?? "")); set("#pj", d.project); set("#lc", d.location); set("#rt", d.rig_type);
-    set("#ct", d.contractor); set("#dn", d.driller_name); set("#ht", d.hole_type); set("#rd", d.rod_m); set("#tg", d.target_m); set("#td", d.total_depth_m); set("#h1", d.hm_start); set("#h2", d.hm_end); set("#wx", d.weather); set("#nt", d.notes);
-    for (const id of ["#rg", "#dt", "#sh"]) { $(id).disabled = true; $(id).title = "Dikunci saat edit: rig, tanggal dan shift menentukan DDR yang diganti"; }
-    isiDaftarCrew((d.crew ?? []).filter((x) => x.jabatan !== "Driller" && x.jabatan !== "WSG"));
-    $("#oh").innerHTML = ""; $("#cr").innerHTML = ""; $("#hr").innerHTML = "";
-    for (const x of d.open_hole ?? []) ohRow({ from: x.from, to: x.to, bhid: x.bhid ?? "" }); if (!(d.open_hole ?? []).length) ohRow({ kosong: true });
-    for (const x of d.coring ?? []) crRow({ from: x.from, to: x.to, core: x.core, remark: x.remark, bhid: x.bhid ?? "" }); if (!(d.coring ?? []).length) crRow({ kosong: true });
-    for (const h of d.hours ?? []) { const r = hrRow({ mulai: h.mulai, selesai: h.selesai, kategori: h.kategori }); r.querySelectorAll("input")[2].value = h.ket ?? ""; } if (!(d.hours ?? []).length) hrRow({});
-    hrSum();
-    for (const c of d.consumables ?? []) { const i = items.findIndex((it) => it.item === c.item); if (i < 0) continue; const q = v.querySelector(`[data-q="${i}"]`); if (q && +c.qty) q.value = String(c.qty).replace(".", ","); const nn = v.querySelector(`[data-n="${i}"]`); if (nn && c.note) nn.value = c.note; }
-    const kartu = v.querySelector(".card"); kartu.insertAdjacentHTML("afterbegin", `<div id="editBanner" style="background:#FFF1C2;border-radius:10px;padding:10px;margin-bottom:8px">✏️ <b>Mode edit DDR</b> ${esc(d.rig)} · ${esc(d.report_date)} · ${d.shift === "MALAM" ? "Night" : "Day"} (${d.status}).<br><span style="font-size:13px">Simpan = isi DDR ini diganti; versi lama tetap tersimpan di server. Tanda tangan yang sudah ada tidak diminta ulang.</span> <button class="sec" id="editBatal" style="width:auto;padding:4px 10px;margin-top:4px">Batal edit</button></div>`);
-    $("#editBatal").onclick = () => { sessionStorage.removeItem("ddrEdit"); tab = EDIT.dari || "dash"; localStorage.setItem("tab", tab); render(); };
-    const sorot = EDIT.sorot === "jam" ? ["#hr"] : EDIT.sorot === "barang" ? [] : ["#oh", "#cr"];
-    for (const id of sorot) { $(id).style.outline = "3px solid #F2B705"; $(id).style.borderRadius = "8px"; }
-    $(sorot[0] ?? "#oh")?.scrollIntoView({ behavior: "smooth", block: "center" });
-    $("#sv").textContent = "Simpan perubahan DDR";
-  }
+  const rdrUpd = (auto) => { const a = asalRedrill(bakuBH($("#bh").value)); if (auto) { $("#rdr").value = a ? "1" : ""; $("#rdra").value = a ?? ""; } $("#rdrBox").style.display = $("#rdr").value ? "" : "none"; if ($("#rdr").value && !$("#rdra").value) $("#rdra").value = a ?? ""; };
+  $("#rdr").onchange = () => rdrUpd(false); $("#bh").addEventListener("change", () => rdrUpd(true)); rdrUpd(true);
+  ohRow(); crRow(); hrRow({ mulai: shift === "PAGI" ? "06:00" : "18:00", kategori: "P2H+P5M" }); hrSum();
   $("#crFoto").onclick = async () => {
     const r = $("#rg").value.trim().toUpperCase(), [a, b] = shiftWindow($("#dt").value, $("#sh").value);
     let ev = (await qAll()).filter((x) => x.kind === "event" && x.row?.event_type === "RUN" && x.row.rig === r && x.row.captured_at >= a && x.row.captured_at < b).map((x) => x.row);
@@ -1780,7 +1570,6 @@ async function ddrView(v) {
   $("#dn").addEventListener("input", hitungCrew);
   isiDaftarCrew((last.crew_list ?? (last.helpers ?? "").split(",").map((n) => ({ nama: n.trim(), jabatan: "Helper" }))).filter((x) => x.nama));
   const isiCrew = async () => {
-    if (EDIT) return; // mode edit: crew diambil dari DDR yang diedit
     const rg = $("#rg").value.trim().toUpperCase(), tg = $("#dt").value, sh = $("#sh").value;
     let L = JSON.parse(localStorage.getItem(kunciPersonil(rg, tg, sh)) || "null");
     if (!L && online()) { const { data } = await sb.from("v_personil_shift").select("personil").eq("rig", rg).eq("tanggal", tg).eq("shift", sh).maybeSingle(); L = data?.personil ?? null; }
@@ -1793,41 +1582,42 @@ async function ddrView(v) {
     info.innerHTML = `<span id="crewMin"></span><br><span class="muted">Diisi dari Masuk shift (Progres bor) — bisa ditambah/diubah.</span>`; hitungCrew();
   };
   ["#rg", "#dt", "#sh"].forEach((id) => $(id).addEventListener("change", isiCrew)); isiCrew();
-  if (EDIT) await isiEditDDR();
   $("#sv").onclick = async () => {
     const val = (id) => $(id).value.trim();
     const rows = (box) => [...$(box).querySelectorAll(".row")].map((r) => [...r.querySelectorAll("input,select")].map((x) => x.value.trim()));
-    const bhH = bhJenis(val("#bh"), $("#jbd").value), bhR = (x) => { const b = bhJenis(x, jenisDariBH(x)); return b && b !== bhH ? b : undefined; };
-    const open_hole = rows("#oh").filter((x) => x[0] || x[1]).map(([f, t, b]) => ({ from: num(f), to: num(t), ...(bhR(b) ? { bhid: bhR(b) } : {}) }));
-    const coring = rows("#cr").filter((x) => x[0] || x[1]).map(([f, t, c, rm, b]) => ({ from: num(f), to: num(t), core: num(c), remark: rm || null, ...(bhR(b) ? { bhid: bhR(b) } : {}) }));
-    const hours = rows("#hr").filter((x) => x[0] || x[1]).map(([m, s, k, d]) => ({ mulai: bakuJam(m), selesai: bakuJam(s), kategori: k, ket: d || null }));
-    const peringatan = []; // tidak menghalangi simpan
+    const open_hole = rows("#oh").filter((x) => x[0] || x[1]).map(([f, t]) => ({ from: num(f), to: num(t) }));
+    const coring = rows("#cr").filter((x) => x[0] || x[1]).map(([f, t, c, rm]) => ({ from: num(f), to: num(t), core: num(c), remark: rm || null }));
+    const hours = rows("#hr").filter((x) => x[0] || x[1]).map(([m, s, k, d]) => ({ mulai: m.replace(".", ":"), selesai: s.replace(".", ":"), kategori: k, ket: d || null }));
     const row = { project: val("#pj") || null, location: val("#lc") || null, rig: val("#rg").toUpperCase(), rig_type: val("#rt") || null, report_date: val("#dt"), shift: $("#sh").value,
-      bhid: bhJenis(val("#bh"), $("#jbd").value) || null, jenis_bor: $("#jbd").value, contractor: val("#ct"), driller_name: val("#dn"), helpers: ambilCrew().map((x) => x.nama).join(", ") || null, crew_count: num(val("#cc")),
+      bhid: bakuBH(val("#bh")) || null, contractor: val("#ct"), driller_name: val("#dn"), helpers: ambilCrew().map((x) => x.nama).join(", ") || null, crew_count: num(val("#cc")),
       crew: [...(val("#dn") ? [{ nama: val("#dn"), jabatan: "Driller" }] : []), ...ambilCrew(), ...crewDDR.filter((x) => x.jabatan === "WSG")],
       hm_start: num(val("#h1")), hm_end: num(val("#h2")), weather: $("#wx").value, notes: val("#nt") || null, hole_type: $("#ht").value, rod_m: num(val("#rd")),
-      target_m: num(val("#tg")), total_depth_m: num(val("#td")), open_hole, coring, hours, captured_at: new Date().toISOString() };
+      target_m: num(val("#tg")), total_depth_m: num(val("#td")), open_hole, coring, hours, captured_at: new Date().toISOString(),
+      ...($("#rdr").value ? { redrill: true, lubang_asal: bakuBH(val("#rdra")) || null } : {}) };
+    if (row.redrill && !row.lubang_asal) return ($("#e").textContent = "Redrill: isi lubang asal.");
+    if (row.redrill && !asalRedrill(row.bhid)) return ($("#e").textContent = `Redrill: Hole ID harus berakhiran R, mis. ${row.lubang_asal ?? "DH-NPG 12"}R.`);
     const miss = ["bhid", "rig", "report_date", "contractor", "driller_name", "crew_count"].filter((k) => row[k] === null || row[k] === "");
     if (miss.length) return ($("#e").textContent = "Lengkapi kolom bertanda * (" + miss.join(", ") + ").");
     if (row.crew_count < crewMin()) return ($("#e").textContent = `Nama crew baru ${row.crew_count} — minimal ${crewMin()} orang (driller + assistant). Tambah dengan "+ crew".`);
     if ([...open_hole, ...coring].some((x) => !(x.to > x.from))) return ($("#e").textContent = "Setiap baris open hole/coring harus To > From.");
     if (coring.some((x) => x.core === null || x.core < 0 || x.core > (x.to - x.from) * 1.05)) return ($("#e").textContent = "Core length kosong atau lebih panjang dari interval run.");
-    if (hours.some((h) => durMin(h.mulai, h.selesai) === null)) peringatan.push(`${hours.filter((h) => durMin(h.mulai, h.selesai) === null).length} baris jam tidak terbaca`);
-    if (!hours.length) peringatan.push("HOURLY DISTRIBUTION belum diisi");
+    if (hours.some((h) => durMin(h.mulai, h.selesai) === null)) return ($("#e").textContent = "Format jam di distribusi jam harus 06:30.");
+    if (!hours.length) return ($("#e").textContent = "Isi minimal satu baris HOURLY DISTRIBUTION.");
     if (row.hm_start !== null && row.hm_end !== null && row.hm_end < row.hm_start) return ($("#e").textContent = "HM akhir lebih kecil dari HM awal.");
-    // Jumlah kosong = tidak dipakai (0). Koma desimal boleh. Teks bukan angka → 0 + teks asli ke catatan (server juga merapikan, v21b).
-    const cons = items.map((it, i) => { const raw = v.querySelector(`[data-q="${i}"]`).value.trim(), note = v.querySelector(`[data-n="${i}"]`).value.trim() || null, q = num(raw);
-      return Number.isFinite(q) ? { ...it, qty: q ?? 0, note } : { ...it, qty: 0, note: [note, `jumlah tertulis: ${raw}`].filter(Boolean).join(" · ") }; });
+    const cons = items.map((it, i) => ({ ...it, qty: num(v.querySelector(`[data-q="${i}"]`).value), note: v.querySelector(`[data-n="${i}"]`).value.trim() || null }));
+    const kosong = cons.filter((c) => c.qty === null || !isFinite(c.qty));
+    if (kosong.length) {
+      items.forEach((it, i) => { const q = v.querySelector(`[data-q="${i}"]`); q.style.borderColor = cons[i].qty === null || !isFinite(cons[i].qty) ? "#C0392B" : ""; });
+      if (!confirm(`${kosong.length} barang di PEMAKAIAN BARANG belum diisi QTY:\n${kosong.map((c) => c.item).join(", ")}\n\nTekan OK bila semua barang itu TIDAK dipakai hari ini (diisi 0 otomatis).\nTekan Batal untuk mengisi sendiri.`))
+        return ($("#e").textContent = `Isi QTY (0 bila tidak dipakai): ${kosong.map((c) => c.item).join(", ")} — kolom yang kosong ditandai merah.`);
+      for (const c of kosong) c.qty = 0;
+      items.forEach((it, i) => { const q = v.querySelector(`[data-q="${i}"]`); if (q.value.trim() === "") { q.value = "0"; q.style.borderColor = ""; } });
+    }
     row.consumables = cons;
-    const tot = hours.reduce((s, h) => s + (durMin(h.mulai, h.selesai) ?? 0), 0);
-    if (tot > 720) peringatan.push(`total jam ${(tot / 60).toFixed(1)} > 12 jam`);
-    if (peringatan.length) toast?.(`Disimpan dengan catatan: ${peringatan.join("; ")}. Bisa diperbaiki lewat Edit.`);
+    const tot = hours.reduce((s, h) => s + durMin(h.mulai, h.selesai), 0);
+    if (tot > 720 && !confirm(`Total jam ${(tot / 60).toFixed(1)} > 12 jam. Tetap simpan?`)) return;
     localStorage.setItem("ddrLast", JSON.stringify({ v: 2, contractor: row.contractor, driller_name: row.driller_name, crew_count: row.crew_count, helpers: row.helpers, crew_list: ambilCrew(), project: row.project, location: row.location, rig_type: row.rig_type, target_m: row.target_m }));
     localStorage.setItem("rig", row.rig); localStorage.setItem("shift", row.shift); localStorage.setItem("bhid", row.bhid);
-    if (EDIT) { // kirim ulang DDR yang sama (rig/tanggal/shift); server mengganti isi DDR DRAF dan menyimpan versi lama
-      await qPut({ kind: "ddr", client_uuid: crypto.randomUUID(), row, signs: [], edit_dari: EDIT.id });
-      sessionStorage.removeItem("ddrEdit"); alert("Perubahan DDR disimpan dan dikirim. Isi DDR lama diganti; versi lama tetap tersimpan di server.");
-      tab = EDIT.dari || "dash"; localStorage.setItem("tab", tab); render(); sync(); return; }
     const signs = [];
     for (const slot of ["DRILLER", "WELLSITE", "CLIENT"]) { const s = await signDialog(slot); if (s) signs.push(s); }
     await qPut({ kind: "ddr", client_uuid: crypto.randomUUID(), row, signs });
@@ -1991,7 +1781,7 @@ async function printDDR(id) {
   <p>Cek silang foto RUN aplikasi: ${S.jumlah_run ?? 0} run · ${S.meter_bor ?? 0} m · core ${S.core_m ?? 0} m${Math.abs(sumI(cor) - (S.meter_bor ?? 0)) > 0.1 ? ` — <b style="color:#b00">selisih ${f2(sumI(cor) - (S.meter_bor ?? 0))} m dengan tulisan DDR</b>` : " — sesuai"}</p>${(elog ?? []).length ? `<p style="color:#8a5a00"><b>Data coring/run diubah setelah DDR terkirim:</b> ${elog.map((l) => `${esc(T(l.edited_at))} oleh ${esc(l.editor_name ?? "-")}${l.status_saat_edit === "SIGNED" ? " (setelah ditandatangani)" : ""} — ${esc(l.reason)}`).join("; ")}</p>` : ""}
   <h3>2. HOURLY DISTRIBUTION</h3><table><tr><th>Kelompok</th><th>Kegiatan</th><th>TIME</th><th>DESCRIPTION</th><th>TOTAL (jam)</th></tr>${HOUR_CAT.map(([g, xs]) => xs.map((c) => { const r = hrs.filter((h) => h.kategori === c); const m = r.reduce((s, h) => s + (durMin(h.mulai, h.selesai) ?? 0), 0); return `<tr><td>${g}</td><td>${c}</td><td>${r.map((h) => `${h.mulai}–${h.selesai}`).join(", ")}</td><td>${esc(r.map((h) => h.ket).filter(Boolean).join("; "))}</td><td>${m ? (m / 60).toFixed(2) : ""}</td></tr>`; }).join("")).join("")}<tr><th colspan="4">TOTAL HOURS</th><th>${(totMin / 60).toFixed(2)}</th></tr></table>
   <h3>3. ACCESSORIES AND CONSUMABLES</h3><table><tr><th>Item</th><th>QTY</th><th>UNIT</th><th>Catatan</th></tr>${cats.map((k) => `<tr><th colspan="4">${esc(k)}</th></tr>` + cons.filter((c) => c.kategori === k).map((c) => `<tr><td>${esc(c.item)}</td><td>${c.qty}</td><td>${esc(c.unit)}</td><td>${esc(c.note ?? "")}</td></tr>`).join("")).join("")}</table>
-  <table><tr><th>${esc(d.hole_type ?? "")}</th><th>ROD</th><td>${d.rod_m ?? ""} m</td><th>TARGET</th><td>${d.target_m ?? ""} m</td><th>TOTAL DEPTH</th><td>${d.total_depth_m ?? ""} m</td><th>TOTAL HOURS</th><td>${(totMin / 60).toFixed(2)} hours</td></tr></table>
+  ${d.redrill ? `<p><b>REDRILL</b> dari lubang asal <b>${esc(d.lubang_asal ?? "-")}</b></p>` : ""}<table><tr><th>${esc(d.hole_type ?? "")}</th><th>ROD</th><td>${d.rod_m ?? ""} m</td><th>TARGET</th><td>${d.target_m ?? ""} m</td><th>TOTAL DEPTH</th><td>${d.total_depth_m ?? ""} m</td><th>TOTAL HOURS</th><td>${(totMin / 60).toFixed(2)} hours</td></tr></table>
   <h3>4. COMMENTS</h3><p>${esc(d.notes ?? "-")}</p>
   <h3>5. SIGNATURE</h3><table><tr>${sigBox("DRILLER")}${sigBox("WELLSITE")}${sigBox("CLIENT")}</tr></table>
   <h3>Lampiran: foto aktivitas bergeotag</h3><table><tr><th>Jam</th><th>Kegiatan</th><th>Kedalaman</th><th>Koordinat</th><th>Catatan cek</th></tr>${(ev ?? []).map((e) => `<tr><td>${T(e.captured_at).slice(-8)}</td><td>${esc(EV[e.event_type])}${e.reason ? " · " + esc(e.reason) : ""}</td><td>${e.event_type === "RUN" ? `${e.depth_from}–${e.depth_to} (core ${e.core_length})` : ""}</td><td>${e.lat ? `${e.lat.toFixed(5)}, ${e.lon.toFixed(5)} ±${e.gps_accuracy_m}m` : "-"}</td><td>${esc(e.flags ?? "")}</td></tr>`).join("")}</table>
@@ -2101,7 +1891,6 @@ async function dashView(v) {
   new Chart(box("c10", "Rata-rata density kering per zona (t/m³)"), { type: "bar", data: { labels: ["Limonit", "Saprolit"], datasets: [{ label: "dry density", data: [avg("dry_density_limonit"), avg("dry_density_saprolit")], backgroundColor: ["#E8892B", "#1E9E69"] }] } });
   await statistikConto(Chart, box, pf?.bhids ?? null); if (basi()) return;
   pasangKlikGrafik(Chart);
-  pasangMenuEdit(document.getElementById("rinci"), Chart); // klik kanan / tekan lama → Lihat/Edit DDR
 }
 // Akun client tidak melihat konsumsi BBM/oli (data biaya internal kontraktor): kolom dibuang dari semua tampilan & unduhan client
 const KOLOM_BBM = /(^|_)(bbm|oli)(_|$)|bbm_per_meter/i;
@@ -2143,7 +1932,6 @@ function tabelModal(judul, kolom, baris, sorot = -1, catatan = "") {
     ${baris.map((r, i) => `<tr${i === sorot ? ' style="background:#FFF1C2;font-weight:700"' : ""}>${r.map((x) => `<td>${esc(x == null ? "" : typeof x === "number" ? (+x.toFixed(3)).toLocaleString("id-ID") : String(x))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${kolom.length}" class="muted">Tidak ada data</td></tr>`}</table></div>
     <div class="row" style="margin-top:8px"><button class="sec" id="tmx">Unduh Excel</button><button id="tmt">Tutup</button></div>`);
   m.querySelector("#tmt").onclick = () => m.remove();
-  pasangMenuEdit(m); // baris bertanggal: klik kanan / tekan lama → Lihat/Edit DDR
   m.querySelector("#tmx").onclick = async () => { const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new(); X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([kolom, ...baris]), "Data"); X.writeFile(wb, `${judul.replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_").slice(0, 60)}.xlsx`); };
   return m;
 }
@@ -3254,7 +3042,7 @@ async function waProgresClient(st0) {
   const S = { jenis: "harian", salam: "Bapak/Ibu", pengirim: me?.full_name ?? "", lubang: true, kum: true, conto: true, kendala: true, rencana: "", catatan: "", ...JSON.parse(localStorage.getItem("waProgres") || "{}") };
   S.rencana = ""; S.catatan = ""; // isi bebas tidak dibawa ke hari berikutnya
   const m = modal(`<h3 style="margin-top:0">💬 Pesan WhatsApp progres untuk client</h3>
-    <p class="muted" style="margin-top:0">Disusun otomatis dari <b>DDR</b> (meter coring + open hole = progres resmi; foto run tidak dipakai), per titik bor untuk semua rig. Tidak memuat BBM/oli, biaya, nama crew maupun kepatuhan operator. Periksa dulu, teks boleh diubah sebelum dikirim.</p>
+    <p class="muted" style="margin-top:0">Disusun otomatis dari data X-Terra. Tidak memuat BBM/oli, biaya, nama crew maupun kepatuhan operator. Periksa dulu, teks boleh diubah sebelum dikirim.</p>
     <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 140px"><label>Jenis laporan</label><select id="waJ"><option value="harian">Harian (satu tanggal)</option><option value="periode">Periode (dari–sampai)</option></select></div>
       <div style="flex:1 1 130px" id="waFw"><label>Dari</label><input type="date" id="waF" value="${esc(st0.from)}"></div>
       <div style="flex:1 1 130px"><label id="waTl">Tanggal</label><input type="date" id="waT" value="${esc(st0.to)}"></div></div>
@@ -3271,72 +3059,73 @@ async function waProgresClient(st0) {
   const n = (x) => Number(x) || 0, fm = (x, d = 1) => n(x).toLocaleString("id-ID", { minimumFractionDigits: d, maximumFractionDigits: d });
   const tglPanjang = (t) => new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const tglPendek = (t) => new Date(t + "T12:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" });
-  // Progres resmi = meter DDR (coring + open hole). Foto run hanya pembanding, tidak dipakai di pesan.
   async function muat(from, to) {
     const k = [from, to, st0.proj, st0.rig].join("|"); if (k === kunci && D) return D; kunci = k;
     sessionStorage.setItem("filterProyek", st0.proj || "");
     const pf = await proyekFilter(), PJs = JSON.parse(localStorage.getItem("projects") || "[]"), PJ = PJs.find((p) => p.code === st0.proj) ?? (PJs.length === 1 ? PJs[0] : null);
-    const { data: pj } = PJ ? await sb.from("project").select("*").eq("code", PJ.code).maybeSingle() : { data: null };
+    const { data: pj } = st0.proj ? await sb.from("project").select("*").eq("code", st0.proj).maybeSingle() : { data: null };
     const R = (q) => (st0.rig ? q.eq("rig", st0.rig) : pf ? q.in("rig", pf.rigs.length ? pf.rigs : ["-"]) : q);
-    const [{ data: dd }, { data: hl }, LB0] = await Promise.all([
-      R(sb.from("ddr").select("rig,report_date,shift,bhid,coring,open_hole,hours,target_m,total_depth_m,status").lte("report_date", to)).order("report_date").order("shift"),
-      sb.from("v_dash_hole").select("bhid,stop_date,eoh,jumlah_conto,recovery_pct"),
+    const inB = (q, col) => (pf ? q.in(col, pf.bhids.length ? pf.bhids : ["-"]) : q);
+    const [{ data: rd }, { data: rdAll }, { data: tm }, { data: hl }, { data: lg }, { data: dd }, LB0] = await Promise.all([
+      R(sb.from("v_dash_rig_day").select("tanggal,rig,meter_bor,recovery_pct").gte("tanggal", from).lte("tanggal", to)),
+      R(sb.from("v_dash_rig_day").select("meter_bor").lte("tanggal", to)),
+      R(sb.from("v_dash_time").select("kegiatan,alasan,menit").gte("tanggal", from).lte("tanggal", to)),
+      inB(sb.from("v_dash_hole").select("bhid,start_date,stop_date,eoh,jumlah_conto,recovery_pct"), "bhid"),
+      R(sb.from("v_logging_lubang").select("bhid,rig,kedalaman_bor,terakhir_bor")),
+      R(sb.from("ddr").select("bhid,rig,report_date,target_m,total_depth_m").lte("report_date", to)).order("report_date"),
       ambilLubangPeta(),
     ]);
     const LB = (LB0.data ?? []).filter((x) => (!pf || pf.bhids.includes(x.bhid) || x.status === "RENCANA") && (!st0.rig || !x.rig || x.rig === st0.rig || x.status === "RENCANA"));
-    return (D = { from, to, PJ: pj ?? PJ, dd: (dd ?? []).filter((d) => !pf || !d.bhid || pf.bhids.includes(d.bhid) || pf.rigs.includes(d.rig)), hl: hl ?? [], LB });
+    return (D = { from, to, PJ: pj ?? PJ, pf, rd: rd ?? [], mCum: (rdAll ?? []).reduce((s, x) => s + n(x.meter_bor), 0), tm: tm ?? [], hl: hl ?? [], lg: lg ?? [], dd: dd ?? [], LB });
   }
-  // satu baris DDR → [{bhid, rig, from, to, m, core, jenis}] ; Hole ID per baris (DDR dua lubang) bila ada, selain itu Hole ID header
-  const barisDDR = (d) => [...(d.coring ?? []).map((x) => ({ ...x, jenis: "coring" })), ...(d.open_hole ?? []).map((x) => ({ ...x, jenis: "open" }))]
-    .filter((x) => Number.isFinite(+x.from) && Number.isFinite(+x.to) && +x.to > +x.from)
-    .map((x) => ({ bhid: x.bhid || d.bhid || "-", rig: d.rig, tgl: d.report_date, from: +x.from, to: +x.to, m: +x.to - +x.from, core: x.jenis === "coring" && x.core != null ? +x.core : null, coring: x.jenis === "coring" }));
-  const KENDALA = ["WEATHER/UNSAVE CONDITION", "WAITING WATER", "WAITING ACCESS", "SERVICE/MAINTENANCE", "HOLE CONDITION/CEMENTING", "RUNNING/PULL UP/STUCK ROD", "DRILL SITE PREPARATION"];
-  const NAMA_K = { "WEATHER/UNSAVE CONDITION": "Cuaca / kondisi tidak aman", "WAITING WATER": "Menunggu air", "WAITING ACCESS": "Menunggu akses", "SERVICE/MAINTENANCE": "Servis / perbaikan rig", "HOLE CONDITION/CEMENTING": "Kondisi lubang / cementing", "RUNNING/PULL UP/STUCK ROD": "Stang terjepit / tarik stang", "DRILL SITE PREPARATION": "Persiapan drill site" };
   const susun = () => {
-    const { from, to, PJ, dd, hl, LB } = D, harian = from === to;
+    const { from, to, PJ, rd, mCum, tm, hl, lg, dd, LB } = D, harian = from === to;
     const L = []; const o = Object.fromEntries([...m.querySelectorAll("[data-wa]")].map((c) => [c.dataset.wa, c.checked]));
     const proyek = PJ?.nama ?? "Proyek eksplorasi nikel", rigTeks = st0.rig ? ` · ${st0.rig}` : "";
     L.push(`*LAPORAN PROGRES PEMBORAN${harian ? " HARIAN" : ""}*`, `*${proyek}*${rigTeks}`, harian ? tglPanjang(to) : `Periode ${tglPendek(from)} – ${tglPendek(to)} ${to.slice(0, 4)}`, "");
-    L.push(`Yth. ${$m("#waS").value.trim() || "Bapak/Ibu"},`, `berikut progres pekerjaan pemboran ${harian ? "hari ini" : "periode ini"} (sumber: DDR):`, "");
-    const semua = dd.flatMap(barisDDR), per = semua.filter((x) => x.tgl >= from && x.tgl <= to), ddPer = dd.filter((d) => d.report_date >= from && d.report_date <= to);
-    const mPer = per.reduce((s, x) => s + x.m, 0), perRig = {}; for (const x of per) perRig[x.rig] = (perRig[x.rig] ?? 0) + x.m;
-    const rigs = [...new Set([...ddPer.map((d) => d.rig), ...Object.keys(perRig)])].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
-    const HL = Object.fromEntries(hl.map((h) => [h.bhid, h])), ST = Object.fromEntries(LB.map((x) => [x.bhid, x]));
-    const dalam = (b) => Math.max(0, ...semua.filter((x) => x.bhid === b).map((x) => x.to));
-    const TG = {}; for (const d of dd) if (d.bhid && d.target_m) TG[d.bhid] = +d.target_m;
-    const statusL = (b) => { const s = ST[b]?.status; return s === "EOH" || s === "STB" ? s : HL[b]?.stop_date ? "selesai" : "berjalan"; };
+    L.push(`Yth. ${$m("#waS").value.trim() || "Bapak/Ibu"},`, `berikut progres pekerjaan pemboran ${harian ? "hari ini" : "periode ini"}:`, "");
+    // periode
+    const mPer = rd.reduce((s, x) => s + n(x.meter_bor), 0), perRig = {};
+    for (const x of rd) perRig[x.rig] = (perRig[x.rig] ?? 0) + n(x.meter_bor);
+    const rigs = Object.keys(perRig).sort(), aktif = rigs.filter((r) => perRig[r] > 0);
+    const hariAktif = new Set(rd.filter((x) => n(x.meter_bor) > 0).map((x) => x.tanggal)).size;
     L.push(`📍 *${harian ? "Hari ini" : "Periode ini"}*`);
-    L.push(`• Meter bor: *${fm(mPer)} m*${rigs.length > 1 ? ` (${rigs.map((r) => `${r} ${fm(perRig[r] ?? 0)} m`).join(" · ")})` : ""}`);
-    if (!harian) { const hari = new Set(per.map((x) => x.tgl)).size; L.push(`• Hari bor aktif: ${hari} · rata-rata ${hari ? fm(mPer / hari) : "0"} m/hari`); }
-    const DDRbelum = harian ? (JSON.parse(localStorage.getItem("projects") || "[]").find((p) => p.code === PJ?.code)?.rigs ?? []).filter((r) => (!st0.rig || r === st0.rig) && !ddPer.some((d) => d.rig === r)) : [];
-    if (DDRbelum.length) L.push(`• DDR belum masuk: ${DDRbelum.join(", ")}`);
-    // per titik (gabungan 2 rig): kedalaman, meter periode, recovery, conto, status
-    const titik = [...new Set(per.map((x) => x.bhid))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
-    if (o.lubang && titik.length) {
-      L.push("", `🕳️ *Per titik bor*`);
-      for (const b of titik) { const xs = per.filter((x) => x.bhid === b), mm = xs.reduce((s, x) => s + x.m, 0), cr = xs.filter((x) => x.coring && x.core != null), ci = cr.reduce((s, x) => s + x.m, 0);
-        const rec = ci ? (100 * cr.reduce((s, x) => s + x.core, 0)) / ci : null, t = TG[b], st = statusL(b), nc = n(HL[b]?.jumlah_conto);
-        L.push(`*${b}*${/\dR$/.test(kunciBH(b)) ? " (redrill)" : ""} · ${[...new Set(xs.map((x) => x.rig))].join("/")}`);
-        L.push(`   Kedalaman ${fm(dalam(b), 2)} m${t ? ` / target ${fm(t)} m` : ""} · +${fm(mm, 2)} m ${harian ? "hari ini" : "periode ini"}`);
-        L.push(`   ${[o.conto && rec != null ? `Recovery ${fm(rec, 0)}%` : null, o.conto && nc ? `conto ${nc}` : null, `status ${st === "berjalan" ? "lanjut bor" : st}`].filter(Boolean).join(" · ")}`); }
-    } else if (titik.length) L.push(`• Titik dikerjakan: ${titik.join(", ")}`);
+    L.push(`• Meter bor: *${fm(mPer)} m*${rigs.length > 1 ? ` (${rigs.map((r) => `${r} ${fm(perRig[r])} m`).join(" · ")})` : ""}`);
+    L.push(harian ? `• Rig beroperasi: ${aktif.length}${rigs.length ? ` dari ${rigs.length}` : ""}` : `• Hari bor aktif: ${hariAktif} hari · rata-rata ${hariAktif ? fm(mPer / hariAktif) : "0"} m/hari aktif`);
+    // lubang dikerjakan pada periode (dari DDR) + status terkini
+    const LG = Object.fromEntries(lg.map((x) => [x.bhid, x])), HL = Object.fromEntries(hl.map((x) => [x.bhid, x])), ST = Object.fromEntries(LB.map((x) => [x.bhid, x]));
+    const TG = {}; for (const d of dd) if (d.bhid) TG[d.bhid] = { target: d.target_m ?? TG[d.bhid]?.target, rig: d.rig ?? TG[d.bhid]?.rig };
+    const dikerjakan = [...new Set(dd.filter((d) => d.bhid && d.report_date >= from && d.report_date <= to).map((d) => d.bhid))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
+    const selesaiP = hl.filter((h) => h.stop_date && h.stop_date.slice(0, 10) >= from && h.stop_date.slice(0, 10) <= to).map((h) => h.bhid);
+    const kedalaman = (b) => n(LG[b]?.kedalaman_bor) || n(HL[b]?.eoh);
+    const statusL = (b) => { const s = ST[b]?.status; return s === "EOH" || s === "STB" ? s : HL[b]?.stop_date ? "selesai" : "berjalan"; };
+    L.push(`• Lubang dikerjakan: ${dikerjakan.length}${selesaiP.length ? ` · selesai ${selesaiP.length} (${selesaiP.join(", ")})` : ""}`);
+    if (o.lubang && dikerjakan.length) {
+      for (const b of dikerjakan.slice(0, 15)) { const t = n(TG[b]?.target), s = statusL(b);
+        L.push(`   – ${b}${TG[b]?.rig || LG[b]?.rig ? ` (${TG[b]?.rig || LG[b]?.rig})` : ""}: ${fm(kedalaman(b), 2)} m${t ? ` / target ${fm(t)} m` : ""} · ${s === "berjalan" ? "berjalan" : s === "selesai" ? "selesai" : s}`); }
+      if (dikerjakan.length > 15) L.push(`   – … dan ${dikerjakan.length - 15} lubang lain`);
+    }
+    if (o.conto) {
+      const recW = rd.filter((x) => x.recovery_pct != null && n(x.meter_bor) > 0), mw = recW.reduce((s, x) => s + n(x.meter_bor), 0);
+      if (mw) L.push(`• Recovery core: ${fm(recW.reduce((s, x) => s + n(x.recovery_pct) * n(x.meter_bor), 0) / mw, 0)}%`);
+    }
     L.push("");
     if (o.kum) {
       const setSelesai = new Set([...LB.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)).map((x) => x.bhid), ...hl.filter((h) => h.stop_date && h.stop_date.slice(0, 10) <= to).map((h) => h.bhid)]);
-      const dibor = new Set(semua.map((x) => x.bhid)), mCum = semua.reduce((s, x) => s + x.m, 0), mRed = semua.filter((x) => /\dR$/.test(kunciBH(x.bhid))).reduce((s, x) => s + x.m, 0);
-      const nRen = LB.filter((x) => x.status === "RENCANA" && !dibor.has(x.bhid) && !setSelesai.has(x.bhid)).length, pc = (a, b) => (b ? ` (${Math.round((100 * a) / b)}%)` : "");
+      const nSelesai = setSelesai.size, nProg = LB.filter((x) => x.status === "PROGRES" && !setSelesai.has(x.bhid)).length, nRen = LB.filter((x) => x.status === "RENCANA" && !setSelesai.has(x.bhid) && !hl.some((h) => h.bhid === x.bhid)).length;
+      const pc = (a, b) => (b ? ` (${Math.round((100 * a) / b)}%)` : "");
       L.push(`📊 *Kumulatif s/d ${tglPendek(to)}*`);
-      L.push(`• Total meter bor: *${fm(mCum)} m*${PJ?.target_meter ? ` dari target ${fm(PJ.target_meter, 0)} m${pc(mCum, PJ.target_meter)}` : ""}${mRed ? ` (termasuk redrill ${fm(mRed)} m)` : ""}`);
-      L.push(`• Titik selesai: *${setSelesai.size}*${PJ?.target_lubang ? ` dari target ${PJ.target_lubang}${pc(setSelesai.size, PJ.target_lubang)}` : ""} · sudah dibor ${dibor.size}${nRen ? ` · rencana belum dibor ${nRen}` : ""}`);
-      if (o.conto) { const nc = hl.filter((h) => dibor.has(h.bhid)).reduce((s, h) => s + n(h.jumlah_conto), 0), cr = semua.filter((x) => x.coring && x.core != null), ci = cr.reduce((s, x) => s + x.m, 0);
+      L.push(`• Total meter bor: *${fm(mCum)} m*${PJ?.target_meter ? ` dari target ${fm(PJ.target_meter, 0)} m${pc(mCum, PJ.target_meter)}` : ""}`);
+      L.push(`• Lubang selesai: *${nSelesai}*${PJ?.target_lubang ? ` dari target ${PJ.target_lubang} lubang${pc(nSelesai, PJ.target_lubang)}` : ""}${nProg ? ` · sedang dibor ${nProg}` : ""}${nRen ? ` · rencana belum dibor ${nRen}` : ""}`);
+      if (o.conto) { const nc = hl.reduce((s, h) => s + n(h.jumlah_conto), 0), rw = hl.filter((h) => h.recovery_pct != null && n(h.eoh) > 0), em = rw.reduce((s, h) => s + n(h.eoh), 0);
         if (nc) L.push(`• Conto/sample terkumpul: ${nc.toLocaleString("id-ID")}`);
-        if (ci) L.push(`• Recovery core rata-rata: ${fm((100 * cr.reduce((s, x) => s + x.core, 0)) / ci, 0)}%`); }
+        if (em) L.push(`• Recovery core rata-rata: ${fm(rw.reduce((s, h) => s + n(h.recovery_pct) * n(h.eoh), 0) / em, 0)}%`); }
       L.push("");
     }
     if (o.kendala) {
-      const K = {}; for (const d of ddPer) for (const h of d.hours ?? []) if (KENDALA.includes(h.kategori)) { const mn = durMin(h.mulai, h.selesai); if (mn) { const k = `${NAMA_K[h.kategori]}${h.ket ? ` (${String(h.ket).trim()})` : ""}`; K[k] = (K[k] ?? { m: 0, r: new Set() }); K[k].m += mn; K[k].r.add(d.rig); } }
-      const top = Object.entries(K).sort((a, b) => b[1].m - a[1].m).filter(([, x]) => x.m >= 15).slice(0, 5);
-      L.push(`⏸️ *Standby / kendala*`, ...(top.length ? top.map(([k, x]) => `• ${k}: ${fm(x.m / 60)} jam${rigs.length > 1 ? ` · ${[...x.r].join("/")}` : ""}`) : ["• Tidak ada kendala berarti"]), "");
+      const K = {}; for (const x of tm.filter((x) => ["Standby", "Perbaikan"].includes(x.kegiatan))) { const k = x.alasan?.trim() || x.kegiatan; K[k] = (K[k] ?? 0) + n(x.menit); }
+      const top = Object.entries(K).sort((a, b) => b[1] - a[1]).filter(([, mn]) => mn >= 15).slice(0, 4);
+      L.push(`⏸️ *Kendala / standby*`, ...(top.length ? top.map(([k, mn]) => `• ${k}: ${fm(mn / 60)} jam`) : ["• Tidak ada kendala berarti"]), "");
     }
     const ren = $m("#waR").value.trim(), cat = $m("#waC").value.trim();
     if (ren) L.push(`🗓️ *Rencana berikutnya*`, ...ren.split(/\n+/).map((x) => `• ${x.replace(/^[•\-–*]\s*/, "")}`), "");
@@ -3345,7 +3134,7 @@ async function waProgresClient(st0) {
     return L.join("\n");
   };
   const pasang = (teks) => { $m("#waX").value = teks; $m("#waW").href = "https://wa.me/?text=" + encodeURIComponent(teks); diubah = false;
-    $m("#waI").textContent = `${teks.length} karakter.${D?.dd.some((d) => d.report_date >= D.from && d.report_date <= D.to) ? "" : " Belum ada DDR untuk tanggal ini — periksa tanggalnya atau tunggu DDR terkirim."}`; };
+    $m("#waI").textContent = `${teks.length} karakter.${D?.rd.length ? "" : " Belum ada laporan harian (DDR/progres) untuk tanggal ini — periksa tanggalnya."}`; };
   const perbarui = async () => {
     const harian = $m("#waJ").value === "harian"; $m("#waFw").style.display = harian ? "none" : ""; $m("#waTl").textContent = harian ? "Tanggal" : "Sampai";
     const to = $m("#waT").value || todayWIB(), from = harian ? to : $m("#waF").value || to;
@@ -3635,13 +3424,10 @@ async function muatRencana() {
   return rencanaLokal();
 }
 // "DHNPG01", "dh-npg01", "DH NPG 1"? -> ejaan resmi rencana bila hurufnya sama
-const bakuBH = (x) => { const t = String(x ?? "").trim().toUpperCase(); if (!t) return ""; const L = rencanaLokal(), r = L.find((z) => kunciBH(z.bhid) === kunciBH(t)); if (r) return r.bhid;
-  const k = kunciBH(t); if (/R$/.test(k)) { const d = L.find((z) => kunciBH(z.bhid) === k.slice(0, -1)); if (d) return d.bhid + "R"; } // redrill: Hole ID dasar + R
-  return t; };
-// Redrill = Hole ID dasar + sufiks R (mis. DH-NPG 08R): meter, FROM otomatis, conto dan peta terpisah dari lubang utama
-const jenisDariBH = (b) => (/\dR$/.test(kunciBH(b)) ? "REDRILL" : "UTAMA"); // Hole ID diakhiri angka + R = redrill
-const bhJenis = (b, jenis) => { const x = bakuBH(b); if (!x) return x; if (jenis === "REDRILL") return /R$/.test(kunciBH(x)) ? x : bakuBH(x + "R"); return jenisDariBH(x) === "REDRILL" ? bakuBH(x.replace(/\s*R$/i, "")) : x; };
-const pilihJenisBor = (id, b) => `<select id="${id}" title="UTAMA = lubang rencana; REDRILL = bor ulang di titik yang sama, Hole ID otomatis bersufiks R"><option value="UTAMA">UTAMA</option><option value="REDRILL" ${jenisDariBH(b) === "REDRILL" ? "selected" : ""}>REDRILL</option></select>`;
+const TUJUAN_BOR = ["REGULAR DRILLING", "VERIFICATION DRILLING", "TWIN DRILLING", "REDRILL", "GEOSTATISTICS DRILLING", "SCOUT DRILLING"];
+// Redrill: Hole ID berakhiran R (mis. DH-NPG 12R, DH-NPG 12R2) → lubang asal = tanpa akhiran R
+const asalRedrill = (bh) => { const m = String(bh ?? "").trim().toUpperCase().match(/^(.*\d)\s*R\d*$/); return m ? m[1] : null; };
+const bakuBH = (x) => { const t = String(x ?? "").trim().toUpperCase(); if (!t) return ""; const r = rencanaLokal().find((z) => kunciBH(z.bhid) === kunciBH(t)); return r ? r.bhid : t; };
 const jarakM = (a, b) => { const R = 6371000, r = Math.PI / 180, dl = (b[1] - a[1]) * r, dn = (b[0] - a[0]) * r;
   const h = Math.sin(dl / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
 function pasangPilihBH(inp) {
@@ -3684,20 +3470,12 @@ async function loadTugas() {
 }
 // Proyek & rig diatur admin (penugasan). Driller/geologist tidak bisa mengetik rig; wellsite dengan >1 rig memilih rig yang sedang diisi.
 const rigTerkunci = () => !!myTugas && !["admin", "verifier", "client"].includes(me?.role);
-// Daftar rig baku: lookup_code RIG (template) + rig proyek dari admin. Admin menambah rig lewat pengaturan proyek.
-function daftarRig() {
-  const pj = JSON.parse(localStorage.getItem("projects") || "[]"), kode = myTugas?.project;
-  const dariProyek = pj.filter((p) => !kode || p.code === kode).flatMap((p) => p.rigs ?? []);
-  const L = [...new Set([...(KAMUS.RIG ?? []).map((x) => x.code), ...dariProyek, ...(myTugas?.rigs ?? [])].map((x) => String(x).trim().toUpperCase()).filter(Boolean))];
-  return (L.length ? L : ["RIG 1", "RIG 2"]).sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
-}
 function rigField() {
-  const cur = (localStorage.getItem("rig") || "").toUpperCase();
-  const rs = rigTerkunci() ? myTugas.rigs ?? [] : [];
-  if (rs.length === 1) return `<input id="rg" value="${esc(rs[0])}" readonly title="Rig diatur admin">`;
-  const L = rs.length > 1 ? rs : daftarRig(), pilih = rs.length > 1 ? myTugas.rig ?? cur : cur;
-  const lbl = (r) => (KAMUS.RIG ?? []).find((x) => x.code === r)?.name ?? r;
-  return `<select id="rg">${L.includes(pilih) || !pilih ? "" : `<option value="${esc(pilih)}" selected>${esc(pilih)}</option>`}<option value="" ${pilih ? "" : "selected"}>— pilih rig —</option>${L.map((r) => `<option value="${esc(r)}" ${r === pilih ? "selected" : ""}>${esc(lbl(r))}</option>`).join("")}</select>`;
+  const cur = localStorage.getItem("rig") || "";
+  if (!rigTerkunci()) return `<input id="rg" value="${esc(cur)}" placeholder="mis. RIG 1" autocapitalize="characters">`;
+  const rs = myTugas.rigs ?? [];
+  if (rs.length > 1) return `<select id="rg">${rs.map((r) => `<option ${myTugas.rig === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select>`;
+  return `<input id="rg" value="${esc(myTugas.rig ?? "")}" placeholder="semua rig proyek" readonly title="Rig diatur admin">`;
 }
 document.addEventListener("change", (e) => {
   if (e.target?.id !== "rg" || e.target.tagName !== "SELECT" || !myTugas) return;
@@ -3732,18 +3510,6 @@ async function nextCore(bhid, type) {
   const Q = (await qAll()).filter((x) => x.kind === "core" && x.bhid === bhid && x.photo_type === type);
   const box = Math.max(L.kotak_terakhir ?? 0, H.box ?? 0, ...Q.map((x) => x.box_no ?? 0)), to = Math.max(Number(L.to_terakhir ?? 0), Number(H.to ?? 0), ...Q.map((x) => Number(x.depth_to)));
   return { lastBox: box, lastTo: to, box: box + 1, from: to };
-}
-// Kedalaman terakhir lubang (maks. TO dari run Progres bor, baris DDR, dan catatan HP) + apakah sudah EOH. STB tetap dilanjutkan.
-async function kedalamanTerakhir(bhid) {
-  const b = bakuBH(bhid); let to = lastRunTo(b) || null, eoh = false;
-  if (online()) try {
-    const [{ data: ev }, { data: dd }] = await Promise.all([
-      sb.from("drill_event").select("depth_to,event_type,status_akhir").eq("bhid", b).in("event_type", ["RUN", "SELESAI_BOR"]).order("depth_to", { ascending: false }).limit(50),
-      sb.from("ddr").select("coring,open_hole").eq("bhid", b).limit(200)]);
-    for (const e of ev ?? []) { if (+e.depth_to > (to ?? 0)) to = +e.depth_to; if (e.event_type === "SELESAI_BOR" && e.status_akhir === "EOH") eoh = true; }
-    for (const d of dd ?? []) for (const x of [...(d.coring ?? []), ...(d.open_hole ?? [])]) if (+x.to > (to ?? 0)) to = +x.to;
-  } catch {}
-  return { to, eoh };
 }
 function lastRunTo(bhid) {
   const L = JSON.parse(localStorage.getItem("lanjut") || "{}")[`RUN|${bhid}`];
