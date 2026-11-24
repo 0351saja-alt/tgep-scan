@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-24.12";
+const APP_VERSION = "2026-11-24.14";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -604,6 +604,10 @@ async function fotoView(v) {
     (a ?? []).filter((j) => j.status === "NEEDS_REVIEW").forEach((j) => { const n = pertanyaanScan(j).length, nk = Object.keys(j.konfirmasi ?? {}).length, li = [...$("#mine").children][items.findIndex((x) => x.id === j.id)];
       if (!li || (!n && !nk)) return; li.insertAdjacentHTML("beforeend", n ? `<button class="warn" data-kf="${j.id}" style="flex:0 0 auto;width:auto;padding:6px 10px">❓ Konfirmasi ${n}</button>` : `<span class="pill APPROVED" style="flex:0">✓ ${nk} dikonfirmasi</span>`); });
     $("#mine").querySelectorAll("[data-kf]").forEach((b) => (b.onclick = () => konfirmasiModal(b.dataset.kf)));
+    // ✏️ Edit isian Form Logging milik sendiri (belum disetujui): buka editor tabel + foto, simpan → dikirim ke verifier
+    (a ?? []).filter((j) => j.status !== "APPROVED" && j.status !== "PROCESSING").forEach((j) => { const li = [...$("#mine").children][items.findIndex((x) => x.id === j.id)];
+      if (li) li.insertAdjacentHTML("beforeend", `<button class="sec" data-edj="${j.id}" style="flex:0 0 auto;width:auto;padding:6px 10px">✏️ Edit</button>`); });
+    $("#mine").querySelectorAll("[data-edj]").forEach((b) => (b.onclick = () => { scrollTo(0, 0); reviewDetail($("#v"), b.dataset.edj, "pengirim"); }));
   } else $("#mine").innerHTML = `<li class="muted">Offline — daftar akan tampil saat ada sinyal.</li>`;
 }
 async function syncArsip(it) {
@@ -634,7 +638,8 @@ async function reviewList(v) {
   v.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { if (await adminDelete("scan_job", b.dataset.del, "scan formulir")) reviewList(v); }));
 }
 
-async function reviewDetail(v, id) {
+async function reviewDetail(v, id, mode) {
+  const pengirim = mode === "pengirim"; // dibuka dari Foto formulir → Kiriman saya: pengirim mengedit isiannya sendiri, lalu dikirim ke verifier
   const { data: j, error } = await sb.from("scan_job").select("*").eq("id", id).single();
   if (error) return (v.innerHTML = `<p class="err">${esc(error.message)}</p>`);
   const { data: url } = await sb.storage.from("scan-photos").createSignedUrl(j.photo_path, 3600);
@@ -647,6 +652,14 @@ async function reviewDetail(v, id) {
   if (j.form_type === "SHEET" && data.header.page == null && j.page_no) data.header.page = j.page_no;
   const isiManual = rowCols.length > 0 && !(data.rows ?? []).length;
   if (isiManual) data.rows = Array.from({ length: 15 }, (_, i) => ({ _row: i + 1 }));
+  // Lembar lanjutan: bila halaman yang sama berisi baris hari sebelumnya yang SUDAH tersimpan (interval From–To sama di lubang yang sama),
+  // baris itu ditandai "sudah tersimpan" dan dilewati; yang disimpan hanya sisanya (baris baru hari ini).
+  let lamaN = 0;
+  if (rowCols.some(([k]) => k === "depth_from") && data.header?.bhid && !isiManual) {
+    const { data: ada } = await sb.from("sample").select("depth_from,depth_to").eq("bhid", bakuBH(data.header.bhid));
+    const sama = (r) => (ada ?? []).some((x) => Math.abs(+x.depth_from - +r.depth_from) < 0.011 && Math.abs(+x.depth_to - +r.depth_to) < 0.011);
+    for (const r of data.rows ?? []) if (r.depth_from != null && r.depth_to != null && sama(r)) { r._lama = true; lamaN++; }
+  }
   const cls = (k) => { const f = cf[k]; if (!f) return ""; return f.some((x) => x.type === "BEDA") ? "f-BEDA" : "f-ATURAN"; };
   const KF = j.konfirmasi ?? {};
   const tip = (k) => [...(cf[k] ?? []).map((x) => x.msg), ...(KF[k] ? [KF[k].tidak_tahu ? `Pengirim (${KF[k].nama}) juga tidak yakin` : `Dikonfirmasi pengirim (${KF[k].nama}): ${KF[k].nilai}`] : [])].join(" | ");
@@ -662,15 +675,18 @@ async function reviewDetail(v, id) {
    <div class="card"><h3>Hasil scan (bisa diedit)</h3>
      <div class="tw"><table><tr>${hdrCols.map(([, t]) => `<th>${t}</th>`).join("")}</tr><tr>${hdrCols.map(([k]) => cell(data.header?.[k], k, null, null)).join("")}</tr></table></div>
      ${rowCols.length ? `<div class="tw" style="margin-top:10px"><table><tr><th>Baris</th>${rowCols.map(([, t]) => `<th>${t}</th>`).join("")}</tr>
-       ${(data.rows ?? []).map((r, i) => `<tr><td style="padding:4px 6px">${r._row ?? i + 1}</td>${rowCols.map(([k]) => cell(r[k], k, i, r._row)).join("")}</tr>`).join("")}</table></div>
+       ${(data.rows ?? []).map((r, i) => `<tr${r._lama ? ' class="lama" style="opacity:.45;background:#eee" title="Sudah tersimpan dari lembar hari sebelumnya — dilewati"' : ""}><td style="padding:4px 6px">${r._row ?? i + 1}${r._lama ? "<br><small>lama</small>" : ""}</td>${rowCols.map(([k]) => cell(r[k], k, i, r._row)).join("")}</tr>`).join("")}</table></div>
+       ${lamaN ? `<p style="background:#E8F1FB;padding:3px 8px;border-radius:6px;margin:4px 0;font-size:11.5px">📄 <b>Lembar lanjutan:</b> ${lamaN} baris pertama sudah tersimpan dari logging hari sebelumnya (abu-abu) dan <b>dilewati</b>. Yang disimpan hanya ${(data.rows ?? []).length - lamaN} baris baru. <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:0"><input type="checkbox" id="ikutLama" style="width:auto"> sertakan juga baris lama (menimpa data tersimpan)</label></p>` : ""}
        <button class="sec" id="addRow" style="width:auto;margin-top:6px">+ Tambah baris</button>` : ""}
    </div></div>
    <div class="card"><h3>Temuan (${flags.length})</h3><ul class="list flags">${flags.map((f) => `<li><span><b>${f.row ? "Baris " + f.row : "Kepala"}</b> · ${esc(f.field)} · ${esc(f.type)} — ${esc(f.msg)}
      ${f.saran !== undefined && f.saran !== null ? `<span class="ab"><button class="sec" data-sar="${esc(f.saran)}" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai saran: ${esc(f.saran)}</button></span>` : ""}
      ${f.type === "BEDA" && f.field !== "*" ? `<span class="ab"><button class="sec" data-pick="a" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai A: ${esc(f.a)}</button><button class="sec" data-pick="b" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai B: ${esc(f.b)}</button></span>` : ""}</span></li>`).join("") || `<li class="muted">Tidak ada temuan.</li>`}</ul></div>
    <div class="card"><label>Catatan pemeriksa</label><textarea id="nt" rows="2"></textarea>
-     <div class="row" style="margin-top:10px"><button id="ok">Setujui & simpan ke database</button><button class="warn" id="re">Proses ulang</button><button class="danger" id="no">Tolak</button></div><div id="e" class="err"></div></div>`;
-  $("#bk").onclick = () => reviewList(v);
+     ${pengirim ? `<p class="muted" style="margin:6px 0">Isian Anda dikirim ke verifier untuk diperiksa & disetujui. Setelah disetujui, data masuk ke database conto.</p><div class="row" style="margin-top:10px"><button id="sv">💾 Simpan isian & kirim ke verifier</button></div>` : ""}
+     <div class="row" style="margin-top:10px;${pengirim ? "display:none" : ""}"><button id="ok">Setujui & simpan ke database</button><button class="warn" id="re">Proses ulang</button><button class="danger" id="no">Tolak</button></div><div id="e" class="err"></div></div>`;
+  $("#bk").onclick = () => (pengirim ? render() : reviewList(v));
+  if (pengirim) { const lb = v.querySelector("#nt")?.previousElementSibling; if (lb) lb.textContent = "Catatan untuk verifier (opsional)"; }
   if ($("#dlx")) $("#dlx").onclick = async (ev) => { ev.preventDefault(); const { data: u2 } = await sb.storage.from("scan-photos").createSignedUrl(j.excel_path, 600, { download: j.file_name || "form_logging.xlsx" }); if (u2?.signedUrl) location.href = u2.signedUrl; };
   // uji silang: foto core pada rentang kedalaman lembar ini
   if (j.form_type === "SHEET" || j.form_type === "LOG") {
@@ -710,7 +726,7 @@ async function reviewDetail(v, id) {
     const inp = v.querySelector(`td input[data-k="${b.dataset.f}"][data-r="${i ?? ""}"]`);
     if (inp) { inp.value = b.dataset.sar; inp.dispatchEvent(new Event("input")); b.disabled = true; }
   }));
-  $("#ok").onclick = async () => {
+  const validasi = () => {
     const adaIsi = (r) => Object.entries(r).some(([k, x]) => k !== "_row" && x !== null && x !== undefined && x !== "");
     const kurangNo = (data.rows ?? []).filter((r) => adaIsi(r) && (r.seq === null || r.seq === undefined));
     if (kurangNo.length) return ($("#e").textContent = `Baris ${kurangNo.map((r) => r._row).join(", ")}: kolom No belum diisi.`);
@@ -723,8 +739,16 @@ async function reviewDetail(v, id) {
       for (const k of Object.keys(r)) if (NUMERIC.has(k) && r[k] !== null && !isFinite(r[k])) return ($("#e").textContent = `Baris ${r._row}: ${k} bukan angka`);
     }
     if (j.form_type === "SHEET") for (const r of data.rows ?? []) { r.geolithcode_prc_2 = r.geolithcode_id_2 && typeof r.geolithcode_prc_1 === "number" ? +(100 - r.geolithcode_prc_1).toFixed(1) : null; r.d_wtr_volume_ml = typeof r.d_volume_measure_ml === "number" ? 1400 : null; }
+    const ikut = $("#ikutLama")?.checked;
+    return { ...data, rows: (data.rows ?? []).filter((r) => adaIsi(r) && (ikut || !r._lama)).map(({ _lama, ...r }) => r) };
+  };
+  if (pengirim) $("#sv").onclick = async () => { $("#e").textContent = ""; const isi = validasi(); if (typeof isi !== "object") return;
+    $("#sv").disabled = true; const { error } = await sb.rpc("simpan_isian_scan", { p_job: id, p_data: isi, p_note: $("#nt").value || null }); $("#sv").disabled = false;
+    if (error) return ($("#e").textContent = error.message); toast("Isian tersimpan — menunggu diperiksa verifier"); render(); };
+  $("#ok").onclick = async () => {
+    const isi = validasi(); if (typeof isi !== "object") return;
     $("#ok").disabled = true;
-    const { data: res, error } = await sb.rpc("approve_scan", { p_job: id, p_data: { ...data, rows: (data.rows ?? []).filter(adaIsi) }, p_note: $("#nt").value || null });
+    const { data: res, error } = await sb.rpc("approve_scan", { p_job: id, p_data: isi, p_note: $("#nt").value || null });
     $("#ok").disabled = false;
     if (error) return ($("#e").textContent = error.message);
     alert(`Tersimpan: ${res.rows_written} baris untuk ${res.bhid}. Cek hasil hitung di tab "Data & cek".`); reviewList(v);
@@ -738,18 +762,19 @@ async function reviewDetail(v, id) {
 }
 
 async function dataView(v) {
-  v.innerHTML = `<div class="card"><h2>Data tersimpan & hasil cek</h2><div class="row"><select id="bh"><option value="">Memuat daftar titik…</option></select><button id="go" style="flex:0">Tampilkan</button></div><div id="dout"></div></div>`;
+  v.innerHTML = `<div class="card" id="ddrLog"></div><div class="card"><h2>Data tersimpan & hasil cek</h2><div class="row"><select id="bh"><option value="">Memuat daftar titik…</option></select><button id="go" style="flex:0">Tampilkan</button></div><div id="dout"></div></div>`;
   // Dropdown titik yang sudah masuk database (conto logging / lubang dibor), terbaru dipilih otomatis
   (async () => {
-    const [{ data: H }, { data: G }] = await Promise.all([sb.from("v_dash_hole").select("bhid,jumlah_conto"), sb.from("v_logging_lubang").select("bhid,kedalaman_bor,status")]);
+    const [{ data: H }, { data: G }, { data: DB }] = await Promise.all([sb.from("v_dash_hole").select("bhid,jumlah_conto"), sb.from("v_logging_lubang").select("bhid,kedalaman_bor,status"), sb.from("v_ddr_baris").select("bhid").limit(5000)]);
     const A = {}; for (const h of H ?? []) A[h.bhid] = { ...A[h.bhid], conto: +h.jumlah_conto || 0 };
     for (const g of G ?? []) A[g.bhid] = { ...A[g.bhid], dalam: g.kedalaman_bor, st: g.status };
+    for (const x of DB ?? []) A[x.bhid] = { conto: 0, ...A[x.bhid] };
     const L = Object.keys(A).filter(Boolean).sort((a, b) => a.localeCompare(b, "id", { numeric: true })), pil = localStorage.getItem("bhid") || "";
     $("#bh").innerHTML = L.length ? L.map((b) => `<option value="${esc(b)}" ${b === pil ? "selected" : ""}>${esc(b)} — ${A[b].conto ? `${A[b].conto} conto` : "belum ada conto"}${asalRedrill(b) ? " · redrill" : ""}</option>`).join("") : `<option value="">Belum ada titik di database</option>`;
-    $("#bh").onchange = () => $("#go").click(); if (L.length) $("#go").click();
+    $("#bh").onchange = () => $("#go").click(); if (L.length) $("#go").click(); else panelDdrLogging($("#ddrLog"), "");
   })();
   $("#go").onclick = async () => {
-    const bh = $("#bh").value.trim().toUpperCase();
+    const bh = $("#bh").value.trim().toUpperCase(); panelDdrLogging($("#ddrLog"), bh);
     const { data, error } = await sb.from("v_sample_qc").select("sample_no,sample_id,depth_from,depth_to,core_length,core_recovery,geozone_id,geolithcode_id_1,d_wet_density,d_wet_arch,d_dry_density,d_dry_arch,d_arch_diff_pct,d_moisture_pct,d_wet_weight,chk_interval,chk_recovery,chk_lith,chk_code,chk_zone,chk_density,chk_arch,chk_weight").eq("bhid", bh).order("depth_from");
     if (error) return ($("#dout").innerHTML = `<p class="err">${esc(error.message)}</p>`);
     const cols = data?.length ? Object.keys(data[0]) : [];
@@ -5680,4 +5705,42 @@ async function cetakBA(id) {
   </td></tr></tbody></table>
   <div class="kaki"><img src="${KOP_FOOTER}"></div>
   </body></html>`); w.document.close();
+}
+
+// ---------- Koneksi DDR ↔ logging harian (Data & cek) ----------
+// Setiap interval yang dibor menurut DDR (v_ddr_baris) harus tertutup interval conto logging (tabel sample).
+// Interval DDR yang belum tertutup logging = BELUM LOGGING; bila tanggal DDR sudah lewat 1 hari = TERLAMBAT.
+async function panelDdrLogging(el, pilih) {
+  el.innerHTML = `<p class="muted">Memeriksa DDR vs logging…</p>`;
+  const [{ data: B, error: e1 }, { data: S, error: e2 }] = await Promise.all([
+    sb.from("v_ddr_baris").select("tanggal,rig,bhid,dari_m,sampai_m,meter").limit(10000),
+    sb.from("sample").select("bhid,depth_from,depth_to").limit(20000)]);
+  if (e1 || e2) return (el.innerHTML = `<p class="err">${esc((e1 ?? e2).message)}</p>`);
+  const hari = todayWIB(), kemarin = new Date(Date.now() - 864e5).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+  const logBH = {}; for (const s of S ?? []) (logBH[s.bhid] ??= []).push([+s.depth_from, +s.depth_to]);
+  for (const k in logBH) { const xs = logBH[k].sort((a, b) => a[0] - b[0]), m = []; for (const x of xs) { const t = m.at(-1); if (t && x[0] <= t[1] + 0.05) t[1] = Math.max(t[1], x[1]); else m.push([...x]); } logBH[k] = m; }
+  const tertutup = (b, f, t) => { let n = 0; for (const [a, z] of logBH[b] ?? []) n += Math.max(0, Math.min(t, z) - Math.max(f, a)); return n; };
+  const baris = (B ?? []).map((x) => { const f = +x.dari_m, t = +x.sampai_m, log = tertutup(x.bhid, f, t); return { ...x, f, t, m: t - f, log, kurang: Math.max(0, t - f - log) }; }).filter((x) => x.m > 0);
+  const per = {}; for (const x of baris) { const p = (per[x.bhid] ??= { bhid: x.bhid, rig: new Set(), ddr: 0, kurang: 0, tgl: new Set(), tglTua: null }); p.rig.add(x.rig); p.ddr = Math.max(p.ddr, x.t);
+    if (x.kurang > 0.05) { p.kurang += x.kurang; p.tgl.add(x.tanggal); if (!p.tglTua || x.tanggal < p.tglTua) p.tglTua = x.tanggal; } }
+  for (const b in logBH) per[b] ??= { bhid: b, rig: new Set(), ddr: 0, kurang: 0, tgl: new Set(), tglTua: null };
+  const L = Object.values(per).sort((a, b) => a.bhid.localeCompare(b.bhid, "id", { numeric: true }));
+  const st = (p) => (!p.ddr ? ["ANTRE", "BELUM ADA DDR"] : p.kurang <= 0.05 ? ["APPROVED", "LENGKAP"] : p.tglTua < kemarin || (p.tglTua === kemarin && hari !== kemarin) ? ["REJECTED", "TERLAMBAT"] : ["NEEDS_REVIEW", "MENUNGGU LOGGING"]);
+  const telat = L.filter((p) => st(p)[1] === "TERLAMBAT"), tunggu = L.filter((p) => st(p)[1] === "MENUNGGU LOGGING");
+  const logMax = (b) => Math.max(0, ...(logBH[b] ?? []).map((x) => x[1]));
+  const buka = el.querySelector("details")?.open ?? false;
+  el.style.padding = "6px 10px";
+  el.innerHTML = `<details ${buka ? "open" : ""}><summary style="cursor:pointer;font-size:12px;line-height:1.4">DDR ↔ logging:
+      ${telat.length ? `<span style="background:#F6C9C3;border-radius:6px;padding:1px 6px">⚠ ${telat.length} terlambat (${telat.map((p) => esc(p.bhid)).join(", ")})</span>` : ""}
+      ${tunggu.length ? `<span style="background:#FFE58A;border-radius:6px;padding:1px 6px">⏳ ${tunggu.length} menunggu</span>` : ""}
+      ${!telat.length && !tunggu.length ? `<span style="background:#D7F0E1;border-radius:6px;padding:1px 6px">✓ lengkap</span>` : ""} <span class="muted">· ketuk untuk rincian</span></summary>
+    <p class="muted" style="font-size:11px;margin:4px 0">Setiap meter DDR wajib punya logging conto (Form Logging disetujui) pada interval yang sama. Terlambat = DDR sudah lewat 1 hari tetapi intervalnya belum ter-logging.${telat.length ? ` Belum masuk: ${telat.map((p) => `${esc(p.bhid)} ${fmtD(p.kurang)} m sejak ${esc(p.tglTua)}`).join("; ")}.` : ""}</p>
+    <div style="font-size:12px">
+    <div class="tw"><table><tr><th>Titik</th><th>Rig</th><th>DDR s/d (m)</th><th>Logging s/d (m)</th><th>Belum logging (m)</th><th>Tanggal DDR belum ter-logging</th><th>Status</th></tr>
+    ${L.map((p) => { const [k, t] = st(p); return `<tr data-pb="${esc(p.bhid)}" style="cursor:pointer${p.bhid === pilih ? ";outline:2px solid #1E9E69" : ""}"><td><b>${esc(p.bhid)}</b></td><td>${esc([...p.rig].join("/"))}</td><td>${fmtD(p.ddr)}</td><td>${fmtD(logMax(p.bhid))}</td><td>${p.kurang > 0.05 ? fmtD(p.kurang) : "–"}</td><td>${esc([...p.tgl].sort().join(", ")) || "–"}</td><td><span class="pill ${k}">${t}</span></td></tr>`; }).join("") || `<tr><td colspan="7" class="muted">Belum ada DDR.</td></tr>`}</table></div>
+    ${pilih && baris.some((x) => x.bhid === pilih) ? `<h4 style="margin:10px 0 4px">Rincian per tanggal · ${esc(pilih)}</h4><div class="tw"><table><tr><th>Tanggal</th><th>Rig</th><th>DDR dari–sampai (m)</th><th>Meter DDR</th><th>Sudah ter-logging (m)</th><th>Status</th></tr>
+      ${Object.values(baris.filter((x) => x.bhid === pilih).reduce((a, x) => { const k = x.tanggal + x.rig, o = (a[k] ??= { tanggal: x.tanggal, rig: x.rig, f: x.f, t: x.t, m: 0, log: 0 }); o.f = Math.min(o.f, x.f); o.t = Math.max(o.t, x.t); o.m += x.m; o.log += x.log; return a; }, {}))
+        .sort((a, b) => a.tanggal.localeCompare(b.tanggal)).map((o) => { const ok = o.m - o.log <= 0.05, tel = !ok && o.tanggal < kemarin;
+          return `<tr><td>${esc(o.tanggal)}</td><td>${esc(o.rig)}</td><td>${fmtD(o.f)} – ${fmtD(o.t)}</td><td>${fmtD(o.m)}</td><td>${fmtD(o.log)}</td><td><span class="pill ${ok ? "APPROVED" : tel ? "REJECTED" : "NEEDS_REVIEW"}">${ok ? "LENGKAP" : tel ? `TERLAMBAT ${fmtD(o.m - o.log)} m` : `BELUM ${fmtD(o.m - o.log)} m`}</span></td></tr>`; }).join("")}</table></div>` : ""}</div></details>`;
+  el.querySelectorAll("[data-pb]").forEach((tr) => (tr.onclick = () => { const s = $("#bh"); if (s && [...s.options].some((o) => o.value === tr.dataset.pb)) { s.value = tr.dataset.pb; s.onchange?.(); } else panelDdrLogging(el, tr.dataset.pb); }));
 }
