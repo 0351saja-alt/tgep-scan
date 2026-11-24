@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-24.7";
+const APP_VERSION = "2026-11-24.9";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -547,7 +547,7 @@ async function fotoView(v) {
   };
   const cekLogging = async (blob, nama) => {
     try { const bmp = await createImageBitmap(blob), lc = await localCheck(bmp); const why = [];
-      if (lc.sharpness < 25) why.push("terlalu buram"); if (lc.brightness < 45) why.push("terlalu gelap"); if (Math.max(lc.width, lc.height) < 1000) why.push("resolusi terlalu kecil");
+      if (lc.sharpness < 25) why.push("terlalu buram"); if (lc.brightness < 45) why.push("terlalu gelap"); /* batas resolusi dibuka sementara (24/11) */
       if (why.length) { $("#e").textContent = `Ditolak sebelum dikirim${nama ? " (" + nama + ")" : ""}: ${why.join(", ")}. Foto ulang dengan cahaya merata dan HP tidak bergoyang.`; return false; }
     } catch { /* format tidak dikenali browser: biarkan server yang memeriksa */ }
     return true;
@@ -736,7 +736,16 @@ async function reviewDetail(v, id) {
 }
 
 async function dataView(v) {
-  v.innerHTML = `<div class="card"><h2>Data tersimpan & hasil cek</h2><div class="row"><input id="bh" placeholder="Hole ID" value="${esc(localStorage.getItem("bhid") || "")}"><button id="go" style="flex:0">Tampilkan</button></div><div id="dout"></div></div>`;
+  v.innerHTML = `<div class="card"><h2>Data tersimpan & hasil cek</h2><div class="row"><select id="bh"><option value="">Memuat daftar titik…</option></select><button id="go" style="flex:0">Tampilkan</button></div><div id="dout"></div></div>`;
+  // Dropdown titik yang sudah masuk database (conto logging / lubang dibor), terbaru dipilih otomatis
+  (async () => {
+    const [{ data: H }, { data: G }] = await Promise.all([sb.from("v_dash_hole").select("bhid,jumlah_conto"), sb.from("v_logging_lubang").select("bhid,kedalaman_bor,status")]);
+    const A = {}; for (const h of H ?? []) A[h.bhid] = { ...A[h.bhid], conto: +h.jumlah_conto || 0 };
+    for (const g of G ?? []) A[g.bhid] = { ...A[g.bhid], dalam: g.kedalaman_bor, st: g.status };
+    const L = Object.keys(A).filter(Boolean).sort((a, b) => a.localeCompare(b, "id", { numeric: true })), pil = localStorage.getItem("bhid") || "";
+    $("#bh").innerHTML = L.length ? L.map((b) => `<option value="${esc(b)}" ${b === pil ? "selected" : ""}>${esc(b)} — ${A[b].conto ? `${A[b].conto} conto` : "belum ada conto"}${asalRedrill(b) ? " · redrill" : ""}</option>`).join("") : `<option value="">Belum ada titik di database</option>`;
+    $("#bh").onchange = () => $("#go").click(); if (L.length) $("#go").click();
+  })();
   $("#go").onclick = async () => {
     const bh = $("#bh").value.trim().toUpperCase();
     const { data, error } = await sb.from("v_sample_qc").select("sample_no,sample_id,depth_from,depth_to,core_length,core_recovery,geozone_id,geolithcode_id_1,d_wet_density,d_wet_arch,d_dry_density,d_dry_arch,d_arch_diff_pct,d_moisture_pct,d_wet_weight,chk_interval,chk_recovery,chk_lith,chk_code,chk_zone,chk_density,chk_arch,chk_weight").eq("bhid", bh).order("depth_from");
@@ -769,7 +778,7 @@ async function localCheck(bmp) {
   return { sharpness: +sharp.toFixed(0), brightness: +mean.toFixed(0), clipped_pct: +(clip / n * 100).toFixed(1), cast: +cast.toFixed(2), width: bmp.width, height: bmp.height, warnings };
 }
 // standar foto core: sisi panjang ≥ 3508 px = 300 dpi bila dicetak selebar A4 lanskap (11,69 in); file ditandai 300 dpi (JFIF)
-const FOTO_CORE_MIN_PX = 3508, FOTO_CORE_TOLAK_PX = 2400; // ≥3508 standar 300 dpi A4 · 2400–3507 peringatan (masih terbaca di-zoom) · <2400 ditolak
+const FOTO_CORE_MIN_PX = 3508, FOTO_CORE_TOLAK_PX = 0; // SEMENTARA (24/11, permintaan pemilik): batas tolak resolusi dibuka — foto kecil hanya diberi catatan. ≥3508 standar 300 dpi A4 · 2400–3507 peringatan (masih terbaca di-zoom) · <2400 ditolak
 async function dpi300(blob) {
   const b = new Uint8Array(await blob.arrayBuffer());
   // JFIF APP0: FF D8 FF E0 len(2) 'JFIF\0' ver(2) units(1) Xd(2) Yd(2)
@@ -790,7 +799,7 @@ async function coreView(v) {
    <p id="cl" class="muted"></p>
    <div class="row"><div><label>Kotak ke-</label><input id="cx" inputmode="numeric"></div><div><label>FROM (m)</label><input id="cf" inputmode="decimal"></div><div><label>TO (m)</label><input id="ct" inputmode="decimal"></div></div>
    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="crt" style="width:auto"> Foto ulang kotak yang sudah pernah dikirim (mis. karena ditolak)</label>
-   <p class="muted">Template SOP: 1 corebox per foto (maks. 5 m core), resolusi standar ≥ 3508 px sisi panjang (300 dpi cetak A4), di bawah 2400 px ditolak — pakai resolusi kamera tertinggi, jangan mode hemat/kecil; teduh, meteran 0–100 cm, papan Hole ID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
+   <p class="muted">Template SOP: 1 corebox per foto (maks. 5 m core), resolusi standar ≥ 3508 px sisi panjang (300 dpi cetak A4); sementara foto beresolusi lebih kecil tetap diterima (diberi catatan) — pakai resolusi kamera tertinggi, jangan mode hemat/kecil; teduh, meteran 0–100 cm, papan Hole ID · nomor kotak · kedalaman terbaca, kamera tegak lurus. Kotak dan kedalaman harus melanjutkan kotak sebelumnya.</p>
    <div class="big"><button id="cgo">📷 Ambil foto corebox</button><button id="cgg" class="sec">🖼️ Dari galeri<small>foto ulang / unggah manual</small></button></div>
    <p class="muted" style="margin:6px 0 0">Setiap kotak hanya <b>2 kali</b> diperiksa otomatis. Setelah itu foto terbaik diunggah <b>dari galeri</b> dan diperiksa verifier secara manual.</p>
    <input id="cfile" type="file" accept="image/*" capture="environment" class="hide"><input id="cfileG" type="file" accept="image/*" class="hide"><div id="lc"></div><div id="e" class="err"></div></div>
@@ -3268,10 +3277,11 @@ async function blok3D(L, prof, o = {}) {
 // Disusun dari data X-Terra (meter bor, lubang, conto, recovery, kendala). Tanpa data internal: BBM/oli, biaya, nama crew, kepatuhan operator.
 async function waProgresClient(st0) {
   if (!online()) return alert("Menyusun pesan WA perlu sinyal internet.");
-  const S = { jenis: "harian", salam: "Bapak/Ibu", pengirim: me?.full_name ?? "", lubang: true, kum: true, conto: true, kendala: true, rencana: "", catatan: "", ...JSON.parse(localStorage.getItem("waProgres") || "{}") };
+  const S = { format: "rig", jenis: "harian", salam: "Bapak/Ibu", pengirim: me?.full_name ?? "", lubang: true, kum: true, conto: true, kendala: true, rencana: "", catatan: "", ...JSON.parse(localStorage.getItem("waProgres") || "{}") };
   S.rencana = ""; S.catatan = ""; // isi bebas tidak dibawa ke hari berikutnya
   const m = modal(`<h3 style="margin-top:0">💬 Pesan WhatsApp progres untuk client</h3>
     <p class="muted" style="margin-top:0">Disusun otomatis dari <b>DDR</b> (meter coring + open hole = progres resmi; foto run tidak dipakai), per titik bor untuk semua rig. Tidak memuat BBM/oli, biaya, nama crew maupun kepatuhan operator. Periksa dulu, teks boleh diubah sebelum dikirim.</p>
+    <label>Format pesan</label><select id="waFmt"><option value="rig">Format lapangan — per rig (PROGRES BOR HARIAN)</option><option value="titik">Format formal — per titik bor</option></select>
     <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 140px"><label>Jenis laporan</label><select id="waJ"><option value="harian">Harian (satu tanggal)</option><option value="periode">Periode (dari–sampai)</option></select></div>
       <div style="flex:1 1 130px" id="waFw"><label>Dari</label><input type="date" id="waF" value="${esc(st0.from)}"></div>
       <div style="flex:1 1 130px"><label id="waTl">Tanggal</label><input type="date" id="waT" value="${esc(st0.to)}"></div></div>
@@ -3282,8 +3292,8 @@ async function waProgresClient(st0) {
     <label>Pratinjau pesan (boleh diubah)</label><textarea id="waX" rows="14" style="font-family:ui-monospace,monospace;font-size:12.5px">Menyusun…</textarea>
     <p class="muted" id="waI" style="font-size:12px;margin:4px 0"></p>
     <div class="row"><button class="sec" id="waB">Tutup</button><button class="sec" id="waK">Salin</button><a class="btn" id="waW" target="_blank" rel="noopener" style="flex:1;text-align:center;background:#1FA855;color:#fff;border-radius:10px;padding:11px 8px;font-weight:700;text-decoration:none">💬 Kirim lewat WhatsApp</a></div>`);
-  const $m = (s) => m.querySelector(s); $m("#waJ").value = S.jenis;
-  const simpan = () => localStorage.setItem("waProgres", JSON.stringify({ jenis: $m("#waJ").value, salam: $m("#waS").value, pengirim: $m("#waP").value, ...Object.fromEntries([...m.querySelectorAll("[data-wa]")].map((c) => [c.dataset.wa, c.checked])) }));
+  const $m = (s) => m.querySelector(s); $m("#waJ").value = S.jenis; $m("#waFmt").value = S.format === "titik" ? "titik" : "rig";
+  const simpan = () => localStorage.setItem("waProgres", JSON.stringify({ format: $m("#waFmt").value, jenis: $m("#waJ").value, salam: $m("#waS").value, pengirim: $m("#waP").value, ...Object.fromEntries([...m.querySelectorAll("[data-wa]")].map((c) => [c.dataset.wa, c.checked])) }));
   let D = null, kunci = "", diubah = false;
   const n = (x) => Number(x) || 0, fm = (x, d = 1) => n(x).toLocaleString("id-ID", { minimumFractionDigits: d, maximumFractionDigits: d });
   const tglPanjang = (t) => new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -3296,7 +3306,7 @@ async function waProgresClient(st0) {
     const { data: pj } = PJ ? await sb.from("project").select("*").eq("code", PJ.code).maybeSingle() : { data: null };
     const R = (q) => (st0.rig ? q.eq("rig", st0.rig) : pf ? q.in("rig", pf.rigs.length ? pf.rigs : ["-"]) : q);
     const [{ data: dd }, { data: hl }, LB0] = await Promise.all([
-      R(sb.from("ddr").select("rig,report_date,shift,bhid,coring,open_hole,hours,target_m,total_depth_m,status").lte("report_date", to)).order("report_date").order("shift"),
+      R(sb.from("ddr").select("rig,report_date,shift,bhid,coring,open_hole,hours,target_m,total_depth_m,status,notes").lte("report_date", to)).order("report_date").order("shift"),
       sb.from("v_dash_hole").select("bhid,stop_date,eoh,jumlah_conto,recovery_pct"),
       ambilLubangPeta(),
     ]);
@@ -3309,7 +3319,60 @@ async function waProgresClient(st0) {
     .map((x) => ({ bhid: x.bhid || d.bhid || "-", rig: d.rig, tgl: d.report_date, from: +x.from, to: +x.to, m: +x.to - +x.from, core: x.jenis === "coring" && x.core != null ? +x.core : null, coring: x.jenis === "coring" }));
   const KENDALA = ["WEATHER/UNSAVE CONDITION", "WAITING WATER", "WAITING ACCESS", "SERVICE/MAINTENANCE", "HOLE CONDITION/CEMENTING", "RUNNING/PULL UP/STUCK ROD", "DRILL SITE PREPARATION"];
   const NAMA_K = { "WEATHER/UNSAVE CONDITION": "Cuaca / kondisi tidak aman", "WAITING WATER": "Menunggu air", "WAITING ACCESS": "Menunggu akses", "SERVICE/MAINTENANCE": "Servis / perbaikan rig", "HOLE CONDITION/CEMENTING": "Kondisi lubang / cementing", "RUNNING/PULL UP/STUCK ROD": "Stang terjepit / tarik stang", "DRILL SITE PREPARATION": "Persiapan drill site" };
+  // Format lapangan (disepakati 24/11): per rig → titik, lalu HARI INI + KUMULATIF (redrill & recovery lubang awal ditampilkan)
+  const susunRig = () => {
+    const { from, to, PJ, dd, hl, LB } = D, harian = from === to, f2 = (x) => fm(x, 2), o = Object.fromEntries([...m.querySelectorAll("[data-wa]")].map((c) => [c.dataset.wa, c.checked]));
+    const semua = dd.flatMap(barisDDR), per = semua.filter((x) => x.tgl >= from && x.tgl <= to), ddPer = dd.filter((d) => d.report_date >= from && d.report_date <= to);
+    const HL = Object.fromEntries(hl.map((h) => [h.bhid, h])), ST = Object.fromEntries(LB.map((x) => [x.bhid, x]));
+    const dalam = (b) => Math.max(0, ...semua.filter((x) => x.bhid === b && x.tgl <= to).map((x) => x.to));
+    const rec = (xs) => { const c = xs.filter((x) => x.coring && x.core != null), i = c.reduce((s, x) => s + x.m, 0); return i ? (100 * c.reduce((s, x) => s + x.core, 0)) / i : null; };
+    const stat = (b) => { const s = ST[b]?.status; return s === "EOH" || s === "STB" ? s : HL[b]?.stop_date ? "SELESAI" : "LANJUT"; };
+    const nConto = (b) => n(HL[b]?.jumlah_conto);
+    const L = [`*PROGRES BOR ${harian ? "HARIAN" : "PERIODE"}*`, `*${String(PJ?.nama ?? "Proyek eksplorasi nikel").toUpperCase()}*`, harian ? tglPanjang(to) : `${tglPendek(from)} – ${tglPendek(to)} ${to.slice(0, 4)}`, ""];
+    const rigs = [...new Set([...ddPer.map((d) => d.rig), ...per.map((x) => x.rig)])].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
+    let mHari = 0, cHari = 0;
+    for (const r of rigs) {
+      const xsR = per.filter((x) => x.rig === r), titik = [...new Set(xsR.map((x) => x.bhid))], dR = ddPer.filter((d) => d.rig === r);
+      const K = {}; for (const d of dR) for (const h of d.hours ?? []) if (KENDALA.includes(h.kategori)) { const mn = durMin(h.mulai, h.selesai); if (mn) K[NAMA_K[h.kategori] + (h.ket ? ` (${String(h.ket).trim()})` : "")] = (K[NAMA_K[h.kategori] + (h.ket ? ` (${String(h.ket).trim()})` : "")] ?? 0) + mn; }
+      const sbT = Object.entries(K).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${fm(v / 60)} jam ${k}`).join("; ");
+      const catatan = [...new Set(dR.map((d) => String(d.notes ?? "").replace(/\[[^\]]*\]/g, "").trim()).filter(Boolean))].join("; ");
+      for (const b of titik.length ? titik : [dR[0]?.bhid ?? "-"]) {
+        const xs = xsR.filter((x) => x.bhid === b), mm = xs.reduce((s, x) => s + x.m, 0), asal = asalRedrill(b), rc = rec(xs);
+        mHari += mm; const nc = xs.length ? nConto(b) : 0;
+        L.push(`*${r} – ${b}*${asal ? ` (REDRILL dari ${asal})` : ""}`);
+        L.push(`• Kedalaman : ${xs.length ? `${f2(Math.min(...xs.map((x) => x.from)))} → ${f2(Math.max(...xs.map((x) => x.to)))} m (+${f2(mm)} m)` : "belum ada meter di DDR"}`);
+        if (o.conto) { L.push(`• Recovery : ${rc != null ? fm(rc, 0) + "%" : "–"}`); L.push(`• Jumlah sampel : ${nc || "– (logging belum masuk)"}`); }
+        L.push(`• Status : ${stat(b)}${["EOH", "STB"].includes(stat(b)) ? ` (${f2(dalam(b))} m)` : ""}`);
+        if (o.kendala) { L.push(`• Standby : ${sbT || "–"}`); L.push(`• Kendala : ${catatan || "–"}`); }
+        if (asal && o.conto) { const xa = semua.filter((x) => x.bhid === asal), ra = rec(xa);
+          L.push(`• Recovery ${asal} (lubang awal, ${f2(dalam(asal))} m) : ${ra != null ? fm(ra, 1) + "%" : "–"}`); }
+        L.push("");
+      }
+    }
+    if (!rigs.length) L.push("Belum ada DDR untuk tanggal ini.", "");
+    const DDRbelum = harian ? (JSON.parse(localStorage.getItem("projects") || "[]").find((p) => p.code === PJ?.code)?.rigs ?? []).filter((r) => (!st0.rig || r === st0.rig) && !ddPer.some((d) => d.rig === r)) : [];
+    cHari = [...new Set(per.map((x) => x.bhid))].reduce((s, b) => s + nConto(b), 0);
+    L.push(`*${harian ? "HARI INI" : "PERIODE INI"} : ${f2(mHari)} m | ${cHari || "–"} sampel | ${rigs.length} rig aktif*`);
+    if (DDRbelum.length) L.push(`DDR belum masuk: ${DDRbelum.join(", ")}`);
+    if (o.kum) {
+      const sampai = semua.filter((x) => x.tgl <= to), dibor = [...new Set(sampai.map((x) => x.bhid))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
+      const mCum = sampai.reduce((s, x) => s + x.m, 0), selesai = dibor.filter((b) => ["EOH", "STB", "SELESAI"].includes(stat(b))), red = dibor.filter((b) => asalRedrill(b));
+      const nRen = PJ?.target_lubang || LB.length, rc = rec(sampai), nc = dibor.reduce((s, b) => s + nConto(b), 0);
+      L.push("", `*KUMULATIF s/d ${tglPendek(to)} ${to.slice(0, 4)}*`, `• Total kedalaman dibor : ${f2(mCum)} m${PJ?.target_meter ? ` dari target ${fm(PJ.target_meter, 0)} m (${Math.round((100 * mCum) / PJ.target_meter)}%)` : ""}`);
+      for (const b of dibor) { const asal = asalRedrill(b), punyaRedrill = dibor.find((x) => asalRedrill(x) === b), r = rec(sampai.filter((x) => x.bhid === b)), st = stat(b);
+        L.push(`   – ${b} : ${f2(dalam(b))} m (${punyaRedrill ? `redrill → ${punyaRedrill}` : st === "LANJUT" ? "lanjut" : st.toLowerCase()}${asal ? `, redrill dari ${asal}` : ""}${o.conto && r != null ? `, recovery ${fm(r, 1)}%` : ""})`); }
+      L.push(`• Titik selesai (EOH/STB) : ${selesai.length}${nRen ? ` dari ${nRen} titik rencana (${Math.round((100 * selesai.length) / nRen)}%)` : ""}`);
+      L.push(`• Titik sedang dibor : ${dibor.filter((b) => stat(b) === "LANJUT" && !dibor.some((x) => asalRedrill(x) === b)).length} | Redrill : ${red.length}${red.length ? ` (${red.map((b) => asalRedrill(b)).join(", ")})` : ""}`);
+      if (o.conto) { if (nc) L.push(`• Total sampel (logging masuk database) : ${nc}`); if (rc != null) L.push(`• Rata-rata recovery semua lubang : ${fm(rc, 1)}%`); }
+    }
+    const ren = $m("#waR").value.trim(), cat = $m("#waC").value.trim();
+    L.push("", `Rencana besok : ${ren ? ren.replace(/\n+/g, "; ") : "–"}`);
+    if (cat) L.push(`Catatan : ${cat.replace(/\n+/g, "; ")}`);
+    L.push(`Pelapor : ${$m("#waP").value.trim() || "Tim lapangan"}`, "", `_Sumber: DDR X-Terra per ${new Date().toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}_`);
+    return L.join("\n");
+  };
   const susun = () => {
+    if ($m("#waFmt").value === "rig") return susunRig();
     const { from, to, PJ, dd, hl, LB } = D, harian = from === to;
     const L = []; const o = Object.fromEntries([...m.querySelectorAll("[data-wa]")].map((c) => [c.dataset.wa, c.checked]));
     const proyek = PJ?.nama ?? "Proyek eksplorasi nikel", rigTeks = st0.rig ? ` · ${st0.rig}` : "";
@@ -3373,6 +3436,7 @@ async function waProgresClient(st0) {
   };
   let tunda; const nanti = () => { clearTimeout(tunda); tunda = setTimeout(perbarui, 350); };
   for (const id of ["#waJ", "#waF", "#waT"]) $m(id).onchange = perbarui;
+  $m("#waFmt").onchange = () => { if (D) { pasang(susun()); simpan(); } };
   for (const el of [$m("#waS"), $m("#waP"), $m("#waR"), $m("#waC"), ...m.querySelectorAll("[data-wa]")]) el.oninput = el.onchange = () => { if (D) { pasang(susun()); simpan(); } };
   $m("#waX").oninput = () => { diubah = true; $m("#waW").href = "https://wa.me/?text=" + encodeURIComponent($m("#waX").value); };
   $m("#waB").onclick = () => m.remove();
