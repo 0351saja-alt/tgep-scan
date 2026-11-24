@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-24.5";
+const APP_VERSION = "2026-11-24.6";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2169,6 +2169,8 @@ function pasangKlikGrafik(Chart) {
     const judul = cv.closest(".card")?.querySelector("h3")?.textContent ?? "Data grafik";
     if (!cv.closest(".card").querySelector(".ketuk")) cv.insertAdjacentHTML("afterend", `<p class="muted ketuk" style="margin:4px 0 0;font-size:12px">Ketuk grafik untuk melihat datanya.</p>`);
     ch.options.onClick = (e, els) => {
+      // batang bertanggal (meter harian per rig): ketukan ditangani menu DDR (pasangMenuEdit), jangan buka tabel juga
+      if (!isClient() && (ch.data.labels ?? []).some((l) => /\b20\d\d-\d\d-\d\d\b/.test(String(l)))) return;
       if (typeof ch.$detail === "function" && els?.length) return ch.$detail(els[0].index, els[0].datasetIndex);
       const L = ch.data.labels ?? [], D = ch.data.datasets ?? [];
       const baris = L.map((l, i) => [l, ...D.map((d) => { const v = d.data[i]; return v && typeof v === "object" ? v.y : v; })]);
