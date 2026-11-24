@@ -191,13 +191,16 @@ async function cekAntreLama() {
   if (!db) return; const L = await qAll(), lama = L.filter((x) => Date.now() - (x.antre_at ?? Date.now()) > 3600e3);
   let el = document.getElementById("antreLama");
   if (!L.length) { el?.remove(); return; }
-  if (!el) { el = Object.assign(document.createElement("div"), { id: "antreLama" }); el.style.cssText = "position:fixed;left:8px;right:8px;bottom:8px;z-index:60;padding:10px 12px;border-radius:12px;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.25);display:flex;gap:8px;align-items:center"; document.body.appendChild(el); }
+  if (!el) { el = Object.assign(document.createElement("div"), { id: "antreLama" }); document.querySelector("body > header")?.after(el) ?? document.body.prepend(el); }
+  // Ringkas, di atas (di bawah header, tidak melayang) agar tidak menutupi tombol Kirim/Simpan di bawah maupun menu tab
+  el.style.cssText = `position:static;margin:6px 8px 0;padding:4px 8px;border-radius:8px;font-size:12px;line-height:1.3;box-shadow:0 1px 4px rgba(0,0,0,.2);display:flex;gap:6px;align-items:center;color:#222`;
   const err = L.find((x) => x.error)?.error;
   el.style.background = lama.length ? "#F6C9C3" : "#FFE58A";
-  el.innerHTML = `<span style="flex:1">${lama.length ? `⚠ <b>${lama.length}</b> data antre lebih dari 1 jam` : `⏳ <b>${L.length}</b> data menunggu sinyal`} — terkirim otomatis begitu ada sinyal.${err ? `<br><small>Galat terakhir: ${esc(err)}</small>` : ""}${!navigator.onLine ? "<br><small>HP sedang offline.</small>" : ""}</span><button style="flex:0;white-space:nowrap;padding:8px 12px" id="antreKirim">Kirim sekarang</button>`;
-  el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "Mengirim…"; await sync(); cekAntreLama(); };
+  const info = `${!navigator.onLine ? "HP sedang offline. " : ""}Terkirim otomatis begitu ada sinyal.${err ? `<br>Galat terakhir: ${esc(err)}<br>Data yang gagal bisa dihapus di tab Progres → Antrean progres (tombol 🗑).` : ""}`;
+  el.innerHTML = `<details style="flex:1;min-width:0"><summary style="cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${lama.length ? `⚠ <b>${lama.length}</b> antre &gt;1 jam` : `⏳ <b>${L.length}</b> antre`}${err ? " · ada galat" : ""}</summary><div style="font-size:11px;margin-top:2px">${info}</div></details><button style="flex:0;white-space:nowrap;padding:3px 8px;font-size:12px;min-height:0" id="antreKirim">Kirim</button>`;
+  el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-23.1";
+const APP_VERSION = "2026-11-24.1";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -497,8 +500,12 @@ async function fotoView(v) {
      <input id="fX" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hide"><input id="fXg" type="file" accept="image/*" class="hide"></div>
    <div id="pr" class="muted"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean di HP (${queue.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
-   <ul class="list">${queue.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "arsip" ? ARSIP[x.row.jenis] : FORMS[x.form_type])} · ${esc(x.bhid || x.row?.bhid || x.row?.rig || "")}${(x.page_no || x.row?.halaman) ? ` · hal. ${x.page_no || x.row.halaman}` : ""} · ${esc(x.sumber || x.row?.sumber || "")}<br><span class="muted">${new Date(x.captured_at || x.row.captured_at).toLocaleString("id-ID")}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong — semua foto sudah terkirim.</li>`}</ul></div>
+   <ul class="list">${queue.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "arsip" ? ARSIP[x.row.jenis] : FORMS[x.form_type])} · ${esc(x.bhid || x.row?.bhid || x.row?.rig || "")}${(x.page_no || x.row?.halaman) ? ` · hal. ${x.page_no || x.row.halaman}` : ""} · ${esc(x.sumber || x.row?.sumber || "")}<br><span class="muted">${new Date(x.captured_at || x.row.captured_at).toLocaleString("id-ID")}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span>${x.error || !EV[x.row?.event_type] && x.kind === "event" ? `<button class="sec" data-qdel="${esc(x.client_uuid)}" title="Hapus dari antrean" style="flex:0;padding:4px 10px">🗑</button>` : ""}</li>`).join("") || `<li class="muted">Kosong — semua foto sudah terkirim.</li>`}</ul></div>
    <div class="card"><h3>Kiriman saya</h3><ul class="list" id="mine"><li class="muted">Memuat…</li></ul></div>`;
+  v.querySelectorAll("[data-qdel]").forEach((b) => (b.onclick = async () => {
+    if (!confirm("Hapus data ini dari antrean HP? Data yang gagal tidak akan pernah terkirim; setelah dihapus, ambil/unggah ulang fotonya.")) return;
+    await qDel(b.dataset.qdel); b.closest("li").remove(); cekAntreLama(); toast("Data dihapus dari antrean");
+  }));
   if (last.jenis && $("#jn").querySelector(`option[value="${last.jenis}"]`)) $("#jn").value = last.jenis;
   const upd = () => { const j = $("#jn").value, fb = j === "SHEET"; $("#bhReq").style.display = fb ? "" : "none"; $("#tglRow").style.display = fb ? "none" : ""; $("#halRow").style.display = fb ? "" : "none"; $("#manBox").style.display = fb ? "" : "none";
     $("#tip").textContent = fb ? "Form Logging: letakkan di permukaan datar, cahaya merata, keempat kotak hitam di sudut harus masuk. Hasil CamScanner boleh, asal tidak terpotong dan tidak tertutup tanda air." : "Arsip: foto/scan disimpan apa adanya sebagai bukti; isinya tidak dibaca otomatis. DDR tetap wajib diisi di menu DDR."; };
@@ -1018,8 +1025,12 @@ async function progView(v) {
    <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-weight:400"><input type="checkbox" id="pgal" style="width:auto;flex:0">🖼️ Ambil foto dari galeri<span class="muted">— bila foto kamera hilang/terhapus; jam & GPS dibaca dari foto</span></label>
    <input id="pf" type="file" accept="image/*" capture="environment" class="hide"><input id="pfG" type="file" accept="image/*" class="hide"><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean progres di HP (${q.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
-   <ul class="list">${q.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "p2h" ? "P2H " + (x.row.layak_operasi ? "LAYAK" : "TIDAK LAYAK") : x.kind === "marking" ? `Marking ±${x.row.akurasi_m} m` : EV[x.row.event_type] + (x.row.note ? " (galeri)" : ""))} · ${esc(x.row.rig)} ${esc(x.row.bhid ?? "")}<br><span class="muted">${fmtT(x.row.captured_at)}${x.row.lat ? "" : " · tanpa GPS"}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span></li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
+   <ul class="list">${q.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "p2h" ? "P2H " + (x.row.layak_operasi ? "LAYAK" : "TIDAK LAYAK") : x.kind === "marking" ? `Marking ±${x.row.akurasi_m} m` : EV[x.row.event_type] + (x.row.note ? " (galeri)" : ""))} · ${esc(x.row.rig)} ${esc(x.row.bhid ?? "")}<br><span class="muted">${fmtT(x.row.captured_at)}${x.row.lat ? "" : " · tanpa GPS"}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span>${x.error || !EV[x.row?.event_type] && x.kind === "event" ? `<button class="sec" data-qdel="${esc(x.client_uuid)}" title="Hapus dari antrean" style="flex:0;padding:4px 10px">🗑</button>` : ""}</li>`).join("") || `<li class="muted">Kosong.</li>`}</ul></div>
    <div class="card"><h3>Hari ini (terkirim)</h3><div id="today" class="muted">${navigator.onLine && !session.offline ? "Memuat…" : "Offline — tampil saat ada sinyal."}</div></div>`;
+  v.querySelectorAll("[data-qdel]").forEach((b) => (b.onclick = async () => {
+    if (!confirm("Hapus data ini dari antrean HP? Data yang gagal tidak akan pernah terkirim; setelah dihapus, ambil/unggah ulang fotonya.")) return;
+    await qDel(b.dataset.qdel); b.closest("li").remove(); cekAntreLama(); toast("Data dihapus dari antrean");
+  }));
   const keep = () => { localStorage.setItem("rig", $("#rg").value.trim().toUpperCase()); localStorage.setItem("bhid", bakuBH($("#pb").value)); localStorage.setItem("shift", $("#sh").value); };
   let pending = null, dariGaleri = false;
   v.querySelectorAll("[data-ev]").forEach((b) => (b.onclick = () => {
@@ -1046,7 +1057,7 @@ async function progView(v) {
         <label style="margin-top:6px">Jam foto diambil *</label><input id="gjam" type="datetime-local" step="60" value="${jamLokal(capturedAt)}" max="${jamLokal(new Date())}"></div>`
         : age > 300 ? `<p class="err">Foto ini dibuat ${Math.round(age / 60)} menit lalu — kemungkinan dari galeri, akan ditandai.</p>` : ""}
       <label>Foto ini untuk:</label>
-      <div class="list" id="types">${(() => { const L = pending === "ACT" ? ["RUN", "GANTI_MATA_BOR", "TAMBAH_STANG", "STANDBY", "PERBAIKAN", "PINDAH_TITIK", "LAINNYA"] : pending === "FOTO_AKHIR" ? ["FOTO_DRILL_PAD", "FOTO_PATOK"] : [pending];
+      <div class="list" id="types">${(() => { const L = pending === "ACT" || !EV[pending] ? ["RUN", "GANTI_MATA_BOR", "TAMBAH_STANG", "STANDBY", "PERBAIKAN", "PINDAH_TITIK", "LAINNYA"] : pending === "FOTO_AKHIR" ? ["FOTO_DRILL_PAD", "FOTO_PATOK"] : [pending];
         const pil = L.includes(sessionStorage.getItem("akhirNext")) ? sessionStorage.getItem("akhirNext") : L[0];
         return L.map((k) => `<label style="display:flex;gap:8px;align-items:center;padding:8px 0"><input type="radio" name="et" value="${k}" ${k === pil ? "checked" : ""} style="width:auto">${EV[k]}</label>`).join(""); })()}</div>
       <div id="akhirTip" class="card" style="display:none;background:#EEF6F1;margin:6px 0;font-size:13px"></div>
@@ -1074,6 +1085,7 @@ async function progView(v) {
       const k = p && cekIUP(p.lon, p.lat); if (k && !k.dalam) m.querySelector("#gps").insertAdjacentHTML("afterend", `<p class="err" style="font-weight:600">⚠ Titik GPS ini berada DI LUAR batas IUP (${esc(k.nama)}). Pastikan lokasi bor benar sebelum mengebor; hubungi WSG/admin.</p>`); });
     m.querySelector("#cx").onclick = () => m.remove();
     m.querySelector("#ok").onclick = async () => {
+      if (!EV[tp()] || tp() === "FOTO_AKHIR") return (m.querySelector("#me").textContent = "Pilih jenis aktivitas foto ini dulu.");
       const t = tp(), num = (s) => (String(s).trim() === "" ? null : Number(String(s).replace(",", ".")));
       if (gal) { const j = m.querySelector("#gjam").value ? new Date(m.querySelector("#gjam").value) : null;
         if (!j || isNaN(j)) return (m.querySelector("#me").textContent = "Isi jam foto diambil.");
