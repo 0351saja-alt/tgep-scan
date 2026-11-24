@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-24.14";
+const APP_VERSION = "2026-11-24.15";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -596,9 +596,9 @@ async function fotoView(v) {
   if (online()) {
     const [{ data: a }, { data: b }] = await Promise.all([
       staff ? sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,created_at,n_disagree,n_rule_flags,error,sumber,merged,cell_flags,konfirmasi").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30) : Promise.resolve({ data: [] }),
-      sb.from("form_photo").select("jenis,rig,bhid,tanggal,halaman,jumlah_halaman,sumber,created_at").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30)]);
+      sb.from("form_photo").select("id,jenis,rig,bhid,tanggal,shift,keterangan,halaman,jumlah_halaman,sumber,created_at").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30)]);
     const items = [...(a ?? []).map((j) => ({ id: j.id, t: j.created_at, h: `<li><span class="pill ${j.status}">${j.status === "REJECTED" ? "DITOLAK" : j.status === "MANUAL" ? "ISI MANUAL" : j.status}</span><span>${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}${j.page_no ? " hal. " + j.page_no : ""}${j.sumber ? " · " + j.sumber : ""}<br><span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca, ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span></li>` })),
-      ...(b ?? []).map((p) => ({ t: p.created_at, h: `<li><span class="pill APPROVED">ARSIP</span><span>${esc(ARSIP[p.jenis])} · ${esc(p.bhid || p.rig || "")}${p.halaman ? ` · hal. ${p.halaman}/${p.jumlah_halaman ?? "?"}` : ""} · ${p.sumber}<br><span class="muted">${p.tanggal ?? ""} · dikirim ${new Date(p.created_at).toLocaleString("id-ID")}</span></span></li>` }))].sort((x, y) => (x.t < y.t ? 1 : -1));
+      ...(b ?? []).map((p) => ({ fid: p.id, t: p.created_at, h: `<li><span class="pill APPROVED">ARSIP</span><span>${esc(ARSIP[p.jenis])} · ${esc(p.bhid || p.rig || "")}${p.halaman ? ` · hal. ${p.halaman}/${p.jumlah_halaman ?? "?"}` : ""} · ${p.sumber}<br><span class="muted">${p.tanggal ?? ""} · dikirim ${new Date(p.created_at).toLocaleString("id-ID")}</span></span></li>` }))].sort((x, y) => (x.t < y.t ? 1 : -1));
     $("#mine").innerHTML = items.map((x) => x.h).join("") || `<li class="muted">Belum ada.</li>`;
     // tombol konfirmasi tulisan untuk scan sendiri yang masih menunggu periksa
     (a ?? []).filter((j) => j.status === "NEEDS_REVIEW").forEach((j) => { const n = pertanyaanScan(j).length, nk = Object.keys(j.konfirmasi ?? {}).length, li = [...$("#mine").children][items.findIndex((x) => x.id === j.id)];
@@ -608,7 +608,52 @@ async function fotoView(v) {
     (a ?? []).filter((j) => j.status !== "APPROVED" && j.status !== "PROCESSING").forEach((j) => { const li = [...$("#mine").children][items.findIndex((x) => x.id === j.id)];
       if (li) li.insertAdjacentHTML("beforeend", `<button class="sec" data-edj="${j.id}" style="flex:0 0 auto;width:auto;padding:6px 10px">✏️ Edit</button>`); });
     $("#mine").querySelectorAll("[data-edj]").forEach((b) => (b.onclick = () => { scrollTo(0, 0); reviewDetail($("#v"), b.dataset.edj, "pengirim"); }));
+    // 🛠 Perbaiki data kiriman (salah Hole ID, halaman, jenis, rig, tanggal…) atau 🗑 hapus (diarsipkan, bisa dipulihkan admin)
+    const tbl = `style="flex:0 0 auto;width:auto;padding:6px 10px"`;
+    (a ?? []).filter((j) => (j.status !== "APPROVED" || me?.role === "admin") && j.status !== "PROCESSING").forEach((j) => { const li = [...$("#mine").children][items.findIndex((x) => x.id === j.id)];
+      if (li) li.insertAdjacentHTML("beforeend", `<button class="sec" data-kd="scan_job|${j.id}" ${tbl}>🛠 Data</button><button class="danger" data-kh="scan_job|${j.id}" ${tbl}>🗑</button>`); });
+    (b ?? []).forEach((p) => { const li = [...$("#mine").children][items.findIndex((x) => x.fid === p.id)];
+      if (li) li.insertAdjacentHTML("beforeend", `<button class="sec" data-kd="form_photo|${p.id}" ${tbl}>🛠 Data</button><button class="danger" data-kh="form_photo|${p.id}" ${tbl}>🗑</button>`); });
+    $("#mine").querySelectorAll("li").forEach((li) => { li.style.flexWrap = "wrap"; const sp = li.children[1]; if (sp?.tagName === "SPAN") sp.style.flex = "1 1 55%"; });
+    const cari = (t, id) => (t === "scan_job" ? a : b)?.find((r) => r.id === id);
+    $("#mine").querySelectorAll("[data-kd]").forEach((x) => (x.onclick = () => { const [t, id] = x.dataset.kd.split("|"); editKirimanModal(t, cari(t, id), () => fotoView(v)); }));
+    $("#mine").querySelectorAll("[data-kh]").forEach((x) => (x.onclick = async () => { const [t, id] = x.dataset.kh.split("|"), r = cari(t, id);
+      const lbl = t === "scan_job" ? `${FORMS[r.form_type] ?? r.form_type} ${r.bhid_hint ?? ""}${r.page_no ? " hal. " + r.page_no : ""}` : `${ARSIP[r.jenis] ?? r.jenis} ${r.bhid || r.rig || ""} ${r.tanggal ?? ""}`;
+      const alasan = prompt(`Hapus kiriman "${lbl}"?\nFoto & isiannya dipindah ke arsip (admin bisa memulihkan). Setelah itu Anda bisa kirim ulang yang benar.\n\nAlasan (wajib):`);
+      if (!alasan?.trim()) return;
+      const { error } = await sb.rpc("hapus_kiriman_foto", { p_table: t, p_id: id, p_alasan: alasan.trim() });
+      if (error) return alert(error.message); toast("Kiriman dihapus — silakan kirim ulang yang benar."); fotoView(v); }));
   } else $("#mine").innerHTML = `<li class="muted">Offline — daftar akan tampil saat ada sinyal.</li>`;
+}
+// Form perbaiki data kiriman Foto formulir (Form Logging = scan_job, arsip = form_photo)
+function editKirimanModal(t, r, selesai) {
+  if (!r) return alert("Kiriman tidak ditemukan — muat ulang halaman.");
+  const scan = t === "scan_job", opsi = (o, v) => Object.entries(o).map(([k, n]) => `<option value="${k}"${k === v ? " selected" : ""}>${esc(n)}</option>`).join("");
+  const m = modal(`<h3 style="margin-top:0">🛠 Perbaiki data kiriman</h3>
+    <p class="muted" style="margin:0 0 8px">Untuk salah tulis Hole ID, nomor halaman, jenis formulir, rig, tanggal, dll. Fotonya tetap. Kalau fotonya yang salah, tutup lalu pakai 🗑 Hapus dan kirim ulang.</p>
+    <label>Jenis formulir<select id="kJ">${scan ? opsi(FORMS, r.form_type) : opsi(ARSIP, r.jenis)}</select></label>
+    <label>Hole ID<input id="kB" value="${esc((scan ? r.bhid_hint : r.bhid) ?? "")}" placeholder="mis. DH-NPG 12" autocapitalize="characters"></label>
+    ${scan ? "" : `<div class="row"><label>Rig<input id="kR" value="${esc(r.rig ?? "")}" placeholder="RIG 1" autocapitalize="characters"></label><label>Tanggal<input id="kT" type="date" value="${r.tanggal ?? ""}"></label></div>
+    <label>Shift<select id="kS"><option value="">—</option><option value="PAGI"${r.shift === "PAGI" ? " selected" : ""}>Day (PAGI)</option><option value="MALAM"${r.shift === "MALAM" ? " selected" : ""}>Night (MALAM)</option></select></label>`}
+    <div class="row"><label>Halaman<input id="kH" type="number" min="1" inputmode="numeric" value="${(scan ? r.page_no : r.halaman) ?? ""}"></label>${scan ? "" : `<label>Jumlah halaman<input id="kN" type="number" min="1" inputmode="numeric" value="${r.jumlah_halaman ?? ""}"></label>`}</div>
+    ${scan ? "" : `<label>Keterangan<input id="kK" value="${esc(r.keterangan ?? "")}"></label>`}
+    <label>Alasan perubahan (wajib)<input id="kA" placeholder="mis. salah tulis Hole ID"></label>
+    <p id="kE" class="err"></p>
+    <div class="row"><button class="sec" id="kX">Batal</button><button id="kOk">Simpan perubahan</button></div>`);
+  const q = (s) => m.querySelector(s);
+  q("#kX").onclick = () => m.remove();
+  q("#kOk").onclick = async () => {
+    const alasan = q("#kA").value.trim(); if (!alasan) return (q("#kE").textContent = "Isi alasan perubahan.");
+    const bh = q("#kB").value.trim().toUpperCase().replace(/\s+/g, " ");
+    if (bh && !/^[A-Z0-9][A-Z0-9 _\-\/.]*$/.test(bh)) return (q("#kE").textContent = "Hole ID berisi karakter tidak wajar.");
+    const d = scan ? { jenis: q("#kJ").value, bhid: bh, halaman: q("#kH").value }
+      : { jenis: q("#kJ").value, bhid: bh, rig: q("#kR").value, tanggal: q("#kT").value, shift: q("#kS").value, halaman: q("#kH").value, jumlah_halaman: q("#kN").value, keterangan: q("#kK").value };
+    q("#kOk").disabled = true;
+    const { error } = await sb.rpc("edit_kiriman_foto", { p_table: t, p_id: r.id, p_data: d, p_alasan: alasan });
+    q("#kOk").disabled = false;
+    if (error) return (q("#kE").textContent = /edit_kiriman_foto/.test(error.message) ? "Fungsi database belum dipasang — jalankan edit_hapus_kiriman_foto.sql di Supabase." : error.message);
+    m.remove(); toast("Data kiriman diperbaiki."); selesai?.();
+  };
 }
 async function syncArsip(it) {
   const path = `${session.user.id}/arsip/${it.client_uuid}.jpg`;
