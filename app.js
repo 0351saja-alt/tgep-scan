@@ -200,7 +200,7 @@ async function cekAntreLama() {
   el.innerHTML = `<details style="flex:1;min-width:0"><summary style="cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${lama.length ? `⚠ <b>${lama.length}</b> antre &gt;1 jam` : `⏳ <b>${L.length}</b> antre`}${err ? " · ada galat" : ""}</summary><div style="font-size:11px;margin-top:2px">${info}</div></details><button style="flex:0;white-space:nowrap;padding:3px 8px;font-size:12px;min-height:0" id="antreKirim">Kirim</button>`;
   el.querySelector("#antreKirim").onclick = async () => { el.querySelector("#antreKirim").textContent = "…"; await sync(); cekAntreLama(); };
 }
-const APP_VERSION = "2026-11-24.2";
+const APP_VERSION = "2026-11-24.3";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1652,7 +1652,7 @@ async function editRunDDR(id) {
   if (error) return alert(error.message);
   const n2 = (x) => (x == null || x === "" ? "" : String(x).replace(".", ","));
   const baris = (o = {}) => `<div class="row" data-run style="align-items:center;margin-top:4px"><input placeholder="From" inputmode="decimal" value="${esc(n2(o.from))}"><input placeholder="To" inputmode="decimal" value="${esc(n2(o.to))}">
-    <input placeholder="Core" inputmode="decimal" value="${esc(n2(o.core))}"><input placeholder="Remark" value="${esc(o.remark ?? "")}"><button class="sec" data-x style="flex:0">✕</button></div>`;
+    <input placeholder="Core" inputmode="decimal" value="${esc(n2(o.core))}"><input placeholder="Remark" value="${esc(o.remark ?? "")}"><input placeholder="Hole ID (bila beda)" list="dlBH" value="${esc(o.bhid ?? "")}" style="max-width:130px"><button class="sec" data-x style="flex:0">✕</button></div>`;
   const m = modal(`<h3 style="margin-top:0">✏️ Edit data run DDR</h3>
     <p class="muted" style="margin-top:0">${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")} · ${d.status === "SIGNED" ? "LENGKAP (sudah ditandatangani)" : "DRAF"}</p>
     ${d.status === "SIGNED" ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px;font-size:13px">DDR ini sudah ditandatangani. Perubahan tetap disimpan, tetapi <b>dicatat</b> (siapa, kapan, alasan, nilai lama → baru) dan tampil di cetakan DDR.</p>` : ""}
@@ -1665,7 +1665,7 @@ async function editRunDDR(id) {
     ${(lg ?? []).length ? `<h3>Riwayat perubahan run (${lg.length})</h3><ul class="list">${lg.map((l) => `<li><span>${fmtT(l.edited_at)} · <b>${esc(l.editor_name ?? "")}</b>${l.status_saat_edit === "SIGNED" ? " · setelah TTD" : ""}<br>${esc(l.reason)}<br><span class="muted">${(l.old_value ?? []).length} → ${(l.new_value ?? []).length} baris</span></span></li>`).join("")}</ul>` : ""}`);
   const q = (x) => m.querySelector(x), num = (x) => (String(x ?? "").trim() === "" ? null : Number(String(x).replace(",", ".")));
   const ambil = () => [...m.querySelectorAll("[data-run]")].map((r) => [...r.querySelectorAll("input")].map((x) => x.value.trim())).filter((x) => x[0] || x[1] || x[2])
-    .map(([f, t, c, rm]) => ({ from: num(f), to: num(t), core: num(c), remark: rm || null }));
+    .map(([f, t, c, rm, b]) => { const bh = b ? bakuBH(b) : ""; return { from: num(f), to: num(t), core: num(c), remark: rm || null, ...(bh && bh !== d.bhid ? { bhid: bh } : {}) }; }); // Hole ID per baris (DDR dua lubang) tidak hilang
   const hitung = () => { const L = ambil(), I = L.reduce((s, x) => s + (x.to > x.from ? x.to - x.from : 0), 0), C = L.reduce((s, x) => s + (Number(x.core) || 0), 0);
     q("#erSum").textContent = `${L.length} run · interval ${I.toFixed(2)} m · core ${C.toFixed(2)} m · recovery ${I ? ((100 * Math.min(C, I)) / I).toFixed(1) : "-"}%`; };
   const pasang = () => { m.querySelectorAll("[data-run]").forEach((r) => { r.querySelector("[data-x]").onclick = () => { r.remove(); hitung(); }; r.querySelectorAll("input").forEach((x) => (x.oninput = hitung)); }); hitung(); };
@@ -1682,7 +1682,7 @@ async function editRunDDR(id) {
     const L = ambil(), E = (t) => (q("#erE").textContent = t);
     const salah = L.findIndex((x) => !(x.to > x.from)); if (salah >= 0) return E(`Baris ${salah + 1}: To harus lebih besar dari From.`);
     const sc = L.findIndex((x) => x.core === null || x.core < 0 || x.core > (x.to - x.from) * 1.05); if (sc >= 0) return E(`Baris ${sc + 1}: core kosong atau lebih panjang dari interval run.`);
-    for (let i = 1; i < L.length; i++) if (Math.abs(L[i].from - L[i - 1].to) > 0.02 && !confirm(`Run ${i + 1} (From ${n2(L[i].from)}) tidak menyambung dengan To run ${i} (${n2(L[i - 1].to)}). Tetap simpan?`)) return;
+    for (let i = 1; i < L.length; i++) if ((L[i].bhid ?? "") === (L[i - 1].bhid ?? "") && Math.abs(L[i].from - L[i - 1].to) > 0.02 && !confirm(`Run ${i + 1} (From ${n2(L[i].from)}) tidak menyambung dengan To run ${i} (${n2(L[i - 1].to)}). Tetap simpan?`)) return;
     if (!q("#erR").value.trim()) { q("#erR").focus(); return E("Tulis alasan perubahan."); }
     q("#erOk").disabled = true;
     const { data: r, error: er } = await sb.rpc("edit_ddr_coring", { p_ddr: id, p_coring: L, p_reason: q("#erR").value.trim() });
