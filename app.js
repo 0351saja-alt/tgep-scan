@@ -850,6 +850,9 @@ async function localCheck(bmp) {
   return { sharpness: +sharp.toFixed(0), brightness: +mean.toFixed(0), clipped_pct: +(clip / n * 100).toFixed(1), cast: +cast.toFixed(2), width: bmp.width, height: bmp.height, warnings };
 }
 // standar foto core: sisi panjang ≥ 3508 px = 300 dpi bila dicetak selebar A4 lanskap (11,69 in); file ditandai 300 dpi (JFIF)
+// Status tolak foto core yang BERLAKU: foto yang sudah dinyatakan sesuai oleh verifier/pemilik dianggap DITERIMA walau AI menolaknya.
+// Dipakai di semua tampilan supaya halaman lubang, menu Data, rilis client & notifikasi selalu sama.
+const coreDitolak = (c) => (c?.reviewer_override === true ? false : !!c?.ditolak);
 const FOTO_CORE_MIN_PX = 3508, FOTO_CORE_TOLAK_PX = 0; // SEMENTARA (24/11, permintaan pemilik): batas tolak resolusi dibuka — foto kecil hanya diberi catatan. ≥3508 standar 300 dpi A4 · 2400–3507 peringatan (masih terbaca di-zoom) · <2400 ditolak
 async function dpi300(blob) {
   const b = new Uint8Array(await blob.arrayBuffer());
@@ -976,7 +979,7 @@ async function coverage(bh) {
      <td style="${bad(r.chk_foto_utuh) ? "background:#F6C9C3" : ""}">${esc(r.chk_foto_utuh)}</td><td style="${bad(r.chk_foto_belah) ? "background:#F6C9C3" : ""}">${esc(r.chk_foto_belah ?? "tidak wajib")}</td></tr>`).join("")}</table></div>` : ""}
    <h3>Foto (${ph?.length ?? 0})</h3><ul class="list">${(ph ?? []).map((p) => { const ok = p.reviewer_override ?? p.sop_ok;
      return `<li><span class="pill ${p.status === "CHECKED" ? (ok ? "APPROVED" : "REJECTED") : p.status}">${p.status === "CHECKED" ? (ok ? "SESUAI SOP" : "TIDAK SESUAI") : p.status}</span><span style="flex:1">${esc(p.file_name)}
-       ${p.ditolak && !p.reviewer_override ? `<br><b class="err">DITOLAK: ${esc(p.alasan_tolak ?? "")}</b>` : ""}${(p.sop_issues ?? []).length && !ok ? `<br><span class="err">${p.sop_issues.map(esc).join("<br>")}</span>` : ""}${p.error ? `<br><span class="err">${esc(p.error)}</span>` : ""}${p.review_note ? `<br><span class="muted">Catatan: ${esc(p.review_note)}</span>` : ""}</span>
+       ${coreDitolak(p) ? `<br><b class="err">DITOLAK: ${esc(p.alasan_tolak ?? "")}</b>` : ""}${(p.sop_issues ?? []).length && !ok ? `<br><span class="err">${p.sop_issues.map(esc).join("<br>")}</span>` : ""}${p.error ? `<br><span class="err">${esc(p.error)}</span>` : ""}${p.review_note ? `<br><span class="muted">Catatan: ${esc(p.review_note)}</span>` : ""}</span>
        <button class="sec" data-pv="${esc(p.preview_path)}" style="flex:0">Lihat</button>${isV && p.status === "CHECKED" ? `<button class="sec" data-ov="${p.id}" data-ok="${ok ? 0 : 1}" style="flex:0">${ok ? "Tandai tidak sesuai" : "Nyatakan sesuai"}</button>` : ""}${isV && p.status === "ERROR" ? `<button class="sec" data-re="${p.id}" style="flex:0">Cek ulang</button>` : ""}${me?.role === "admin" ? `<button class="danger" data-delp="${p.id}" style="flex:0">Hapus</button>` : ""}</li>`; }).join("") || `<li class="muted">Belum ada foto core.</li>`}</ul><div id="pvw"></div>`;
   ko.querySelectorAll("[data-pv]").forEach((b) => (b.onclick = async () => {
     const { data } = await sb.storage.from("core-photos").createSignedUrl(b.dataset.pv, 600);
@@ -984,7 +987,8 @@ async function coverage(bh) {
   }));
   ko.querySelectorAll("[data-ov]").forEach((b) => (b.onclick = async () => {
     const note = prompt("Alasan (wajib):"); if (!note) return;
-    const { error } = await sb.from("core_photo").update({ reviewer_override: b.dataset.ok === "1", review_note: note, reviewed_by: session.user.id }).eq("id", b.dataset.ov);
+    const ok = b.dataset.ok === "1"; // diterima verifier = diterima juga di database (status ditolak dihapus)
+    const { error } = await sb.from("core_photo").update({ reviewer_override: ok, review_note: note, reviewed_by: session.user.id, ...(ok ? { ditolak: false, alasan_tolak: null } : {}) }).eq("id", b.dataset.ov);
     if (error) alert(error.message); else coverage(bh);
   }));
   ko.querySelectorAll("[data-delp]").forEach((b) => (b.onclick = async () => { if (await adminDelete("core_photo", b.dataset.delp, "foto core")) coverage(bh); }));
@@ -1658,8 +1662,8 @@ async function simpanView(v) {
     if (mau("run")) jobs.push(Q(sb.from("drill_event").select("*").order("captured_at", { ascending: false })).then(({ data }) => { for (const e of data ?? []) B.push({ t: e.captured_at, jenis: "run", judul: `${EV[e.event_type] ?? e.event_type} · ${e.rig ?? ""} ${e.bhid ?? ""}${e.jenis_bor === "REDRILL" ? " (redrill)" : ""}`,
       ket: [e.depth_to != null ? `${e.depth_from ?? "?"}–${e.depth_to} m${e.core_length != null ? ` · core ${e.core_length} m` : ""}` : null, e.status_akhir, e.lat ? "GPS ✓" : "tanpa GPS", e.reason].filter(Boolean).join(" · "), status: "TERKIRIM", kelas: "APPROVED", aksi: [...(e.photo_path ? [{ l: "Foto", fn: () => bukaFile("progress-photos", e.photo_path) }] : []), ...del("drill_event", e.id, `${EV[e.event_type] ?? e.event_type} ${e.rig ?? ""} ${e.bhid ?? ""}`)] }); }));
     // 4) Foto core
-    if (mau("core")) jobs.push(Q(sb.from("core_photo").select("id,bhid,box_no,depth_from,depth_to,photo_type,status,ditolak,alasan_tolak,error,photo_path,preview_path,captured_at"), "captured_at", "bhid", null).then(({ data }) => { for (const c of data ?? []) B.push({ t: c.captured_at, jenis: "core", judul: `${c.bhid} · kotak ${c.box_no ?? "?"} · ${c.depth_from}–${c.depth_to} m${c.photo_type ? ` · ${c.photo_type}` : ""}`,
-      ket: c.ditolak ? `ditolak: ${c.alasan_tolak ?? "-"}` : c.error ?? "", status: c.ditolak ? "DITOLAK" : c.status, kelas: c.ditolak || c.status === "ERROR" ? "REJECTED" : c.status === "APPROVED" ? "APPROVED" : "NEEDS_REVIEW", aksi: [{ l: "Foto", fn: () => bukaFile("core-photos", c.preview_path || c.photo_path) }, ...ana("core", c.id), ...del("core_photo", c.id, `foto core ${c.bhid} kotak ${c.box_no ?? "?"}`)] }); }));
+    if (mau("core")) jobs.push(Q(sb.from("core_photo").select("id,bhid,box_no,depth_from,depth_to,photo_type,status,sop_ok,reviewer_override,ditolak,alasan_tolak,error,photo_path,preview_path,captured_at"), "captured_at", "bhid", null).then(({ data }) => { for (const c of data ?? []) B.push({ t: c.captured_at, jenis: "core", judul: `${c.bhid} · kotak ${c.box_no ?? "?"} · ${c.depth_from}–${c.depth_to} m${c.photo_type ? ` · ${c.photo_type}` : ""}`,
+      ket: coreDitolak(c) ? `ditolak: ${c.alasan_tolak ?? "-"}` : c.error ?? "", status: coreDitolak(c) ? "DITOLAK" : c.status === "CHECKED" ? ((c.reviewer_override ?? c.sop_ok) ? "SESUAI SOP" : "TIDAK SESUAI") : c.status, kelas: coreDitolak(c) || c.status === "ERROR" ? "REJECTED" : c.status === "APPROVED" || (c.status === "CHECKED" && (c.reviewer_override ?? c.sop_ok)) ? "APPROVED" : "NEEDS_REVIEW", aksi: [{ l: "Foto", fn: () => bukaFile("core-photos", c.preview_path || c.photo_path) }, ...ana("core", c.id), ...del("core_photo", c.id, `foto core ${c.bhid} kotak ${c.box_no ?? "?"}`)] }); }));
     // 5) Form Logging
     if (mau("scan")) jobs.push(Q(sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,error,photo_path,captured_at,sumber"), "captured_at", "bhid_hint", null).then(({ data }) => { for (const j of data ?? []) B.push({ t: j.captured_at, jenis: "scan", judul: `${FORMS?.[j.form_type] ?? "Form Logging"} · ${j.bhid_hint ?? ""} · hal. ${j.page_no ?? "?"}`,
       ket: j.error ?? (j.sumber ? `sumber ${j.sumber}` : ""), status: j.status, kelas: j.status === "ERROR" || j.status === "REJECTED" ? "REJECTED" : j.status === "APPROVED" ? "APPROVED" : "NEEDS_REVIEW", aksi: [...(j.photo_path ? [{ l: "Foto", fn: () => bukaFile("scan-photos", j.photo_path) }] : []), ...(j.status !== "APPROVED" && j.sumber !== "EXCEL" ? ana("scan", j.id) : []), ...del("scan_job", j.id, `Form Logging ${j.bhid_hint ?? ""} hal. ${j.page_no ?? "?"}`)] }); }));
@@ -3760,10 +3764,10 @@ const RILIS = { FOTO_CORE: "Foto core", SCAN_LOGGING: "Scan Form Logging (disetu
 async function rilisAdmin(box) {
   box.innerHTML = `<h3>Rilis foto & scan ke client</h3><p class="muted">Memuat…</p>`;
   const [{ data: cp }, { data: sj }, { data: fp }, { data: rl }] = await Promise.all([
-    sb.from("core_photo").select("bhid,ditolak").limit(20000), sb.from("scan_job").select("bhid_hint,status").eq("status", "APPROVED").limit(20000),
+    sb.from("core_photo").select("bhid,ditolak,reviewer_override").limit(20000), sb.from("scan_job").select("bhid_hint,status").eq("status", "APPROVED").limit(20000),
     sb.from("form_photo").select("bhid").not("bhid", "is", null).limit(20000), sb.from("client_release").select("*")]);
   const cnt = {}; const add = (b, j) => { if (!b) return; (cnt[b] ??= { FOTO_CORE: 0, SCAN_LOGGING: 0, FORM_ARSIP: 0 })[j]++; };
-  (cp ?? []).filter((c) => !c.ditolak).forEach((c) => add(c.bhid, "FOTO_CORE")); (sj ?? []).forEach((s) => add(s.bhid_hint, "SCAN_LOGGING")); (fp ?? []).forEach((f) => add(f.bhid, "FORM_ARSIP"));
+  (cp ?? []).filter((c) => !coreDitolak(c)).forEach((c) => add(c.bhid, "FOTO_CORE")); (sj ?? []).forEach((s) => add(s.bhid_hint, "SCAN_LOGGING")); (fp ?? []).forEach((f) => add(f.bhid, "FORM_ARSIP"));
   const R = new Set((rl ?? []).map((r) => `${r.bhid}|${r.jenis}`)), bh = Object.keys(cnt).sort();
   box.innerHTML = `<h3>Rilis foto & scan ke client</h3><p class="muted">Foto core, scan Form Logging dan foto formulir <b>tidak terlihat</b> oleh client sampai Anda merilisnya per lubang. Setelah dicentang, client yang proyeknya mencakup lubang itu langsung bisa melihat & mengunduh di menu “Foto & scan”. Hilangkan centang untuk menarik kembali. Foto core yang ditolak dan scan yang belum disetujui tidak pernah ikut terkirim.</p>
     <div class="row" style="flex-wrap:wrap"><input id="rf" placeholder="cari Hole ID" style="max-width:180px"></div>

@@ -126,7 +126,9 @@ async function run(id: string) {
 
     const sisaAI = BATAS_AI - dipakai - 1;
     const alasan = tolak.length ? `Ditolak: ${tolak.join("; ")}. ${sisaAI > 0 ? `Foto ulang kotak ini sesuai template SOP (sisa ${sisaAI} kali pemeriksaan otomatis).` : "Batas 2 kali pemeriksaan otomatis untuk kotak ini sudah habis: foto ulang yang benar tetap diunggah, lalu diperiksa verifier secara manual."}` : null;
-    await admin.from("core_photo").update({ status: "CHECKED", ai_check: out, sop_issues: issues, sop_ok: issues.length === 0, ditolak: !!alasan, alasan_tolak: alasan }).eq("id", id);
+    // foto yang sudah dinyatakan sesuai verifier/pemilik tetap diterima walau dianalisis ulang
+    const ov = p.reviewer_override as boolean | null;
+    await admin.from("core_photo").update({ status: "CHECKED", ai_check: out, sop_issues: issues, sop_ok: issues.length === 0, ditolak: ov === true ? false : !!alasan, alasan_tolak: ov === true ? null : alasan }).eq("id", id);
   } catch (e) {
     await admin.from("core_photo").update({ status: "ERROR", error: String((e as Error).message ?? e) }).eq("id", id);
   }
