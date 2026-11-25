@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-25.14";
+const APP_VERSION = "2026-11-25.15";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2545,7 +2545,15 @@ async function dashView(v) {
     R(sb.from("v_consumable_use").select("*").gte("report_date", st.from).lte("report_date", st.to)),
     sb.from("v_dash_hole").select("*"),
   ]);
-  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0 && (!pf || pf.bhids.includes(h.bhid))), K = computeKPI(days, tm ?? [], cu ?? [], holes).filter(([l]) => !isClient() || (l !== "Foto core lengkap" && !/BBM|Oli/i.test(l) && (clientGeo() || !GEO_KPI.includes(l))));
+  // Redrill (v.15): statistik per lubang memakai lubang AKTIF (lubang lama yang sudah di-redrill tidak dihitung); meter redrill & meter lubang lama ditampilkan terpisah
+  const RDR = await petaRedrill().catch(() => ({}));
+  const { data: VB } = await sb.from("v_ddr_baris").select("bhid,meter,tanggal,rig").gte("tanggal", st.from).lte("tanggal", st.to).limit(5000);
+  if (basi()) return;
+  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0 && !RDR[h.bhid] && (!pf || pf.bhids.includes(h.bhid))), K = computeKPI(days, tm ?? [], cu ?? [], holes).filter(([l]) => !isClient() || (l !== "Foto core lengkap" && !/BBM|Oli/i.test(l) && (clientGeo() || !GEO_KPI.includes(l))));
+  { const vb = (VB ?? []).filter((x) => (!st.rig || String(x.rig ?? "").toUpperCase() === st.rig.toUpperCase()) && (!pf || pf.bhids.includes(x.bhid)));
+    const mR = vb.filter((x) => asalRedrill(x.bhid)), mL = vb.filter((x) => RDR[x.bhid]), sm = (xs) => xs.reduce((a, x) => a + (+x.meter || 0), 0);
+    if (mR.length || mL.length) K.push(["Meter redrill", `${sm(mR).toFixed(1)} m · ${new Set(mR.map((x) => x.bhid)).size} lubang`],
+      ["Meter lubang lama (diganti redrill)", `${sm(mL).toFixed(1)} m · ${[...new Set(mL.map((x) => x.bhid))].join(", ")}`, sm(mL) > 0 ? "!" : ""]); }
   $("#dx").onclick = async () => { try { const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new(), sh = (rows, nm) => X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), nm);
     X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([["DASHBOARD TGEP", `${st.from} s/d ${st.to}`, st.rig || "semua rig"], [], ["Indikator", "Nilai"], ...K.map(([a, b]) => [a, b])]), "KPI");
     sh(tanpaBBM(days), "Kinerja rig harian"); sh(tm ?? [], "Pembagian waktu"); sh(isClient() ? (cu ?? []).filter((c) => !BARANG_BBM.test(`${c.item} ${c.kategori}`)) : cu ?? [], "Pemakaian barang"); if (!isClient() || clientGeo()) sh(holes, "Ringkasan lubang");
@@ -5037,9 +5045,9 @@ async function petaView(v) {
   let L = [], LAY = [];
   const muatLubang = async () => {
     if (!online()) { L = JSON.parse(localStorage.getItem("petaLubang") || "[]"); return; }
-    const { data, error } = await ambilLubangPeta(); if (error) { L = JSON.parse(localStorage.getItem("petaLubang") || "[]"); return; }
+    const [{ data, error }, RDR] = await Promise.all([ambilLubangPeta(), petaRedrill().catch(() => ({}))]); if (error) { L = JSON.parse(localStorage.getItem("petaLubang") || "[]"); return; }
     L = (data ?? []).map((r) => { const ll = r.x != null ? UTM.dari(r.x, r.y) : [r.lon, r.lat];
-      return { type: "Feature", properties: { bhid: r.bhid, status: r.status, dalam: r.di_dalam_iup !== false, kd: r.kedalaman, rk: r.rencana_kedalaman, rig: r.rig ?? "", pos: r.sumber_posisi, dip: r.dip, az: r.azimuth, warna: WARNA_STATUS[r.status] ?? "#999" }, geometry: { type: "Point", coordinates: ll } }; })
+      return { type: "Feature", properties: { redrill: asalRedrill(r.bhid) ? bakuBH(asalRedrill(r.bhid)) : null, diganti: RDR[r.bhid] ?? null, bhid: r.bhid, status: r.status, dalam: r.di_dalam_iup !== false, kd: r.kedalaman, rk: r.rencana_kedalaman, rig: r.rig ?? "", pos: r.sumber_posisi, dip: r.dip, az: r.azimuth, warna: WARNA_STATUS[r.status] ?? "#999" }, geometry: { type: "Point", coordinates: ll } }; })
       .filter((f) => f.geometry.coordinates.every(Number.isFinite));
     localStorage.setItem("petaLubang", JSON.stringify(L));
   };
@@ -5208,7 +5216,9 @@ async function petaView(v) {
     LBL.lubang.forEach((mk) => mk.remove());
     LBL.lubang = L.map((f) => { const p = f.properties, el = document.createElement("div"), r = p.status === "RENCANA" ? 11 : 15;
       el.style.cssText = "display:flex;align-items:center;gap:3px;cursor:pointer";
-      el.innerHTML = `<span style="width:${r}px;height:${r}px;border-radius:50%;background:${p.warna};border:${p.dalam ? "1.5px solid #111" : "3.5px solid #e00"};box-sizing:border-box;box-shadow:0 0 2px #fff"></span><span data-nm style="font:600 11px system-ui;color:#fff;background:rgba(0,0,0,.55);padding:0 4px;border-radius:4px;white-space:nowrap">${esc(p.bhid)}</span>`;
+      // Redrill (v.15): lubang redrill bertanda 🔁 + bingkai ungu; lubang lama yang sudah diganti redrill tampil pudar & dicoret
+      if (p.diganti) el.style.opacity = "0.5";
+      el.innerHTML = `<span style="width:${r}px;height:${r}px;border-radius:50%;background:${p.warna};border:${p.redrill ? "3px solid #8E5BB5" : p.dalam ? "1.5px solid #111" : "3.5px solid #e00"};box-sizing:border-box;box-shadow:0 0 2px #fff"></span><span data-nm style="font:600 11px system-ui;color:#fff;background:${p.redrill ? "rgba(110,60,150,.85)" : "rgba(0,0,0,.55)"};padding:0 4px;border-radius:4px;white-space:nowrap${p.diganti ? ";text-decoration:line-through" : ""}" title="${p.redrill ? `Redrill dari ${esc(p.redrill)}` : p.diganti ? `Diganti redrill ${esc(p.diganti)}` : ""}">${p.redrill ? "🔁 " : ""}${esc(p.bhid)}${p.diganti ? ` → ${esc(p.diganti)}` : ""}</span>`;
       el.addEventListener("click", (ev) => { ev.stopPropagation(); popLubang(f); });
       const mk = new maplibregl.Marker({ element: el, anchor: "left", offset: [-r / 2, 0], opacityWhenCovered: "1" }).setLngLat(f.geometry.coordinates); mk._st = p.status; return mk; });
     terapkanVis();
