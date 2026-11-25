@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-25.13";
+const APP_VERSION = "2026-11-25.14";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1168,6 +1168,7 @@ async function progView(v) {
     $("#e").textContent = ""; pending = b.dataset.ev; dariGaleri = $("#pgal").checked; (dariGaleri ? $("#pfG") : $("#pf")).click();
   }));
   v.querySelector("[data-mk]")?.addEventListener("click", () => { keep(); markingForm(); });
+  if (isStaff()) peringatanMarking(v.querySelector(".card"), (b) => { $("#pb").value = b; $("#jb").value = jenisDariBH(b); keep(); markingForm(); }); else titikBelumMarking().catch(() => {});
   v.querySelector("[data-ko]")?.addEventListener("click", () => { keep(); koordinatLubang(localStorage.getItem("bhid") || ""); });
   // 📸 Foto susulan drill pad & patok untuk lubang lama (DDR sudah masuk, rig sudah pindah): Hole ID & rig diambil dari lubang itu, bukan dari isian di atas
   const mulaiSusulan = (bhid, rig) => { sessionStorage.setItem("susulanBH", JSON.stringify({ bhid, rig })); sessionStorage.setItem("akhirNext", "FOTO_DRILL_PAD");
@@ -1250,6 +1251,11 @@ async function progView(v) {
           if (!row.lubang_asal) return (m.querySelector("#me").textContent = "Redrill: isi lubang asal.");
           if (!row.reason) { m.querySelector("#rn").focus(); return (m.querySelector("#me").textContent = "Redrill: tulis alasan redrill di kolom Alasan (mis. recovery rendah, lubang runtuh)."); }
         } else if (asalRedrill(r.bhid) && !confirm(`Hole ID ${r.bhid} berakhiran R (redrill), tetapi tujuan bor bukan REDRILL. Tetap simpan?`)) return;
+        { // ⚠️ titik belum di-marking (tidak menghalangi simpan)
+          let blm = (await titikBelumMarking().catch(() => [])).some((x) => kunciBH(x.bhid) === kunciBH(r.bhid ?? ""));
+          if (!blm && online() && r.bhid) { const { count } = await sb.from("marking").select("id", { count: "exact", head: true }).eq("bhid", r.bhid); blm = count === 0; }
+          if (blm && !confirm(`⚠️ Titik ${r.bhid} BELUM di-marking (belum ada koordinat GPS).\n\n${isStaff() ? "Lakukan 📍 Marking titik di lokasi" : "Minta wellsite/geologist melakukan 📍 Marking titik"} sebelum atau segera setelah mulai bor — koordinat collar dibutuhkan untuk Peta dan Database.\n\nTetap simpan Mulai bor?`)) return;
+        }
         row.dip = num(m.querySelector("#dip").value); row.azimuth = num(m.querySelector("#az").value);
         if (row.dip === null || row.dip < -90 || row.dip > 0) return (m.querySelector("#me").textContent = "Dip antara −90 (tegak) dan 0 (mendatar).");
         if (row.azimuth === null || row.azimuth < 0 || row.azimuth >= 360) return (m.querySelector("#me").textContent = "Azimuth antara 0 dan 359.");
@@ -1352,6 +1358,25 @@ function exifTiff(b, t) {
     if (G[2] && G[4]) { const lat = dms(G[2]) * (str(G[1] ?? { c: 2, v: 0 }) === "S" ? -1 : 1), lon = dms(G[4]) * (G[3] && String.fromCharCode(b.getUint8(G[3].v)) === "W" ? -1 : 1);
       if (Number.isFinite(lat) && Number.isFinite(lon) && (lat || lon)) Object.assign(out, { lat, lon }); } }
   return out;
+}
+// ⚠️ Titik belum di-marking / lubang sudah dibor tanpa koordinat (view v_titik_belum_marking, DB v35). Disimpan di HP agar bisa dipakai offline.
+async function titikBelumMarking() {
+  if (online()) { const { data, error } = await sb.from("v_titik_belum_marking").select("kategori,bhid,project,rig,start_date,hari_sejak_mulai,lubang_asal,lubang_asal_berkoordinat");
+    if (!error && data) { localStorage.setItem("titikBelumMarking", JSON.stringify(data)); return data; } }
+  return JSON.parse(localStorage.getItem("titikBelumMarking") || "[]");
+}
+async function peringatanMarking(el, bukaMarking) {
+  if (!el) return; const L = await titikBelumMarking().catch(() => []), P = myTugas?.project, cocokP = (x) => !P || !x.project || x.project === P;
+  const D = L.filter((x) => x.kategori === "DIBOR_TANPA_KOORDINAT" && cocokP(x)), R = L.filter((x) => x.kategori === "RENCANA_BELUM_MARKING" && cocokP(x));
+  if (!D.length && !R.length) return;
+  const box = document.createElement("div"); box.className = "card"; box.id = "pmk"; box.style.cssText = "background:#FDECEA;border-left:5px solid #C0392B;color:#3a1410";
+  const bh = (b) => (bukaMarking ? `<a href="#" data-mkb="${esc(b)}"><b>${esc(b)}</b></a>` : `<b>${esc(b)}</b>`);
+  box.innerHTML = `${D.length ? `<b>⚠️ ${D.length} lubang sudah dibor tetapi belum di-marking / belum berkoordinat</b> — belum bisa diplot di Peta dan collar kosong di Database.
+    <ul style="margin:6px 0;padding-left:18px">${D.map((x) => `<li>${bh(x.bhid)}${x.rig ? ` · ${esc(x.rig)}` : ""} · mulai ${esc(x.start_date ?? "?")}${x.hari_sejak_mulai > 0 ? ` (${x.hari_sejak_mulai} hari lalu)` : x.hari_sejak_mulai === 0 ? " (hari ini)" : ""}${x.lubang_asal ? ` · redrill dari ${esc(x.lubang_asal)}${x.lubang_asal_berkoordinat ? " (lubang asal sudah berkoordinat — tetap marking posisi redrill)" : ""}` : ""}</li>`).join("")}</ul>` : ""}
+    ${R.length ? `<div style="margin-top:4px">📍 ${R.length} titik rencana belum di-marking: ${R.map((x) => bh(x.bhid)).join(", ")}</div>` : ""}
+    ${bukaMarking ? `<small style="opacity:.8">Ketuk Hole ID untuk langsung 📍 Marking titik di lokasi.</small>` : ""}`;
+  document.getElementById("pmk")?.remove(); el.before(box);
+  box.querySelectorAll("[data-mkb]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); bukaMarking(a.dataset.mkb); }));
 }
 // ---------- Marking titik: setiap pembacaan GPS = satu baris di database (akurasi ikut tersimpan) ----------
 function markingForm() {
@@ -2211,6 +2236,17 @@ async function ddrView(v) {
   const isiDaftarCrew = (L) => { $("#crw").innerHTML = ""; L.forEach(crwRow); while ($("#crw").children.length < crewMin() - 1) crwRow(); hitungCrew(); };
   $("#crwAdd").onclick = () => { crwRow(); hitungCrew(); };
   $("#dn").addEventListener("input", hitungCrew);
+  // ✍️ TTD driller satu ketuk (25-11-2026): bila nama driller cocok dengan TTD tersimpan, wellsite/admin cukup centang persetujuan driller;
+  // TTD tersimpan dipasang otomatis saat simpan (server mencatat akun penyimpan sebagai saksi). Tanpa centang → alur TTD biasa.
+  let ttdOto = null;
+  const knTtd = (x) => String(x ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (bisaTtdLayar("DRILLER")) { const box = document.createElement("div"); box.id = "ttdAuto"; box.style.margin = "4px 0 6px"; $("#dn").closest(".row")?.after(box);
+    let tmr = null; const isi = async () => { const nm = $("#dn").value.trim(); ttdOto = null; if (!nm) return (box.innerHTML = "");
+      const t = (await ttdDrillerTersimpan().catch(() => [])).find((x) => knTtd(x.nama) === knTtd(nm));
+      if (!t) return (box.innerHTML = `<small class="muted">Belum ada TTD tersimpan untuk <b>${esc(nm)}</b>. Saat simpan, driller tanda tangan <b>sekali</b> di layar (biarkan "Simpan TTD ini" tercentang); DDR berikutnya cukup satu centang di sini.</small>`);
+      ttdOto = t; box.innerHTML = `<label style="display:flex;gap:8px;align-items:flex-start;background:#E6F4EC;border-radius:8px;padding:8px;margin:0;font-weight:400"><input type="checkbox" id="ttdOk" style="width:auto;margin-top:3px"> <span>✍️ Driller <b>${esc(t.nama)}</b> sudah membaca &amp; menyetujui isi DDR ini — pasang TTD tersimpannya otomatis saat simpan (tercatat atas nama saya sebagai saksi).</span></label>`; };
+    $("#dn").addEventListener("input", () => { clearTimeout(tmr); tmr = setTimeout(isi, 500); }); $("#dn").addEventListener("change", isi); setTimeout(isi, 300); }
+  const ttdOtomatis = () => (ttdOto && $("#ttdOk")?.checked && knTtd(ttdOto.nama) === knTtd($("#dn").value) ? { slot: "DRILLER", method: "CORET", tersimpan: true, name: ttdOto.nama, path: ttdOto.signature_path, signed_at: new Date().toISOString() } : null);
   isiDaftarCrew((last.crew_list ?? (last.helpers ?? "").split(",").map((n) => ({ nama: n.trim(), jabatan: "Helper" }))).filter((x) => x.nama));
   const isiCrew = async () => {
     if (EDIT) return; // mode edit: crew diambil dari DDR yang diedit
@@ -2269,12 +2305,12 @@ async function ddrView(v) {
       // tanda tangan yang belum ada di DDR ini diminta setelah edit (yang sudah ada tetap tersimpan)
       const { data: sgAda } = online() ? await sb.from("ddr_signature").select("slot").eq("ddr_id", EDIT.id) : { data: [] };
       const ada = new Set((sgAda ?? []).map((x) => x.slot)), signs = [];
-      for (const slot of ["DRILLER", "WELLSITE", "CLIENT"].filter((k) => !ada.has(k))) { const s = await signDialog(slot, row.driller_name ?? ""); if (s) signs.push(s); }
+      for (const slot of ["DRILLER", "WELLSITE", "CLIENT"].filter((k) => !ada.has(k))) { const s = slot === "DRILLER" && ttdOtomatis() || await signDialog(slot, row.driller_name ?? ""); if (s) signs.push(s); }
       await qPut({ kind: "ddr", client_uuid: crypto.randomUUID(), row, signs, edit_dari: EDIT.id });
       sessionStorage.removeItem("ddrEdit"); alert(`Perubahan DDR disimpan dan dikirim. Isi DDR lama diganti; versi lama tetap tersimpan di server.${ada.size ? `\nTanda tangan yang sudah ada tetap: ${[...ada].map((k) => SLOT_LABEL[k]).join(", ")}.` : ""}${signs.length ? `\nTanda tangan baru: ${signs.length}.` : ""}${ada.size + signs.length < 2 ? "\nTanda tangan yang kurang bisa dilengkapi dari daftar DDR → Tanda tangani." : ""}`);
       tab = EDIT.dari || "dash"; localStorage.setItem("tab", tab); render(); sync(); return; }
     const signs = [];
-    for (const slot of ["DRILLER", "WELLSITE", "CLIENT"]) { const s = await signDialog(slot, row.driller_name ?? ""); if (s) signs.push(s); }
+    for (const slot of ["DRILLER", "WELLSITE", "CLIENT"]) { const s = slot === "DRILLER" && ttdOtomatis() || await signDialog(slot, row.driller_name ?? ""); if (s) signs.push(s); }
     await qPut({ kind: "ddr", client_uuid: crypto.randomUUID(), row, signs });
     alert(`DDR disimpan dengan ${signs.length} tanda tangan.${signs.length < 2 ? " Yang kurang bisa dilengkapi dari daftar DDR setelah terkirim." : ""}`);
     render(); sync();
@@ -2500,6 +2536,7 @@ async function dashView(v) {
   $("#pres").onclick = () => laporanProgres({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase(), proj: $("#fproj").value, slide: true });
   $("#go").onclick = () => { sessionStorage.setItem("filterProyek", $("#fproj").value); sessionStorage.setItem("dash", JSON.stringify({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() })); dashView(v); };
   if (!online()) { $("#dSlide").innerHTML = `<p style="color:#fff;padding:16px;margin:0">Dashboard perlu sinyal internet.</p>`; return; }
+  if (!isClient()) peringatanMarking(v.querySelector(".dashHead")?.nextElementSibling ?? null, null).catch(() => {});
   const pf = await proyekFilter();
   const R = (q) => (st.rig ? q.eq("rig", st.rig) : pf ? q.in("rig", pf.rigs.length ? pf.rigs : ["-"]) : q);
   const [{ data: rd }, { data: tm }, { data: cu }, { data: hl }] = await Promise.all([
