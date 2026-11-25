@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-25.10";
+const APP_VERSION = "2026-11-25.12";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1599,7 +1599,7 @@ async function ttdView(v) {
 
 // ---------- dialog tanda tangan (PIN atau scan QR) ----------
 // Wellsite boleh menerima TTD DRILLER langsung di layar HP-nya: driller tidak perlu akun/login (metode CORET, server mencatat wellsite yang menginput).
-const bisaTtdLayar = (slot) => slot === "DRILLER" && ["geologist", "verifier"].includes(me?.role);
+const bisaTtdLayar = (slot) => slot === "DRILLER" && ["geologist", "verifier", "admin"].includes(me?.role);
 // ---------- 🧭 Koordinat lubang (collar) manual: UTM WGS84 51S atau lat/lon → borehole.xgps/ygps/zgps, tercatat di koordinat_log ----------
 async function koordinatLubang(bh0 = "", selesai) {
   if (!online()) return alert("Perlu sinyal untuk menyimpan koordinat lubang.");
@@ -1801,6 +1801,42 @@ function ttdDrillerLayar(nama = "") {
       const png = pad.toDataURL("image/png"); m.remove();
       resolve({ slot: "DRILLER", method: "CORET", name: nm, png, simpan: m.querySelector("#tdSimpan")?.checked ?? false, signed_at: new Date().toISOString() }); };
   });
+}
+// ✍️ Lengkapi TTD driller untuk banyak DDR sekaligus (wellsite/admin): per nama driller pakai TTD tersimpan,
+// bila belum ada → driller coret sekali di layar (disimpan) lalu dipakai untuk DDR lain milik driller yang sama.
+async function lengkapiTtdDriller(L, selesai) {
+  if (!online()) return alert("Perlu sinyal untuk menandatangani DDR yang sudah terkirim.");
+  const kunci = (x) => String(x ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  let TS = await ttdDrillerTersimpan().catch(() => []);
+  const G = {}; for (const d of L) (G[kunci(d.driller_name) || "(tanpa nama)"] ??= { nama: d.driller_name || "", ddr: [] }).ddr.push(d);
+  const m = modal(`<h3 style="margin-top:0">✍️ Lengkapi TTD driller</h3>
+    <p class="muted" style="margin-top:0">DDR yang belum ada TTD driller. Centang DDR yang sudah disetujui driller-nya. Driller tidak perlu login: dipakai <b>TTD tersimpan</b>; bila belum ada, driller tanda tangan <b>sekali</b> di layar HP ini lalu dipakai untuk DDR lain miliknya. Tercatat atas nama Anda.</p>
+    ${Object.entries(G).map(([k, g], gi) => { const ts = TS.find((t) => kunci(t.nama) === k);
+      return `<div class="card" style="margin:6px 0;padding:8px"><b>Driller: ${esc(g.nama || "(nama driller kosong di DDR)")}</b> · ${ts ? `<span style="color:#1E7A4F">TTD tersimpan ✓</span>` : `<span style="color:#8A5A00">belum ada TTD tersimpan — driller coret sekali</span>`}
+        <ul class="list" style="margin:4px 0">${g.ddr.map((d) => `<li><label style="display:flex;gap:8px;align-items:center;margin:0;font-weight:400"><input type="checkbox" data-td="${esc(d.id)}" data-g="${gi}" ${g.nama ? "checked" : "disabled"} style="width:auto"> ${esc(d.report_date)} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${esc(d.rig)} · ${esc(d.bhid ?? "")}</label></li>`).join("")}</ul>
+        ${g.nama ? "" : `<small class="err">Isi nama driller lewat ✏️ Edit DDR dulu.</small>`}</div>`; }).join("")}
+    <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px"><input type="checkbox" id="tmS" style="width:auto;margin-top:3px"> <span>Saya menyatakan driller yang bersangkutan sudah menyetujui isi DDR yang dicentang.</span></label>
+    <div class="row" style="margin-top:10px"><button id="tmOk">Simpan TTD driller</button><button class="sec" id="tmX">Batal</button></div><div id="tmE" class="err"></div>`);
+  const q = (x) => m.querySelector(x), E = (t) => (q("#tmE").innerHTML = t);
+  q("#tmX").onclick = () => m.remove();
+  q("#tmOk").onclick = async () => {
+    const pilih = [...m.querySelectorAll("[data-td]:checked")]; if (!pilih.length) return E("Centang minimal satu DDR.");
+    if (!q("#tmS").checked) return E("Centang pernyataan persetujuan driller.");
+    q("#tmOk").disabled = true; const hasil = [];
+    const grup = Object.values(G);
+    for (const [gi, g] of grup.entries()) {
+      const ids = pilih.filter((c) => +c.dataset.g === gi).map((c) => c.dataset.td); if (!ids.length) continue;
+      let ts = TS.find((t) => kunci(t.nama) === kunci(g.nama)), mulai = 0;
+      if (!ts) { m.style.display = "none"; const c = await ttdDrillerLayar(g.nama); m.style.display = "";
+        if (!c) { hasil.push(`${g.nama}: dibatalkan`); continue; }
+        const { error } = await kirimTtdCoret(ids[0], { ...c, simpan: true }); hasil.push(`${g.nama} · DDR 1: ${error ? "GAGAL " + error.message : "✓"}`); mulai = 1;
+        TS = await ttdDrillerTersimpan().catch(() => TS); ts = TS.find((t) => kunci(t.nama) === kunci(g.nama));
+        if (!ts && ids.length > 1) { hasil.push(`${g.nama}: TTD tidak tersimpan, DDR lain dilewati`); continue; } }
+      for (const id of ids.slice(mulai)) { const { error } = await kirimTtdCoret(id, { tersimpan: true, name: ts.nama, path: ts.signature_path, signed_at: new Date().toISOString() });
+        hasil.push(`${g.nama} · ${L.find((d) => d.id === id)?.report_date ?? ""}: ${error ? "GAGAL " + error.message : "✓"}`); }
+    }
+    m.remove(); alert(`TTD driller:\n${hasil.join("\n")}\n\nDDR yang sudah ada TTD wellsite otomatis menjadi LENGKAP.`); selesai?.();
+  };
 }
 // Kirim TTD CORET: unggah gambar ke bucket signatures (folder akun wellsite), lalu server mencatatnya di slot DRILLER
 async function kirimTtdCoret(ddrId, s) {
@@ -2249,11 +2285,13 @@ async function ddrView(v) {
     const { data: pb } = (data ?? []).length ? await sb.from("ddr").select("id,created_by").in("id", data.map((d) => d.id)) : { data: [] };
     const pembuat = Object.fromEntries((pb ?? []).map((x) => [x.id, x.created_by]));
     const bisaEdit = (d) => d.status !== "SIGNED" && (["geologist", "verifier", "admin"].includes(me?.role) || pembuat[d.id] === session?.user?.id);
-    $("#lst").innerHTML = `<ul class="list">${(data ?? []).map((d) => `<li style="flex-wrap:wrap"><span class="pill ${d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW"}">${d.status === "SIGNED" ? "LENGKAP" : "DRAF"}</span>
+    const kurangDrl = (data ?? []).filter((d) => d.status !== "SIGNED" && !/DRILLER:/.test(d.ttd ?? ""));
+    $("#lst").innerHTML = `${bisaTtdLayar("DRILLER") && kurangDrl.length ? `<div class="row" style="margin-bottom:8px"><button id="ttdMassal" style="flex:0;white-space:nowrap">✍️ Lengkapi TTD driller (${kurangDrl.length} DDR)</button><span class="muted" style="font-size:12px;align-self:center">DDR yang sudah selesai tapi belum ada TTD driller — diisi wellsite/admin tanpa driller memakai aplikasi</span></div>` : ""}<ul class="list">${(data ?? []).map((d) => `<li style="flex-wrap:wrap"><span class="pill ${d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW"}">${d.status === "SIGNED" ? "LENGKAP" : "DRAF"}</span>
       <span style="flex:1">${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">Coring DDR ${d.coring_ddr_m ?? 0} m · Diesel ${d.bbm_liter} L${d.bbm_per_meter ? ` (${d.bbm_per_meter} L/m)` : ""}<br>${esc(d.ttd ?? "belum ada TTD")}</span></span>
       ${!/CLIENT/.test(d.ttd ?? "") ? `<button class="sec" data-sg="${d.id}" style="flex:0">Tanda tangani</button>` : ""}${bisaEdit(d) ? `<button data-ef="${d.id}" style="flex:0;white-space:nowrap">✏️ Edit DDR</button>` : d.status === "SIGNED" && me?.role === "admin" ? `<button class="danger" data-bt="${d.id}" style="flex:0;white-space:nowrap">🔓 Buka TTD</button>` : ""}<button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`).join("") || `<li class="muted">Belum ada.</li>`}</ul>
       <p class="muted" style="font-size:12px;margin:6px 0 0">✏️ Edit DDR = ubah semua isian DDR yang masih DRAF (crew, jam, open hole, coring/run, barang, catatan) lalu tekan simpan; versi lama tetap tersimpan di server. DDR yang sudah ditandatangani lengkap harus dibuka admin (🔓 Buka TTD) sebelum diedit.</p>`;
     $("#lst").querySelectorAll("[data-ef]").forEach((b) => (b.onclick = () => editDDR(b.dataset.ef)));
+    $("#ttdMassal")?.addEventListener("click", () => lengkapiTtdDriller(kurangDrl, () => render()));
     $("#lst").querySelectorAll("[data-bt]").forEach((b) => (b.onclick = async () => {
       const alasan = prompt("Alasan membuka tanda tangan DDR ini (wajib, tercatat di log):"); if (!alasan || alasan.trim().length < 5) return alert("Alasan wajib diisi (minimal 5 huruf).");
       if (!confirm("Semua tanda tangan DDR ini akan dicabut dan DDR kembali menjadi DRAF. Setelah diperbaiki, DDR perlu ditandatangani ulang. Lanjutkan?")) return;
