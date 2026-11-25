@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-25.15";
+const APP_VERSION = "2026-11-26.16";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -714,7 +714,7 @@ async function reviewDetail(v, id, mode) {
    ${j.status === "ERROR" ? `<p class="err">Gagal diproses: ${esc(j.error)}</p>` : ""}${j.status === "MANUAL" ? `<p class="err">${esc(j.error)}</p>` : ""}
    ${j.sumber === "EXCEL" ? `<p><b>Form Logging manual dari Excel</b> (tanpa pembacaan AI) · <a href="#" id="dlx">⬇ Unduh Excel asli${j.file_name ? " (" + esc(j.file_name) + ")" : ""}</a> — cocokkan setiap baris dengan foto lembar.</p>` : ""}
    ${(j.ai_kali ?? 0) > 0 ? `<p class="muted">Dibaca otomatis ${j.ai_kali}× untuk foto ini · batas 2× per halaman.</p>` : ""}
-   ${isiManual ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px">✍️ <b>Belum ada hasil baca otomatis</b> — tabel kosong sudah disiapkan. Isi langsung dari foto di samping, lalu <b>Setujui & simpan</b>. Kolom <b>No</b> wajib diisi pada setiap baris yang berisi data; baris yang dibiarkan kosong tidak disimpan. Bisa juga tekan <b>Proses ulang</b> bila kunci baca otomatis sudah diperbaiki.</p>` : ""}</div>
+   ${isiManual ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px">✍️ <b>Belum ada hasil baca otomatis</b> — tabel kosong sudah disiapkan. Isi langsung dari foto di samping, lalu <b>Terima koreksi & simpan ke database</b>. Kolom <b>No</b> wajib diisi pada setiap baris yang berisi data; baris yang dibiarkan kosong tidak disimpan. Bisa juga tekan <b>Proses ulang</b> bila kunci baca otomatis sudah diperbaiki.</p>` : ""}</div>
    <div class="rv"><div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Foto</h3><input id="zm" type="range" min="1" max="4" step="0.25" value="1" style="flex:2"></div>
      <div class="photo" id="ph"><img id="im" src="${url?.signedUrl ?? ""}" alt="Foto formulir" style="width:100%"></div></div>
    <div class="card"><h3>Hasil scan (bisa diedit)</h3>
@@ -729,7 +729,7 @@ async function reviewDetail(v, id, mode) {
      ${f.type === "BEDA" && f.field !== "*" ? `<span class="ab"><button class="sec" data-pick="a" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai A: ${esc(f.a)}</button><button class="sec" data-pick="b" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai B: ${esc(f.b)}</button></span>` : ""}</span></li>`).join("") || `<li class="muted">Tidak ada temuan.</li>`}</ul></div>
    <div class="card"><label>Catatan pemeriksa</label><textarea id="nt" rows="2"></textarea>
      ${pengirim ? `<p class="muted" style="margin:6px 0">Isian Anda dikirim ke verifier untuk diperiksa & disetujui. Setelah disetujui, data masuk ke database conto.</p><div class="row" style="margin-top:10px"><button id="sv">💾 Simpan isian & kirim ke verifier</button></div>` : ""}
-     <div class="row" style="margin-top:10px;${pengirim ? "display:none" : ""}"><button id="ok">Setujui & simpan ke database</button><button class="warn" id="re">Proses ulang</button><button class="danger" id="no">Tolak</button></div><div id="e" class="err"></div></div>`;
+     <div class="row" style="margin-top:10px;${pengirim ? "display:none" : ""}"><button id="ok">✅ Terima koreksi & simpan ke database</button><button class="warn" id="re">Proses ulang</button><button class="danger" id="no">Tolak</button></div><div id="e" class="err"></div></div>`;
   $("#bk").onclick = () => (pengirim ? render() : reviewList(v));
   if (pengirim) { const lb = v.querySelector("#nt")?.previousElementSibling; if (lb) lb.textContent = "Catatan untuk verifier (opsional)"; }
   if ($("#dlx")) $("#dlx").onclick = async (ev) => { ev.preventDefault(); const { data: u2 } = await sb.storage.from("scan-photos").createSignedUrl(j.excel_path, 600, { download: j.file_name || "form_logging.xlsx" }); if (u2?.signedUrl) location.href = u2.signedUrl; };
@@ -791,12 +791,16 @@ async function reviewDetail(v, id, mode) {
     $("#sv").disabled = true; const { error } = await sb.rpc("simpan_isian_scan", { p_job: id, p_data: isi, p_note: $("#nt").value || null }); $("#sv").disabled = false;
     if (error) return ($("#e").textContent = error.message); toast("Isian tersimpan — menunggu diperiksa verifier"); render(); };
   $("#ok").onclick = async () => {
+    $("#e").textContent = "";
     const isi = validasi(); if (typeof isi !== "object") return;
+    // v.16: koreksi pemeriksa wajib beralasan; semua isian tersimpan ke database, koreksi per isian tercatat di Riwayat koreksi
+    const nEdit = v.querySelectorAll("td.edited").length;
+    if (nEdit && !isiManual && !$("#nt").value.trim()) return ($("#e").textContent = `Ada ${nEdit} isian yang Anda koreksi — tulis alasan koreksi di Catatan pemeriksa.`);
     $("#ok").disabled = true;
     const { data: res, error } = await sb.rpc("approve_scan", { p_job: id, p_data: isi, p_note: $("#nt").value || null });
     $("#ok").disabled = false;
     if (error) return ($("#e").textContent = error.message);
-    alert(`Tersimpan: ${res.rows_written} baris untuk ${res.bhid}. Cek hasil hitung di tab "Data & cek".`); reviewList(v);
+    alert(`Tersimpan ke database: ${res.rows_written} baris untuk ${res.bhid}.${res.isian_dikoreksi || res.kepala_dikoreksi ? `\nKoreksi tercatat: ${res.isian_dikoreksi ?? 0} isian baris, ${res.kepala_dikoreksi ?? 0} isian kepala.` : ""}\nCek hasil hitung di tab "Data & cek".`); reviewList(v);
   };
   $("#re").onclick = async () => { const { error } = await sb.functions.invoke("process-scan", { body: { job_id: id } }); $("#e").textContent = error ? error.message : "Diproses ulang — buka lagi dalam ±1 menit."; };
   $("#no").onclick = async () => {
@@ -991,16 +995,41 @@ async function coverage(bh) {
    <h3>Foto (${ph?.length ?? 0})</h3><ul class="list">${(ph ?? []).map((p) => { const ok = p.reviewer_override ?? p.sop_ok;
      return `<li><span class="pill ${p.status === "CHECKED" ? (ok ? "APPROVED" : "REJECTED") : p.status}">${p.status === "CHECKED" ? (ok ? "SESUAI SOP" : "TIDAK SESUAI") : p.status}</span><span style="flex:1">${esc(p.file_name)}
        ${coreDitolak(p) ? `<br><b class="err">DITOLAK: ${esc(p.alasan_tolak ?? "")}</b>` : ""}${(p.sop_issues ?? []).length && !ok ? `<br><span class="err">${p.sop_issues.map(esc).join("<br>")}</span>` : ""}${p.error ? `<br><span class="err">${esc(p.error)}</span>` : ""}${p.review_note ? `<br><span class="muted">Catatan: ${esc(p.review_note)}</span>` : ""}</span>
-       <button class="sec" data-pv="${esc(p.preview_path)}" style="flex:0">Lihat</button>${isV && p.status === "CHECKED" ? `<button class="sec" data-ov="${p.id}" data-ok="${ok ? 0 : 1}" style="flex:0">${ok ? "Tandai tidak sesuai" : "Nyatakan sesuai"}</button>` : ""}${isV && p.status === "ERROR" ? `<button class="sec" data-re="${p.id}" style="flex:0">Cek ulang</button>` : ""}${me?.role === "admin" ? `<button class="danger" data-delp="${p.id}" style="flex:0">Hapus</button>` : ""}</li>`; }).join("") || `<li class="muted">Belum ada foto core.</li>`}</ul><div id="pvw"></div>`;
+       <button class="sec" data-pv="${esc(p.preview_path)}" style="flex:0">Lihat</button>${isV && p.status !== "PROCESSING" ? `<button class="sec" data-prk="${p.id}" style="flex:0">Periksa / koreksi</button>` : ""}${isV && p.status === "ERROR" ? `<button class="sec" data-re="${p.id}" style="flex:0">Cek ulang</button>` : ""}${me?.role === "admin" ? `<button class="danger" data-delp="${p.id}" style="flex:0">Hapus</button>` : ""}</li>`; }).join("") || `<li class="muted">Belum ada foto core.</li>`}</ul><div id="pvw"></div>`;
   ko.querySelectorAll("[data-pv]").forEach((b) => (b.onclick = async () => {
     const { data } = await sb.storage.from("core-photos").createSignedUrl(b.dataset.pv, 600);
     $("#pvw").innerHTML = `<img src="${data?.signedUrl ?? ""}" alt="Foto core" style="width:100%;border-radius:8px">`; $("#pvw").scrollIntoView({ behavior: "smooth" });
   }));
-  ko.querySelectorAll("[data-ov]").forEach((b) => (b.onclick = async () => {
-    const note = prompt("Alasan (wajib):"); if (!note) return;
-    const ok = b.dataset.ok === "1"; // diterima verifier = diterima juga di database (status ditolak dihapus)
-    const { error } = await sb.from("core_photo").update({ reviewer_override: ok, review_note: note, reviewed_by: session.user.id, ...(ok ? { ditolak: false, alasan_tolak: null } : {}) }).eq("id", b.dataset.ov);
-    if (error) alert(error.message); else coverage(bh);
+  // v.16: Periksa foto core — pemeriksa bisa mengoreksi Hole ID / kotak / kedalaman / jenis, lalu "Terima & simpan":
+  // koreksi + status diterima langsung tersimpan ke database (RPC terima_foto_core, alasan wajib, tercatat di catatan foto).
+  // Berlaku juga untuk foto yang belum/gagal dicek otomatis (UPLOADED/ERROR).
+  ko.querySelectorAll("[data-prk]").forEach((b) => (b.onclick = async () => {
+    const p = (ph ?? []).find((x) => x.id === b.dataset.prk); if (!p) return;
+    const { data: u } = await sb.storage.from("core-photos").createSignedUrl(p.preview_path, 600);
+    $("#pvw").innerHTML = `<div class="card" style="border:2px solid #2B6CB0"><h3 style="margin-top:0">Periksa foto core</h3><p class="muted" style="margin:0 0 6px">${esc(p.file_name)} · status ${esc(p.status)}</p>
+      <img src="${u?.signedUrl ?? ""}" alt="Foto core" style="width:100%;border-radius:8px">
+      <p class="muted">Cocokkan dengan foto. Ubah isian yang salah, tulis alasan, lalu <b>Terima & simpan</b> — semua koreksi langsung tersimpan ke database dan tercatat.</p>
+      <div class="row"><label style="flex:2">Hole ID<input id="kfB" value="${esc(p.bhid)}"></label><label style="flex:1">Kotak<input id="kfK" inputmode="numeric" value="${esc(p.box_no ?? "")}"></label></div>
+      <div class="row"><label>Dari (m)<input id="kfF" inputmode="decimal" value="${esc(p.depth_from)}"></label><label>Sampai (m)<input id="kfT" inputmode="decimal" value="${esc(p.depth_to)}"></label>
+       <label>Jenis<select id="kfJ"><option ${p.photo_type === "UTUH" ? "selected" : ""}>UTUH</option><option ${p.photo_type === "BELAH" ? "selected" : ""}>BELAH</option></select></label></div>
+      <label>Alasan / catatan pemeriksaan (wajib)<textarea id="kfN" rows="2" placeholder="mis. kedalaman di label kotak 5–8 m; sesuai SOP"></textarea></label>
+      <div class="row" style="margin-top:8px"><button id="kfOk">✅ Terima & simpan</button><button class="danger" id="kfNo">✖ Tidak sesuai SOP</button><button class="sec" id="kfX" style="flex:0">Batal</button></div><div id="kfE" class="err"></div></div>`;
+    $("#pvw").scrollIntoView({ behavior: "smooth" });
+    $("#kfX").onclick = () => ($("#pvw").innerHTML = "");
+    const kirim = async (terima) => {
+      const n = (x) => { const t = String(x ?? "").trim().replace(",", "."); return t === "" ? null : Number(t); };
+      const f = n($("#kfF").value), t = n($("#kfT").value), k = n($("#kfK").value), note = $("#kfN").value.trim();
+      if (!note) return ($("#kfE").textContent = "Tulis alasan / catatan pemeriksaan.");
+      if ([f, t, k].some((x) => x !== null && !isFinite(x))) return ($("#kfE").textContent = "Kotak dan kedalaman harus angka.");
+      if (f === null || t === null || t <= f) return ($("#kfE").textContent = "Kedalaman Dari harus lebih kecil dari Sampai.");
+      $("#kfOk").disabled = $("#kfNo").disabled = true;
+      const { data: r, error } = await sb.rpc("terima_foto_core", { p_id: p.id, p_bhid: $("#kfB").value.trim(), p_box: k, p_from: f, p_to: t, p_type: $("#kfJ").value, p_terima: terima, p_note: note });
+      $("#kfOk").disabled = $("#kfNo").disabled = false;
+      if (error) return ($("#kfE").textContent = error.message);
+      toast(`${terima ? "Diterima & tersimpan" : "Ditandai tidak sesuai"}${r?.koreksi?.length ? ` · koreksi: ${r.koreksi.join(", ")}` : ""}`);
+      coverage(bh);
+    };
+    $("#kfOk").onclick = () => kirim(true); $("#kfNo").onclick = () => kirim(false);
   }));
   ko.querySelectorAll("[data-delp]").forEach((b) => (b.onclick = async () => { if (await adminDelete("core_photo", b.dataset.delp, "foto core")) coverage(bh); }));
   ko.querySelectorAll("[data-re]").forEach((b) => (b.onclick = async () => { await sb.functions.invoke("check-core-photo", { body: { photo_id: b.dataset.re } }); coverage(bh); }));
