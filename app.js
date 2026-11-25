@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-25.12";
+const APP_VERSION = "2026-11-25.13";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -328,7 +328,7 @@ async function render() {
   if (!["client", "admin", "verifier", "admin_lapangan"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
   const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["simpan", "Data tersimpan"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
-    ...(ver ? [["review", "Periksa scan"], ["data", "Data & cek"], ["db", "Database"], ["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["simpan", "Data tersimpan"], ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
+    ...(ver ? [["review", "Periksa scan"]] : []), ...(staff ? [["data", "Data & cek"], ["db", "Database"]] : []), ...(ver ? [["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["simpan", "Data tersimpan"], ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
   const PANDUAN = { driller: "driller", geologist: "geologist", verifier: "verifier", admin: "admin", client: "client", admin_lapangan: "admin_lapangan" };
@@ -5315,7 +5315,7 @@ async function dbView(v) {
     if (!data?.length) return ($("#tb").innerHTML = `<p class="muted">Tidak ada data.</p>`);
     const cols = Object.keys(data[0]).filter((c) => !["data", "related"].includes(c));
     const canDel = me?.role === "admin" && d.del, canRes = me?.role === "admin" && f.ds === "arsip", canPr = f.ds === "ddr";
-    const verDb = ["verifier", "admin"].includes(me?.role), canEd = (verDb && ["geology", "density"].includes(f.ds) && cols.includes("sample_no")) || (isStaff() && f.ds === "collar"), canEdD = verDb && f.ds === "ddr";
+    const verDb = isStaff(), canEd = (verDb && ["geology", "density"].includes(f.ds) && cols.includes("sample_no")) || (isStaff() && f.ds === "collar"), canEdD = verDb && f.ds === "ddr";
     const fc = FILE_COL[f.ds] ?? {}, DV = await petaDrive(data, fc);
     const cell = (c, x) => { if (fc[c] && x) { const dv = DV[fc[c] + ":" + x]; return `<td style="padding:4px 7px;white-space:nowrap"><button class="sec" data-fb="${fc[c]}" data-fp="${esc(x)}" style="padding:2px 10px">Buka</button> ${dv ? `<a href="${esc(dv)}" target="_blank" rel="noopener" class="pill" style="background:#C8EBD4;color:#12251E;text-decoration:none" title="Buka salinan di Google Drive">Drive</a> ` : `<span class="muted" title="Belum tersalin ke Google Drive (disalin otomatis tiap 10 menit)">·</span> `}<a href="#" data-fl="${esc(dv || linkFile(fc[c], x))}" title="Salin link permanen${dv ? " (Google Drive)" : ""}" style="text-decoration:none">🔗</a></td>`; }
       const s = x !== null && typeof x === "object" ? JSON.stringify(x) : x; const bad = c.startsWith("chk_") && x && !OKV.has(x); return `<td style="padding:4px 7px;white-space:nowrap;${bad ? "background:#F6C9C3" : ""}">${esc(s)}</td>`; };
