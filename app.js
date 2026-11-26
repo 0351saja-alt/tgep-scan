@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-26.17";
+const APP_VERSION = "2026-11-26.18";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -610,7 +610,7 @@ async function fotoView(v) {
     $("#mine").querySelectorAll("[data-edj]").forEach((b) => (b.onclick = () => { scrollTo(0, 0); reviewDetail($("#v"), b.dataset.edj, "pengirim"); }));
     // 🛠 Perbaiki data kiriman (salah Hole ID, halaman, jenis, rig, tanggal…) atau 🗑 hapus (diarsipkan, bisa dipulihkan admin)
     const tbl = `style="flex:0 0 auto;width:auto;padding:6px 10px"`;
-    (a ?? []).filter((j) => (j.status !== "APPROVED" || me?.role === "admin") && j.status !== "PROCESSING").forEach((j) => { const li = [...$("#mine").children][items.findIndex((x) => x.id === j.id)];
+    (a ?? []).filter((j) => (j.status !== "APPROVED" || ["verifier", "admin"].includes(me?.role)) && j.status !== "PROCESSING").forEach((j) => { const li = [...$("#mine").children][items.findIndex((x) => x.id === j.id)];
       if (li) li.insertAdjacentHTML("beforeend", `<button class="sec" data-kd="scan_job|${j.id}" ${tbl}>🛠 Data</button><button class="danger" data-kh="scan_job|${j.id}" ${tbl}>🗑</button>`); });
     (b ?? []).forEach((p) => { const li = [...$("#mine").children][items.findIndex((x) => x.fid === p.id)];
       if (li) li.insertAdjacentHTML("beforeend", `<button class="sec" data-kd="form_photo|${p.id}" ${tbl}>🛠 Data</button><button class="danger" data-kh="form_photo|${p.id}" ${tbl}>🗑</button>`); });
@@ -2070,7 +2070,7 @@ function ddrClientModal(d) {
 }
 
 // ---------- Edit langsung dari Dashboard: klik/ketuk, klik kanan, atau tekan lama pada grafik atau baris tabel → data mentah (DDR + foto run) ----------
-// Menu: Lihat DDR · Edit DDR (DRAF: pengirim/verifier/admin; DDR bertanda tangan dikunci, admin bisa Buka TTD dengan alasan) · Lihat foto run.
+// Menu: Lihat DDR · Edit DDR (DRAF: pengirim/verifier/admin; DDR bertanda tangan dikunci, verifier/admin bisa Buka TTD dengan alasan) · Lihat foto run.
 async function menuEditData(o) {
   if (isClient() || !online()) return;
   const ver = ["verifier", "admin"].includes(me?.role), adm = me?.role === "admin";
@@ -2082,7 +2082,7 @@ async function menuEditData(o) {
     <ul class="list">${(dd ?? []).map((d) => { const milik = d.created_by === session?.user?.id, bisa = d.status !== "SIGNED" && (milik || ver || me?.role === "geologist");
       return `<li style="flex-wrap:wrap"><span class="pill ${d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW"}">${d.status === "SIGNED" ? "TTD" : "DRAF"}</span><span style="flex:1;min-width:170px"><b>DDR ${esc(d.rig)} · ${d.shift === "MALAM" ? "Night" : "Day"}</b> · ${esc(d.bhid ?? "")}<br><span class="muted">meter DDR ${fmtD(meter(d))} m</span></span>
         <button class="sec" data-lh="${d.id}" style="flex:0">Lihat DDR</button>
-        ${bisa ? `<button data-ed2="${d.id}" style="flex:0">✏️ Edit DDR</button>` : d.status === "SIGNED" ? `<button class="sec" disabled style="flex:0;opacity:.55" title="Sudah ditandatangani">Sudah ditandatangani — minta admin buka kunci</button>${adm ? `<button class="danger" data-bt="${d.id}" style="flex:0">🔓 Buka TTD</button>` : ""}` : `<button class="sec" disabled style="flex:0;opacity:.55">Hanya pengirim/wellsite/verifier/admin</button>`}</li>`; }).join("") || `<li class="muted">Belum ada DDR untuk ${esc(o.rig ?? "rig ini")} pada tanggal ini.</li>`}</ul>
+        ${bisa ? `<button data-ed2="${d.id}" style="flex:0">✏️ Edit DDR</button>` : d.status === "SIGNED" ? `<button class="sec" disabled style="flex:0;opacity:.55" title="Sudah ditandatangani">Sudah ditandatangani — verifier/admin bisa buka TTD</button>${ver ? `<button class="danger" data-bt="${d.id}" style="flex:0">🔓 Buka TTD</button>` : ""}` : `<button class="sec" disabled style="flex:0;opacity:.55">Hanya pengirim/wellsite/verifier/admin</button>`}</li>`; }).join("") || `<li class="muted">Belum ada DDR untuk ${esc(o.rig ?? "rig ini")} pada tanggal ini.</li>`}</ul>
     <h4 style="margin:10px 0 4px">Foto run (pembanding)</h4><ul class="list">${(ev ?? []).map((e, i) => `<li><span style="flex:1">${esc(e.rig)} · ${esc(e.bhid ?? "")} · ${fmtD(e.depth_from)}–${fmtD(e.depth_to)} m <span class="muted">${fmtT(new Date(e.captured_at))}</span></span>${e.photo_path ? `<button class="sec" data-fr="${i}" style="flex:0">Foto</button>` : ""}${isStaff() || e.created_by === session?.user?.id ? `<button class="sec" data-fe="${i}" style="flex:0;white-space:nowrap">✏️ Ubah</button>` : ""}</li>`).join("") || `<li class="muted">Tidak ada foto run.</li>`}</ul>
     <div style="margin-top:8px"><button class="sec" id="meT">Tutup</button></div>`);
   m.querySelector("#meT").onclick = () => m.remove();
@@ -2218,7 +2218,7 @@ async function ddrView(v) {
   async function isiEditDDR() {
     const { data: d, error } = online() ? await sb.from("ddr").select("*").eq("id", EDIT.id).single() : { error: { message: "offline" } };
     if (error || !d) { sessionStorage.removeItem("ddrEdit"); return alert("DDR untuk diedit tidak bisa dimuat: " + (error?.message ?? "tidak ditemukan")); }
-    if (d.status === "SIGNED") { sessionStorage.removeItem("ddrEdit"); return alert("DDR ini sudah ditandatangani. Minta admin membuka tanda tangan (Buka TTD) dulu."); }
+    if (d.status === "SIGNED") { sessionStorage.removeItem("ddrEdit"); return alert("DDR ini sudah ditandatangani. Minta verifier/admin membuka tanda tangan (🔓 Buka TTD) dulu — TTD lama dihapus dan DDR perlu ditandatangani ulang."); }
     const set = (id, x) => { const el = $(id); if (el && x != null) el.value = x; };
     if (![...$("#rg").options ?? []].some((o) => o.value === d.rig) && $("#rg").tagName === "SELECT") $("#rg").insertAdjacentHTML("afterbegin", `<option>${esc(d.rig)}</option>`);
     set("#rg", d.rig); set("#dt", d.report_date); set("#sh", d.shift); set("#bh", d.bhid); set("#jbd", d.jenis_bor ?? jenisDariBH(d.bhid ?? "")); set("#pj", d.project); set("#lc", d.location); set("#rt", d.rig_type);
@@ -2353,8 +2353,8 @@ async function ddrView(v) {
     const kurangDrl = (data ?? []).filter((d) => d.status !== "SIGNED" && !/DRILLER:/.test(d.ttd ?? ""));
     $("#lst").innerHTML = `${bisaTtdLayar("DRILLER") && kurangDrl.length ? `<div class="row" style="margin-bottom:8px"><button id="ttdMassal" style="flex:0;white-space:nowrap">✍️ Lengkapi TTD driller (${kurangDrl.length} DDR)</button><span class="muted" style="font-size:12px;align-self:center">DDR yang sudah selesai tapi belum ada TTD driller — diisi wellsite/admin tanpa driller memakai aplikasi</span></div>` : ""}<ul class="list">${(data ?? []).map((d) => `<li style="flex-wrap:wrap"><span class="pill ${d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW"}">${d.status === "SIGNED" ? "LENGKAP" : "DRAF"}</span>
       <span style="flex:1">${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">Coring DDR ${d.coring_ddr_m ?? 0} m · Diesel ${d.bbm_liter} L${d.bbm_per_meter ? ` (${d.bbm_per_meter} L/m)` : ""}<br>${esc(d.ttd ?? "belum ada TTD")}</span></span>
-      ${!/CLIENT/.test(d.ttd ?? "") ? `<button class="sec" data-sg="${d.id}" style="flex:0">Tanda tangani</button>` : ""}${bisaEdit(d) ? `<button data-ef="${d.id}" style="flex:0;white-space:nowrap">✏️ Edit DDR</button>` : d.status === "SIGNED" && me?.role === "admin" ? `<button class="danger" data-bt="${d.id}" style="flex:0;white-space:nowrap">🔓 Buka TTD</button>` : ""}<button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`).join("") || `<li class="muted">Belum ada.</li>`}</ul>
-      <p class="muted" style="font-size:12px;margin:6px 0 0">✏️ Edit DDR = ubah semua isian DDR yang masih DRAF (crew, jam, open hole, coring/run, barang, catatan) lalu tekan simpan; versi lama tetap tersimpan di server. DDR yang sudah ditandatangani lengkap harus dibuka admin (🔓 Buka TTD) sebelum diedit.</p>`;
+      ${!/CLIENT/.test(d.ttd ?? "") ? `<button class="sec" data-sg="${d.id}" style="flex:0">Tanda tangani</button>` : ""}${bisaEdit(d) ? `<button data-ef="${d.id}" style="flex:0;white-space:nowrap">✏️ Edit DDR</button>` : d.status === "SIGNED" && ["verifier", "admin"].includes(me?.role) ? `<button class="danger" data-bt="${d.id}" style="flex:0;white-space:nowrap">🔓 Buka TTD</button>` : ""}<button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`).join("") || `<li class="muted">Belum ada.</li>`}</ul>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">✏️ Edit DDR = ubah semua isian DDR yang masih DRAF (crew, jam, open hole, coring/run, barang, catatan) lalu tekan simpan; versi lama tetap tersimpan di server. DDR yang sudah ditandatangani harus dibuka verifier/admin (🔓 Buka TTD) sebelum diedit — TTD lama dihapus dan DDR perlu ditandatangani ulang.</p>`;
     $("#lst").querySelectorAll("[data-ef]").forEach((b) => (b.onclick = () => editDDR(b.dataset.ef)));
     $("#ttdMassal")?.addEventListener("click", () => lengkapiTtdDriller(kurangDrl, () => render()));
     $("#lst").querySelectorAll("[data-bt]").forEach((b) => (b.onclick = async () => {
