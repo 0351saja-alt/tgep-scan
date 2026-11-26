@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-26.18";
+const APP_VERSION = "2026-11-26.19";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -670,12 +670,12 @@ async function arsipList(box) {
 }
 
 async function reviewList(v) {
-  const { data, error } = await sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,created_at,n_disagree,n_rule_flags,error")
+  const { data, error } = await sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,created_at,n_disagree,n_rule_flags,error,draft_at")
     .in("status", ["NEEDS_REVIEW", "ERROR", "PROCESSING", "UPLOADED", "MANUAL"]).order("created_at");
   v.innerHTML = `<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">Scan menunggu pemeriksaan</h2><button class="sec" id="rf" style="flex:0">Muat ulang</button></div>
   ${error ? `<p class="err">${esc(error.message)}</p>` : ""}
   <ul class="list">${(data ?? []).map((j) => `<li><span class="pill ${j.status}">${j.status}</span><span style="flex:1">${esc(FORMS[j.form_type])} · <b>${esc(j.bhid_hint)}</b>${j.page_no ? " hal. " + j.page_no : ""}<br>
-   <span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca · ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span>
+   <span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca · ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}${j.draft_at ? ` · <b style="color:#1E9E69">💾 editan tersimpan ${esc(fmtT(new Date(j.draft_at)))}</b>` : ""}</span></span>
    <button data-id="${j.id}" style="flex:0">Buka</button>${me?.role === "admin" ? `<button class="danger" data-del="${j.id}" style="flex:0">Hapus</button>` : ""}</li>`).join("") || `<li class="muted">Tidak ada yang perlu diperiksa.</li>`}</ul></div>`;
   const ab = document.createElement("div"); ab.className = "card"; ab.innerHTML = "<p class='muted'>Memuat arsip…</p>"; v.appendChild(ab); arsipList(ab);
   $("#rf").onclick = () => reviewList(v);
@@ -688,15 +688,26 @@ async function reviewDetail(v, id, mode) {
   const { data: j, error } = await sb.from("scan_job").select("*").eq("id", id).single();
   if (error) return (v.innerHTML = `<p class="err">${esc(error.message)}</p>`);
   const { data: url } = await sb.storage.from("scan-photos").createSignedUrl(j.photo_path, 3600);
-  const data = structuredClone(j.merged ?? { header: {}, rows: [] });
+  // v.19: editan pemeriksa yang disimpan sementara (💾 Simpan editan) ada di j.draft; hasil baca asli tetap di j.merged
+  const asli = j.merged ?? { header: {}, rows: [] };
+  const adaDraf = !pengirim && j.draft && typeof j.draft === "object";
+  const data = structuredClone(adaDraf ? j.draft : asli);
   const flags = j.validation ?? [], cf = j.cell_flags ?? {};
   const hdrCols = j.form_type === "HEADER" ? HDR : j.form_type === "SHEET" ? SHDR : PHDR, rowCols = j.form_type === "LOG" ? LOG : j.form_type === "DENSITY" ? DEN : j.form_type === "SHEET" ? SHEET : [];
   // Bila belum ada hasil baca otomatis (gagal/ERROR, MANUAL, atau masih diproses), siapkan tabel kosong agar bisa diisi manual dari foto.
   if (!data.header) data.header = {};
   if (!data.header.bhid && j.bhid_hint) data.header.bhid = j.bhid_hint;
   if (j.form_type === "SHEET" && data.header.page == null && j.page_no) data.header.page = j.page_no;
-  const isiManual = rowCols.length > 0 && !(data.rows ?? []).length;
-  if (isiManual) data.rows = Array.from({ length: 15 }, (_, i) => ({ _row: i + 1 }));
+  const isiManual = rowCols.length > 0 && !(asli.rows ?? []).length;
+  if (isiManual && !(data.rows ?? []).length) data.rows = Array.from({ length: 15 }, (_, i) => ({ _row: i + 1 }));
+  // isian draf yang berbeda dari hasil baca asli ditandai hijau (dianggap koreksi pemeriksa → wajib alasan saat Terima & simpan)
+  const sm = (a, b) => (a ?? "") === (b ?? "") || String(a ?? "") === String(b ?? "");
+  const bedaDraf = (key, idx) => {
+    if (!adaDraf || isiManual) return false;
+    if (idx === null || idx === undefined || idx === "") return !sm(asli.header?.[key], data.header?.[key]);
+    const r = data.rows?.[idx], o = (asli.rows ?? []).find((x) => String(x._row) === String(r?._row));
+    return o ? !sm(o[key], r?.[key]) : r?.[key] !== null && r?.[key] !== undefined && r?.[key] !== "";
+  };
   // Lembar lanjutan: bila halaman yang sama berisi baris hari sebelumnya yang SUDAH tersimpan (interval From–To sama di lubang yang sama),
   // baris itu ditandai "sudah tersimpan" dan dilewati; yang disimpan hanya sisanya (baris baru hari ini).
   let lamaN = 0;
@@ -708,12 +719,13 @@ async function reviewDetail(v, id, mode) {
   const cls = (k) => { const f = cf[k]; if (!f) return ""; return f.some((x) => x.type === "BEDA") ? "f-BEDA" : "f-ATURAN"; };
   const KF = j.konfirmasi ?? {};
   const tip = (k) => [...(cf[k] ?? []).map((x) => x.msg), ...(KF[k] ? [KF[k].tidak_tahu ? `Pengirim (${KF[k].nama}) juga tidak yakin` : `Dikonfirmasi pengirim (${KF[k].nama}): ${KF[k].nilai}`] : [])].join(" | ");
-  const cell = (val, key, idx, rowNo) => { const fk = `${rowNo ?? "h"}.${key}`; return `<td class="${cls(fk)}" title="${esc(tip(fk))}"${KF[fk] && !KF[fk].tidak_tahu ? ' style="outline:2px solid #1E9E69;outline-offset:-2px"' : ""}><input data-k="${key}" data-r="${idx ?? ""}" value="${esc(val ?? "")}" inputmode="${NUMERIC.has(key) ? "decimal" : "text"}"></td>`; };
+  const cell = (val, key, idx, rowNo) => { const fk = `${rowNo ?? "h"}.${key}`; return `<td class="${bedaDraf(key, idx) ? "edited" : cls(fk)}" title="${esc(tip(fk))}"${KF[fk] && !KF[fk].tidak_tahu ? ' style="outline:2px solid #1E9E69;outline-offset:-2px"' : ""}><input data-k="${key}" data-r="${idx ?? ""}" value="${esc(val ?? "")}" inputmode="${NUMERIC.has(key) ? "decimal" : "text"}"></td>`; };
   v.innerHTML = `<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}</h2><button class="sec" id="bk" style="flex:0">← Kembali</button></div>
    <p class="muted">Kuning = dua pembacaan berbeda · Merah = melanggar aturan validasi · Hijau = sudah Anda ubah · Bingkai hijau = sudah dikonfirmasi pengirim (${Object.keys(j.konfirmasi ?? {}).length}). Bandingkan dengan foto sebelum menyetujui.</p>
    ${j.status === "ERROR" ? `<p class="err">Gagal diproses: ${esc(j.error)}</p>` : ""}${j.status === "MANUAL" ? `<p class="err">${esc(j.error)}</p>` : ""}
    ${j.sumber === "EXCEL" ? `<p><b>Form Logging manual dari Excel</b> (tanpa pembacaan AI) · <a href="#" id="dlx">⬇ Unduh Excel asli${j.file_name ? " (" + esc(j.file_name) + ")" : ""}</a> — cocokkan setiap baris dengan foto lembar.</p>` : ""}
    ${(j.ai_kali ?? 0) > 0 ? `<p class="muted">Dibaca otomatis ${j.ai_kali}× untuk foto ini · batas 2× per halaman.</p>` : ""}
+   ${adaDraf ? `<p style="background:#E3F4EA;padding:8px 10px;border-radius:8px">💾 <b>Melanjutkan editan tersimpan</b> — disimpan ${esc(fmtT(new Date(j.draft_at)))}${j.draft_note ? ` · catatan: ${esc(j.draft_note)}` : ""}. Isian hijau = berbeda dari hasil baca asli. Editan belum masuk database conto sampai <b>✅ Terima & simpan</b>.</p>` : ""}
    ${isiManual ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px">✍️ <b>Belum ada hasil baca otomatis</b> — tabel kosong sudah disiapkan. Isi langsung dari foto di samping, lalu <b>✅ Terima & simpan</b>. Kolom <b>No</b> wajib diisi pada setiap baris yang berisi data; baris yang dibiarkan kosong tidak disimpan. Bisa juga tekan <b>Proses ulang</b> bila kunci baca otomatis sudah diperbaiki.</p>` : ""}</div>
    <div class="rv"><div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Foto</h3><input id="zm" type="range" min="1" max="4" step="0.25" value="1" style="flex:2"></div>
      <div class="photo" id="ph"><img id="im" src="${url?.signedUrl ?? ""}" alt="Foto formulir" style="width:100%"></div></div>
@@ -729,9 +741,11 @@ async function reviewDetail(v, id, mode) {
      ${f.type === "BEDA" && f.field !== "*" ? `<span class="ab"><button class="sec" data-pick="a" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai A: ${esc(f.a)}</button><button class="sec" data-pick="b" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai B: ${esc(f.b)}</button></span>` : ""}</span></li>`).join("") || `<li class="muted">Tidak ada temuan.</li>`}</ul></div>
    <div class="card"><label>Catatan pemeriksa</label><textarea id="nt" rows="2"></textarea>
      ${pengirim ? `<p class="muted" style="margin:6px 0">Isian Anda dikirim ke verifier untuk diperiksa & disetujui. Setelah disetujui, data masuk ke database conto.</p><div class="row" style="margin-top:10px"><button id="sv">💾 Simpan isian & kirim ke verifier</button></div>` : ""}
-     <div class="row" style="margin-top:10px;${pengirim ? "display:none" : ""}"><button id="ok">✅ Terima & simpan</button><button class="danger" id="no">✖ Tidak sesuai SOP</button><button class="warn" id="re">Proses ulang</button></div><div id="e" class="err"></div></div>`;
+     <div class="row" style="margin-top:10px;${pengirim ? "display:none" : ""}"><button id="ok">✅ Terima & simpan</button><button class="sec" id="sd">💾 Simpan editan</button><button class="danger" id="no">✖ Tidak sesuai SOP</button><button class="warn" id="re">Proses ulang</button></div>
+     ${pengirim ? "" : `<p class="muted" style="font-size:12px;margin:6px 0 0">💾 Simpan editan = simpan sementara tanpa menyetujui (status tetap menunggu periksa, bisa dilanjutkan nanti). Data baru masuk database conto setelah ✅ Terima & simpan.</p>`}<div id="e" class="err"></div></div>`;
   $("#bk").onclick = () => (pengirim ? render() : reviewList(v));
   if (pengirim) { const lb = v.querySelector("#nt")?.previousElementSibling; if (lb) lb.textContent = "Catatan untuk verifier (opsional)"; }
+  if (adaDraf && j.draft_note) $("#nt").value = j.draft_note;
   if ($("#dlx")) $("#dlx").onclick = async (ev) => { ev.preventDefault(); const { data: u2 } = await sb.storage.from("scan-photos").createSignedUrl(j.excel_path, 600, { download: j.file_name || "form_logging.xlsx" }); if (u2?.signedUrl) location.href = u2.signedUrl; };
   // uji silang: foto core pada rentang kedalaman lembar ini
   if (j.form_type === "SHEET" || j.form_type === "LOG") {
@@ -802,7 +816,18 @@ async function reviewDetail(v, id, mode) {
     if (error) return ($("#e").textContent = error.message);
     alert(`Tersimpan ke database: ${res.rows_written} baris untuk ${res.bhid}.${res.isian_dikoreksi || res.kepala_dikoreksi ? `\nKoreksi tercatat: ${res.isian_dikoreksi ?? 0} isian baris, ${res.kepala_dikoreksi ?? 0} isian kepala.` : ""}\nCek hasil hitung di tab "Data & cek".`); reviewList(v);
   };
-  $("#re").onclick = async () => { const { error } = await sb.functions.invoke("process-scan", { body: { job_id: id } }); $("#e").textContent = error ? error.message : "Diproses ulang — buka lagi dalam ±1 menit."; };
+  // v.19: 💾 Simpan editan — simpan isian tabel apa adanya (tanpa menyetujui) ke scan_job.draft
+  $("#sd").onclick = async () => {
+    $("#e").textContent = "";
+    for (const r of data.rows ?? []) for (const k of Object.keys(r)) if (NUMERIC.has(k) && r[k] !== null && r[k] !== undefined && !isFinite(r[k])) return ($("#e").textContent = `Baris ${r._row}: ${k} bukan angka`);
+    const isi = { ...data, rows: (data.rows ?? []).map(({ _lama, ...r }) => r) };
+    $("#sd").disabled = true;
+    const { error } = await sb.rpc("simpan_editan_scan", { p_job: id, p_data: isi, p_note: $("#nt").value || null });
+    $("#sd").disabled = false;
+    if (error) return ($("#e").textContent = /simpan_editan_scan/.test(error.message) ? "Fungsi database belum dipasang — jalankan v38_simpan_editan_scan.sql di Supabase." : error.message);
+    toast("Editan tersimpan — belum disetujui. Lanjutkan kapan saja, lalu ✅ Terima & simpan.");
+  };
+  $("#re").onclick = async () => { if (adaDraf || v.querySelector("td.edited")) { if (!confirm("Proses ulang akan membuang editan yang belum disetujui (termasuk editan tersimpan). Lanjutkan?")) return; } const { error } = await sb.functions.invoke("process-scan", { body: { job_id: id } }); $("#e").textContent = error ? error.message : "Diproses ulang — buka lagi dalam ±1 menit."; };
   $("#no").onclick = async () => {
     if (!$("#nt").value.trim()) return ($("#e").textContent = "Tulis alasan tidak sesuai SOP di Catatan pemeriksa.");
     const { error } = await sb.from("scan_job").update({ status: "REJECTED", review_note: $("#nt").value, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }).eq("id", id);
