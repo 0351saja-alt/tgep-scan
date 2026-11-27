@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.50";
+const APP_VERSION = "2026-11-27.51";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1616,8 +1616,8 @@ async function usersView(v) {
     <div class="card"><h3>Menunggu persetujuan (${pend.length})</h3><ul class="list">${pend.map((r) => row(r, true)).join("") || `<li class="muted">Tidak ada.</li>`}</ul></div>
     <div class="card"><h3>Semua pengguna</h3><ul class="list">${rest.map((r) => row(r, false)).join("") || `<li class="muted">-</li>`}</ul></div>
     ${dihapus.length ? `<details class="card"><summary><b>Akun dihapus (${dihapus.length})</b> <span class="muted">— tidak bisa masuk; data yang pernah dikirim tetap tersimpan atas nama mereka</span></summary><ul class="list">${dihapus.map((r) => `<li><span style="flex:1"><b>${esc(r.full_name)}</b> · ${esc(r.email)}<br><span class="muted">dihapus ${new Date(auOf[r.user_id].dihapus_at).toLocaleString("id-ID")}${auOf[r.user_id].nonaktif_alasan ? " · " + esc(auOf[r.user_id].nonaktif_alasan) : ""}</span></span></li>`).join("")}</ul><p class="muted">Bila orang ini perlu masuk lagi, ia mendaftar ulang (email yang sama boleh) dan menunggu persetujuan.</p></details>` : ""}
-    <div class="card" id="akc"></div><div class="card" id="rlc"></div>`;
-  aksesKlien($("#akc")); rilisAdmin($("#rlc"));
+    <div class="card" id="akc"></div>`;
+  aksesKlien($("#akc")); // v.51: panel "Rilis foto & scan ke client" dihapus — rilis otomatis di server (v52)
   $("#cp").onclick = async () => { await navigator.clipboard?.writeText(link); $("#cp").textContent = "Tersalin"; };
   const act = async (uid, role) => {
     const note = role ? prompt("Catatan (opsional), mis. 'kru RIG-03':") ?? "" : prompt("Alasan menolak / menonaktifkan (wajib):");
@@ -4606,7 +4606,7 @@ async function rilisAdmin(box) {
 }
 // ---------- Foto & scan (client) ----------
 async function fotoKlienView(v) {
-  v.innerHTML = `<div class="card"><h2>Foto & scan</h2><p class="muted">Foto core dan scan formulir yang sudah dirilis admin TGEP untuk lubang proyek Anda.</p><div id="fk">Memuat…</div></div><div id="fd"></div>`;
+  v.innerHTML = `<div class="card"><h2>Foto & scan</h2><p class="muted">Foto core dan scan formulir lubang proyek Anda — data baru langsung muncul di sini.</p><div id="fk">Memuat…</div></div><div id="fd"></div>`;
   if (!online()) return ($("#fk").textContent = "Perlu sinyal internet.");
   const { data, error } = await sb.from("client_release").select("*").order("bhid");
   if (error) return ($("#fk").innerHTML = `<p class="err">${esc(error.message)}</p>`);
