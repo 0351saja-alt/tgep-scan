@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.39";
+const APP_VERSION = "2026-11-27.40";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6469,8 +6469,9 @@ async function sampelView(v) {
   const daftar = async () => {
     const { data } = await sb.from("kirim_preparasi").select("id,no_kirim,tanggal,tujuan,status,pengirim,penerima,jumlah_karung,no_segel,kirim_preparasi_item(count)").order("created_at", { ascending: false }).limit(50);
     $("#kpL").innerHTML = (data ?? []).map((k) => `<li style="flex-wrap:wrap"><span class="pill ${k.status === "DITERIMA" ? "APPROVED" : k.status === "DIKIRIM" ? "NEEDS_REVIEW" : "ANTRE"}">${esc(k.status)}</span><span style="flex:1;min-width:180px"><b>${esc(k.no_kirim)}</b> · ${esc(k.tanggal)} · ${esc(k.tujuan)}<br><span class="muted">${k.kirim_preparasi_item?.[0]?.count ?? 0} sample${k.jumlah_karung ? ` · ${k.jumlah_karung} karung` : ""}${k.no_segel ? ` · segel ${esc(k.no_segel)}` : ""}${k.pengirim ? ` · ${esc(k.pengirim)}` : ""}${k.penerima ? ` → ${esc(k.penerima)}` : ""}</span></span>
-      <button class="sec" data-x="${k.id}" style="flex:0">⬇ Excel</button>${k.status !== "DITERIMA" ? `<button class="sec" data-st="${k.id}" data-v="${k.status === "DRAFT" ? "DIKIRIM" : "DITERIMA"}" style="flex:0">Tandai ${k.status === "DRAFT" ? "dikirim" : "diterima"}</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada.</li>`;
+      <button data-pdf="${k.id}" style="flex:0;white-space:nowrap">📄 PDF</button><button class="sec" data-x="${k.id}" style="flex:0">⬇ Excel</button>${k.status !== "DITERIMA" ? `<button class="sec" data-st="${k.id}" data-v="${k.status === "DRAFT" ? "DIKIRIM" : "DITERIMA"}" style="flex:0">Tandai ${k.status === "DRAFT" ? "dikirim" : "diterima"}</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada.</li>`;
     $("#kpL").querySelectorAll("[data-x]").forEach((b) => (b.onclick = () => excelKirim(b.dataset.x)));
+    $("#kpL").querySelectorAll("[data-pdf]").forEach((b) => (b.onclick = () => cetakKirim(b.dataset.pdf)));
     $("#kpL").querySelectorAll("[data-st]").forEach((b) => (b.onclick = async () => { const { error } = await sb.from("kirim_preparasi").update({ status: b.dataset.v }).eq("id", b.dataset.st); if (error) return alert(error.message); toast("Status diperbarui"); daftar(); }));
   };
   const excelKirim = async (id) => {
@@ -6508,7 +6509,7 @@ async function sampelView(v) {
     $("#kpOk").disabled = true;
     const { data, error } = await sb.rpc("simpan_kirim_preparasi", { p: { tanggal: $("#kpT").value, tujuan: $("#kpJ").value, pengirim: $("#kpP").value, penerima: $("#kpR").value, jumlah_karung: $("#kpK").value, no_segel: $("#kpS").value, catatan: $("#kpC").value, items } });
     $("#kpOk").disabled = false; if (error) return ($("#kpE").textContent = "Gagal: " + error.message);
-    toast(`Tersimpan ${data.no_kirim} · ${data.jumlah} sample`); await muat(); daftar(); excelKirim(data.id); };
+    toast(`Tersimpan ${data.no_kirim} · ${data.jumlah} sample`); await muat(); daftar(); cetakKirim(data.id); };
   // v.39: Form Logging yang sudah dikirim tetapi belum ✅ Terima & simpan — sample-nya belum ada di database, jadi belum bisa dikirim ke preparasi
   const { data: tunggu } = await sb.from("scan_job").select("id,bhid_hint,page_no,status,draft_at,merged").in("status", ["NEEDS_REVIEW", "MANUAL", "ERROR", "UPLOADED"]).in("form_type", ["SHEET", "LOG"]).order("bhid_hint");
   if ((tunggu ?? []).length) { const ver = ["verifier", "admin"].includes(me?.role);
@@ -6517,6 +6518,35 @@ async function sampelView(v) {
   await muat(); daftar();
 }
 
+// v.40: Form pengiriman sample ke preparasi — PDF A4 dengan kop surat PT Terra Grapindo Eco Prima (sama dengan Berita Acara)
+async function cetakKirim(id) {
+  const [{ data: k }, { data: it }] = await Promise.all([sb.from("kirim_preparasi").select("*").eq("id", id).single(), sb.from("v_kirim_preparasi").select("*").eq("kirim_id", id).order("urut")]);
+  if (!k) return alert("Form pengiriman tidak ditemukan.");
+  const w = jendelaDok(`Form kirim sample ${k.no_kirim}`, "A4"), I = it ?? [];
+  const tglPanjang = (t) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch { return t ?? ""; } };
+  const n2 = (x) => (x == null || x === "" ? "" : fmtD(x)), tot = I.reduce((s, r) => s + (+r.berat_kg || 0), 0);
+  const perTitik = Object.entries(I.reduce((m, r) => ((m[r.bhid] ??= []).push(r), m), {})).map(([b, xs]) => `${esc(b)} (${xs.length})`).join(", ");
+  const baris = (l, v) => `<tr><td style="width:30%">${l}</td><td>${esc(v ?? "") || "-"}</td></tr>`;
+  w.document.open(); w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Form Kirim Sample ${esc(k.no_kirim)}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Caladea:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <style>@page{size:A4 portrait;margin:0} html{background:#eee} body{font-family:Cambria,Caladea,"Times New Roman",serif;font-size:12px;color:#111;box-sizing:border-box;width:210mm;max-width:100%;margin:12px auto;padding:0;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25)} @media print{html{background:#fff} body{width:210mm;margin:0;box-shadow:none}}
+  table.lay,table.lay>*>tr>td{border:0;padding:0;margin:0;width:100%} .kopA{display:block;width:210mm;max-width:100%} table.lay>tbody>tr>td.isi{padding:2mm 16mm 4mm} .kakiSp{height:28mm} .kaki{width:210mm;max-width:100%} .kaki img{display:block;width:100%}
+  h1{text-align:center;font-size:15px;margin:12px 0 2px;text-decoration:underline} .no{text-align:center;margin-bottom:10px} table{border-collapse:collapse;width:100%;margin:6px 0} td,th{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top} th{background:#e6efe9}
+  table.d td,table.d th{font-size:10.5px} table.d td.r{text-align:right} tr{break-inside:avoid} .blok{break-inside:avoid;page-break-inside:avoid} .ttd{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:18px;text-align:center} .ttd div{min-height:110px} .sp{height:62px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666}
+  @media print{button{display:none} .kaki{position:fixed;bottom:0;left:0}}</style></head><body>
+  <table class="lay"><thead><tr><td><img class="kopA" src="${KOP_HEADER}"></td></tr></thead><tfoot><tr><td><div class="kakiSp"></div></td></tr></tfoot><tbody><tr><td class="isi">
+  <h1>FORM PENGIRIMAN SAMPLE KE PREPARASI</h1><div class="no">Nomor: ${esc(k.no_kirim)}${k.status === "DRAFT" ? ' <span class="m">(DRAF)</span>' : ""}</div>
+  <table>${baris("Tanggal kirim", tglPanjang(k.tanggal))}${baris("Tujuan", k.tujuan)}${baris("Proyek", k.project)}${baris("Titik bor (jumlah sample)", perTitik)}${baris("Jumlah sample", I.length)}${baris("Total berat (kg)", n2(tot))}${baris("Jumlah karung", k.jumlah_karung)}${baris("No. segel", k.no_segel)}${baris("Status", k.status)}${k.catatan ? baris("Catatan", k.catatan) : ""}</table>
+  <table class="d"><tr><th style="width:24px">No</th><th>Titik</th><th>No. sample</th><th>ID</th><th>From (m)</th><th>To (m)</th><th>Zona</th><th>Core (m)</th><th>Berat (kg)</th><th>No. kantong</th><th>Catatan</th></tr>
+  ${I.map((r) => `<tr><td>${esc(r.urut)}</td><td>${esc(r.bhid ?? "")}</td><td>${esc(r.sample_no ?? "")}</td><td>${esc(r.sample_id ?? "")}</td><td class="r">${n2(r.depth_from)}</td><td class="r">${n2(r.depth_to)}</td><td>${esc(r.geozone_id ?? "")}</td><td class="r">${n2(r.core_length)}</td><td class="r">${n2(r.berat_kg)}</td><td>${esc(r.no_kantong ?? "")}</td><td>${esc(r.catatan ?? "")}</td></tr>`).join("")}
+  <tr><th colspan="8" style="text-align:right">Total ${I.length} sample</th><th style="text-align:right">${n2(tot)}</th><th colspan="2"></th></tr></table>
+  <div class="blok"><p>Luwuk, ${esc(tglPanjang(k.tanggal))}</p>
+  <div class="ttd"><div>Pengirim,<br><b>${KOP.pt}</b><div class="sp"></div><span class="nm">${esc(k.pengirim || "(......................)")}</span></div>
+    <div>Penerima,<br><b>${esc(k.tujuan || "PREPARASI")}</b><div class="sp"></div><span class="nm">${esc(k.penerima || "(......................)")}</span></div></div></div>
+  </td></tr></tbody></table>
+  <div class="kaki"><img src="${KOP_FOOTER}"></div>
+  </body></html>`); w.document.close();
+}
 // ---------- Berita Acara: BA stop bor (per titik) & BASTP (per periode) ----------
 // Isi diambil otomatis dari data aplikasi (data lubang, DDR, logging, foto drill pad & patok), bisa diedit, disimpan di tabel berita_acara.
 // Cetak A4 dengan kop surat PT Terra Grapindo Eco Prima. TTD BA stop bor: Wellsite Geologist TGEP + perwakilan lapangan PT Nusa Prima Gemilang.
