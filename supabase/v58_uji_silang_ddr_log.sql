@@ -54,3 +54,6 @@ select coalesce(d.bhid, l.bhid) as bhid,
          case when l.n_core_kosong = 0 and abs(l.log_core_m - d.ddr_core_m) > 0.1 then 'TOTAL CORE BEDA ' || round(l.log_core_m - d.ddr_core_m, 2) || ' m' end), '')
   end, 'OK') as chk_uji
 from d full join l on l.bhid = d.bhid;
+
+-- v58b: lubang lama yang sudah di-redrill (ada <bhid>R di DDR) tidak wajib drill log → chk_uji 'OK'
+-- (diterapkan dengan replace dinamis pada pg_get_viewdef: WHEN l.bhid IS NULL AND EXISTS (v_ddr_baris r WHERE r.bhid = d.bhid || 'R') THEN 'OK')
