@@ -1,0 +1,3 @@
+-- v62 (27/11/2026): v_logging_lubang — kedalaman bor = terdalam dari foto RUN ATAU DDR (sebelumnya hanya foto RUN → DH-NPG 08R "BELUM ADA RUN").
+-- v62b: status LENGKAP hanya bila kedalaman logging ≥ kedalaman bor (DDR); tenggat dihitung dari aktivitas terakhir bila tidak ada foto RUN.
+-- (diterapkan dengan replace dinamis pada pg_get_viewdef; lihat migrasi v62_logging_lubang_kedalaman_ddr & v62b_logging_lubang_status_ddr)
