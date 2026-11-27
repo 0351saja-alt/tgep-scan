@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.31";
+const APP_VERSION = "2026-11-27.32";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2099,10 +2099,11 @@ async function simpanView(v) {
   const bukaF = JSON.parse(sessionStorage.getItem("sdFolder") || "[]");
   const baris = (i) => { const b = B[i]; return `<li data-si="${i}" style="flex-wrap:wrap;cursor:pointer" title="Klik = buka · klik kanan (HP: tekan lama) = Foto / Edit / Hapus"><span class="pill ${b.kelas}">${esc(b.status ?? "")}</span><span style="flex:1;min-width:200px"><b>${esc(JENIS_SIMPAN[b.jenis] ?? "")}</b> · ${esc(b.judul)}<br><span class="muted">${b.t ? esc(fmtT(new Date(b.t))) : ""}${b.ket ? " · " + esc(b.ket) : ""}</span></span>${masalah(b) ? `<span title="perlu dicek" style="color:#B3261E;font-weight:700">●</span>` : ""}</li>`; };
   // v.31: sub folder per jenis data di dalam folder Hole ID
-  const SUB = [["kegiatan", "📷 Foto kegiatan", ["run", "marking", "p2h"]], ["core", "🪨 Foto core", ["core"]], ["logging", "📝 Logging & formulir", ["scan", "arsip"]], ["ddr", "📋 DDR", ["ddr"]], ["lain", "📦 Lainnya", null]];
+  // v.32: setiap folder Hole ID selalu berisi 4 sub folder yang sama (Logging · Foto core · DDR · Foto aktivitas), yang kosong tetap tampil
+  const SUB = [["logging", "📝 Logging", ["scan", "arsip"]], ["core", "🪨 Foto core", ["core"]], ["ddr", "📋 DDR", ["ddr"]], ["kegiatan", "📷 Foto aktivitas", ["run", "marking", "p2h"]], ["lain", "📦 Lainnya", null]];
   const subDari = (j) => (SUB.find(([, , js]) => js?.includes(j)) ?? SUB[SUB.length - 1])[0];
-  const subFolder = (k, ix) => SUB.map(([id, nama]) => { const iy = ix.filter((i) => subDari(B[i].jenis) === id); if (!iy.length) return ""; const kk = `${k}|${id}`, nM = iy.filter((i) => masalah(B[i])).length;
-    return `<details data-fd="${esc(kk)}" ${bukaF.includes(kk) ? "open" : ""} style="border-left:3px solid #CFE3D8;margin:4px 0 4px 4px;padding-left:6px"><summary style="cursor:pointer;padding:5px 4px;font-weight:600;font-size:14px">${nama} <span class="muted" style="font-weight:400">· ${iy.length}</span>${nM ? ` <span style="color:#B3261E;font-weight:400">· ${nM} perlu dicek</span>` : ""}</summary><ul class="list" style="margin:0">${iy.map(baris).join("")}</ul></details>`; }).join("");
+  const subFolder = (k, ix) => SUB.map(([id, nama]) => { const iy = ix.filter((i) => subDari(B[i].jenis) === id); if (!iy.length && (id === "lain" || k.startsWith("~"))) return ""; const kk = `${k}|${id}`, nM = iy.filter((i) => masalah(B[i])).length;
+    return `<details data-fd="${esc(kk)}" ${bukaF.includes(kk) ? "open" : ""} style="border-left:3px solid #CFE3D8;margin:4px 0 4px 4px;padding-left:6px"><summary style="cursor:pointer;padding:5px 4px;font-weight:600;font-size:14px">${nama} <span class="muted" style="font-weight:400">· ${iy.length}</span>${nM ? ` <span style="color:#B3261E;font-weight:400">· ${nM} perlu dicek</span>` : ""}</summary><ul class="list" style="margin:0">${iy.map(baris).join("") || `<li class="muted" style="font-size:12.5px">Belum ada data pada periode ini.</li>`}</ul></details>`; }).join("");
   const keys = Object.keys(G).sort((x, y) => (x.startsWith("~") - y.startsWith("~")) || urutBH(x, y));
   $("#sdL").innerHTML = keys.map((k) => { const ix = G[k], nM = ix.filter((i) => masalah(B[i])).length, nama = k.replace(/^~/, "");
     return `<li style="display:block;padding:0;border:none"><details data-fd="${esc(k)}" ${bukaF.includes(k) || f.bh || keys.length === 1 ? "open" : ""} style="border:1px solid #DDE5E0;border-radius:10px;margin:6px 0;background:#FAFCFB">
