@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.67";
+const APP_VERSION = "2026-11-28.68";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -5304,8 +5304,8 @@ const DATASETS = {
   kepatuhan: { t: "Rekap operator harian", v: "v_kepatuhan_harian", order: ["tanggal", "nama"], bh: null },
   logging: { t: "Status Form Logging per lubang", v: "v_logging_lubang", order: ["bhid"], bh: "bhid" },
   koreksi: { t: "Riwayat koreksi", v: "sample_edit_log", order: ["edited_at"], bh: null },
-  preparasi: { t: "Sample dikirim ke preparasi", v: "v_kirim_preparasi", order: ["tanggal", "no_kirim", "urut"], bh: "bhid" },
-  belumkirim: { t: "Sample belum dikirim ke preparasi", v: "v_sample_belum_kirim", order: ["bhid", "depth_from"], bh: "bhid" },
+  preparasi: { t: "Sample dikirim", v: "v_kirim_preparasi", order: ["tanggal", "no_kirim", "urut"], bh: "bhid" },
+  belumkirim: { t: "Sample belum dikirim", v: "v_sample_belum_kirim", order: ["bhid", "depth_from"], bh: "bhid" },
   profil: { t: "Profil bor (ketebalan zona per lubang)", v: "v_profil_bor", order: ["bhid", "dari_m"], bh: "bhid" },
   marking: { t: "Marking koordinat (semua pembacaan + akurasi)", v: "v_survey_marking", order: ["tanggal", "bhid", "ke"], bh: "bhid" },
   corefile: { t: "Foto core (file)", v: "core_photo", sel: "id,bhid,box_no,depth_from,depth_to,photo_type,photo_path,status,sop_ok,ditolak,alasan_tolak,captured_at,created_at,project", order: ["bhid", "depth_from"], bh: "bhid" },
@@ -6596,19 +6596,21 @@ async function abslView(v) {
     X.writeFile(wb, `Absensi_Tim_Lapangan_${proj}_${dari}_sd_${sampai}.xlsx`); };
 }
 
-// ---------- Kirim sample ke preparasi (dari data logging bor) ----------
+// ---------- Pengiriman sample (dari data logging bor) ----------
+// v.68: tujuan baku PT Nusa Prima Gemilang u.p. Haryo Purnomo (bisa diubah di form)
+const TUJUAN_KIRIM = "PT NUSA PRIMA GEMILANG", UP_KIRIM = "Haryo Purnomo";
 // Daftar sample = conto hasil logging (tabel sample) yang belum pernah dikirim. Isi berat & no. kantong langsung di layar,
 // atau unduh templat Excel → isi di laptop → unggah balik. Simpan = satu form pengiriman (kirim_preparasi + item) lewat RPC simpan_kirim_preparasi.
 async function sampelView(v) {
-  if (!online()) { v.innerHTML = `<div class="card"><h2>Kirim sample ke preparasi</h2><p class="muted">Perlu sinyal internet.</p></div>`; return; }
+  if (!online()) { v.innerHTML = `<div class="card"><h2>Pengiriman sample</h2><p class="muted">Perlu sinyal internet.</p></div>`; return; }
   const hariIni = todayWIB();
-  v.innerHTML = `<div class="card"><h2>Kirim sample ke preparasi</h2>
+  v.innerHTML = `<div class="card"><h2>Pengiriman sample</h2>
     <p class="muted" style="margin-top:0"><b>Satu form = satu titik bor.</b> Pilih titik dari daftar; sample diambil dari <b>data logging bor</b> titik itu yang sudah masuk database dan belum pernah dikirim. Centang sample yang dikirim, isi berat (kg), no. kantong dan jumlah karung titik ini, lalu simpan. Bisa juga lewat templat Excel.</p>
     <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 200px"><label>Titik bor *</label><select id="kpB"><option value="">— pilih titik —</option></select></div>
       <div style="flex:1 1 130px"><label>Tanggal kirim</label><input type="date" id="kpT" value="${hariIni}"></div>
-      <div style="flex:1 1 150px"><label>Tujuan</label><input id="kpJ" value="PREPARASI" placeholder="mis. Preparasi lapangan / nama lab"></div></div>
+      <div style="flex:1 1 150px"><label>Tujuan (perusahaan)</label><input id="kpJ" value="${esc(TUJUAN_KIRIM)}" placeholder="nama perusahaan / lab tujuan"></div></div>
     <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 150px"><label>Pengirim</label><input id="kpP" value="${esc(me?.full_name ?? "")}"></div>
-      <div style="flex:1 1 150px"><label>Penerima</label><input id="kpR"></div>
+      <div style="flex:1 1 150px"><label>Penerima (u.p.)</label><input id="kpR" value="${esc(UP_KIRIM)}"></div>
       <div style="flex:0 1 110px"><label>Jumlah karung titik ini</label><input id="kpK" inputmode="numeric"></div>
       <div style="flex:1 1 130px"><label>No. segel</label><input id="kpS"></div></div>
     <label>Catatan</label><input id="kpC">
@@ -6640,7 +6642,7 @@ async function sampelView(v) {
   const excelKirim = async (id) => {
     const [{ data: k }, { data: it }] = await Promise.all([sb.from("kirim_preparasi").select("*").eq("id", id).single(), sb.from("v_kirim_preparasi").select("*").eq("kirim_id", id).order("urut")]);
     const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
-    const aoa = [["FORM PENGIRIMAN SAMPLE KE PREPARASI"], ["No. kirim", k.no_kirim, "", "Tanggal", k.tanggal], ["Tujuan", k.tujuan, "", "Status", k.status], ["Pengirim", k.pengirim ?? "", "", "Penerima", k.penerima ?? ""], ["Jumlah karung", k.jumlah_karung ?? "", "", "No. segel", k.no_segel ?? ""], ["Catatan", k.catatan ?? ""], [],
+    const aoa = [["FORM PENGIRIMAN SAMPLE"], ["No. kirim", k.no_kirim, "", "Tanggal", k.tanggal], ["Tujuan", k.tujuan, "", "Status", k.status], ["Pengirim", k.pengirim ?? "", "", "Penerima (u.p.)", k.penerima ?? ""], ["Jumlah karung", k.jumlah_karung ?? "", "", "No. segel", k.no_segel ?? ""], ["Catatan", k.catatan ?? ""], [],
       ["No", "Titik", "No. sample", "ID", "From (m)", "To (m)", "Zona", "Core (m)", "Berat (kg)", "No. kantong", "Catatan"], ...(it ?? []).map((r) => [r.urut, r.bhid, r.sample_no, r.sample_id, r.depth_from, r.depth_to, r.geozone_id, r.core_length, r.berat_kg, r.no_kantong, r.catatan]),
       [], ["", "", `Total ${it?.length ?? 0} sample`, "", "", "", "", "", (it ?? []).reduce((s, r) => s + (+r.berat_kg || 0), 0)], [], ["Pengirim,", "", "", "", "Penerima,"], [], [], [k.pengirim ?? "(.................)", "", "", "", k.penerima ?? "(.................)"]];
     X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Form Kirim"); X.writeFile(wb, `Kirim_Sample_${k.no_kirim}.xlsx`);
@@ -6656,7 +6658,7 @@ async function sampelView(v) {
   $("#kpAll").onclick = () => { const cb = [...$("#kpTb").querySelectorAll("[data-c]")], semua = cb.every((c) => c.checked); cb.forEach((c) => (c.checked = !semua)); };
   $("#kpTpl").onclick = async () => { if (!S.length) return alert("Tidak ada sample yang belum dikirim.");
     const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
-    const aoa = [["TEMPLAT KIRIM SAMPLE KE PREPARASI — isi kolom KIRIM (Y), BERAT dan KANTONG; jangan ubah kolom NO_SAMPLE"], ["KIRIM (Y/kosong)", "NO_SAMPLE", "TITIK", "FROM", "TO", "ZONA", "BERAT_KG", "NO_KANTONG", "CATATAN"],
+    const aoa = [["TEMPLAT PENGIRIMAN SAMPLE — isi kolom KIRIM (Y), BERAT dan KANTONG; jangan ubah kolom NO_SAMPLE"], ["KIRIM (Y/kosong)", "NO_SAMPLE", "TITIK", "FROM", "TO", "ZONA", "BERAT_KG", "NO_KANTONG", "CATATAN"],
       ...S.map((s) => ["", s.sample_no, s.bhid, s.depth_from, s.depth_to, s.geozone_id ?? "", s.berat_kg_logging ?? "", s.sample_no, ""])];
     X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Kirim"); X.writeFile(wb, `Templat_Kirim_Sample_${$("#kpB").value || "semua"}_${hariIni}.xlsx`); };
   $("#kpUp").onclick = () => $("#kpF").click();
@@ -6674,7 +6676,7 @@ async function sampelView(v) {
     if (!$("#kpB").value) return ($("#kpE").textContent = "Pilih titik bor — satu form pengiriman untuk satu titik.");
     if (!items.length) return ($("#kpE").textContent = "Centang minimal satu sample.");
     const salah = items.find((x) => x.berat_kg && !(Number(x.berat_kg.replace(",", ".")) >= 0)); if (salah) return ($("#kpE").textContent = `Berat ${salah.sample_no} bukan angka.`);
-    if (!confirm(`Simpan form pengiriman ${$("#kpB").value}: ${items.length} sample${$("#kpK").value ? `, ${$("#kpK").value} karung` : ""} ke ${$("#kpJ").value || "PREPARASI"}?`)) return;
+    if (!confirm(`Simpan form pengiriman ${$("#kpB").value}: ${items.length} sample${$("#kpK").value ? `, ${$("#kpK").value} karung` : ""} ke ${$("#kpJ").value || TUJUAN_KIRIM}${$("#kpR").value ? ` u.p. ${$("#kpR").value}` : ""}?`)) return;
     $("#kpOk").disabled = true;
     const { data, error } = await sb.rpc("simpan_kirim_preparasi", { p: { tanggal: $("#kpT").value, tujuan: $("#kpJ").value, pengirim: $("#kpP").value, penerima: $("#kpR").value, jumlah_karung: $("#kpK").value, no_segel: $("#kpS").value, catatan: $("#kpC").value, items } });
     $("#kpOk").disabled = false; if (error) return ($("#kpE").textContent = "Gagal: " + error.message);
@@ -6730,14 +6732,14 @@ async function cetakKirim(id) {
   table.d td,table.d th{font-size:10.5px} table.d td.r{text-align:right} tr{break-inside:avoid} .blok{break-inside:avoid;page-break-inside:avoid} .ttd{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:18px;text-align:center} .ttd div{min-height:110px} .sp{height:62px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666}
   @media print{button{display:none} .kaki{position:fixed;bottom:0;left:0}}</style></head><body>
   <table class="lay"><thead><tr><td><img class="kopA" src="${KOP_HEADER}"></td></tr></thead><tfoot><tr><td><div class="kakiSp"></div></td></tr></tfoot><tbody><tr><td class="isi">
-  <h1>FORM PENGIRIMAN SAMPLE KE PREPARASI</h1><div class="no">Nomor: ${esc(k.no_kirim)}${k.status === "DRAFT" ? ' <span class="m">(DRAF)</span>' : ""}</div>
-  <table>${baris("Tanggal kirim", tglPanjang(k.tanggal))}${baris("Tujuan", k.tujuan)}${baris("Proyek", k.project)}${baris("Titik bor (jumlah sample)", perTitik)}${baris("Jumlah sample", I.length)}${baris("Total berat (kg)", n2(tot))}${baris("Jumlah karung", k.jumlah_karung)}${baris("No. segel", k.no_segel)}${baris("Status", k.status)}${k.catatan ? baris("Catatan", k.catatan) : ""}</table>
+  <h1>FORM PENGIRIMAN SAMPLE</h1><div class="no">Nomor: ${esc(k.no_kirim)}${k.status === "DRAFT" ? ' <span class="m">(DRAF)</span>' : ""}</div>
+  <table>${baris("Tanggal kirim", tglPanjang(k.tanggal))}${baris("Tujuan", k.tujuan)}${baris("Penerima (u.p.)", k.penerima)}${baris("Proyek", k.project)}${baris("Titik bor (jumlah sample)", perTitik)}${baris("Jumlah sample", I.length)}${baris("Total berat (kg)", n2(tot))}${baris("Jumlah karung", k.jumlah_karung)}${baris("No. segel", k.no_segel)}${baris("Status", k.status)}${k.catatan ? baris("Catatan", k.catatan) : ""}</table>
   <table class="d"><tr><th style="width:24px">No</th><th>Titik</th><th>No. sample</th><th>ID</th><th>From (m)</th><th>To (m)</th><th>Zona</th><th>Core (m)</th><th>Berat (kg)</th><th>No. kantong</th><th>Catatan</th></tr>
   ${I.map((r) => `<tr><td>${esc(r.urut)}</td><td>${esc(r.bhid ?? "")}</td><td>${esc(r.sample_no ?? "")}</td><td>${esc(r.sample_id ?? "")}</td><td class="r">${n2(r.depth_from)}</td><td class="r">${n2(r.depth_to)}</td><td>${esc(r.geozone_id ?? "")}</td><td class="r">${n2(r.core_length)}</td><td class="r">${n2(r.berat_kg)}</td><td>${esc(r.no_kantong ?? "")}</td><td>${esc(r.catatan ?? "")}</td></tr>`).join("")}
   <tr><th colspan="8" style="text-align:right">Total ${I.length} sample</th><th style="text-align:right">${n2(tot)}</th><th colspan="2"></th></tr></table>
   <div class="blok"><p>Luwuk, ${esc(tglPanjang(k.tanggal))}</p>
   <div class="ttd"><div>Pengirim,<br><b>${KOP.pt}</b><div class="sp"></div><span class="nm">${esc(k.pengirim || "(......................)")}</span></div>
-    <div>Penerima,<br><b>${esc(k.tujuan || "PREPARASI")}</b><div class="sp"></div><span class="nm">${esc(k.penerima || "(......................)")}</span></div></div></div>
+    <div>Penerima,<br><b>${esc(k.tujuan || TUJUAN_KIRIM)}</b><div class="sp"></div><span class="nm">${esc(k.penerima || "(......................)")}</span></div></div></div>
   </td></tr></tbody></table>
   <div class="kaki"><img src="${KOP_FOOTER}"></div>
   </body></html>`); w.document.close();

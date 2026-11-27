@@ -1,0 +1,4 @@
+-- v65 (28/11/2026): Pengiriman sample → PT NUSA PRIMA GEMILANG u.p. Haryo Purnomo; judul form "FORM PENGIRIMAN SAMPLE" (tanpa "KE PREPARASI").
+--  • simpan_kirim_preparasi: tujuan kosong → 'PT NUSA PRIMA GEMILANG', penerima kosong → 'Haryo Purnomo' (replace dinamis pada functiondef).
+--  • kirim_preparasi.tujuan default 'PT NUSA PRIMA GEMILANG'; form DRAFT bertujuan 'PREPARASI' diubah (PREP-20261127-01..05).
+--  • drive-sync v18: PDF form kirim berjudul FORM PENGIRIMAN SAMPLE + baris Penerima (u.p.).

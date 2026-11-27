@@ -167,12 +167,12 @@ export async function pdfKirim(kp: any, items: any[], kopAtas: Uint8Array, kopBa
   k.onPage = (kk) => { if (ia) kk.pg.drawImage(ia, { x: 0, y: A4[1] - hA, width: A4[0], height: hA }); if (ib) kk.pg.drawImage(ib, { x: 0, y: 0, width: A4[0], height: hB }); };
   k.baru();
   const tglPanjang = (t: string) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch { return t ?? ""; } };
-  k.teks("FORM PENGIRIMAN SAMPLE KE PREPARASI", { sz: 13, b: true, al: "c" });
+  k.teks("FORM PENGIRIMAN SAMPLE", { sz: 13, b: true, al: "c" });
   k.teks(`Nomor: ${kp.no_kirim}${revisi > 1 ? ` (revisi ${revisi})` : ""}`, { sz: 10, al: "c", jarak: 6 });
   const tot = items.reduce((s, r) => s + (+r.berat_kg || 0), 0);
   const per: Record<string, number> = {}; for (const r of items) per[r.bhid ?? "-"] = (per[r.bhid ?? "-"] ?? 0) + 1;
   const KI: Kol[] = [{ w: 1.2 }, { w: 3 }];
-  for (const [l, v] of [["Tanggal kirim", tglPanjang(kp.tanggal)], ["Tujuan", kp.tujuan], ["Proyek", kp.project], ["Titik bor (jumlah sample)", Object.entries(per).map(([b, n]) => `${b} (${n})`).join(", ")],
+  for (const [l, v] of [["Tanggal kirim", tglPanjang(kp.tanggal)], ["Tujuan", kp.tujuan], ["Penerima (u.p.)", kp.penerima], ["Proyek", kp.project], ["Titik bor (jumlah sample)", Object.entries(per).map(([b, n]) => `${b} (${n})`).join(", ")],
     ["Jumlah sample", String(items.length)], ["Total berat (kg)", dk(tot.toFixed(2))], ["Jumlah karung", kp.jumlah_karung], ["No. segel", kp.no_segel], ["Status", kp.status], ...(kp.catatan ? [["Catatan", kp.catatan]] : [])])
     k.baris([String(l), String(v ?? "") || "-"], KI, { sz: 9.5 });
   k.y -= 8;
@@ -183,7 +183,7 @@ export async function pdfKirim(kp: any, items: any[], kopAtas: Uint8Array, kopBa
   k.y -= 14; k.cukup(130);
   k.teks(`Luwuk, ${tglPanjang(kp.tanggal)}`, { sz: 10, jarak: 6 });
   const y0 = k.y, lb = k.lebar / 2;
-  [["Pengirim,", pt, kp.pengirim], ["Penerima,", kp.tujuan || "PREPARASI", kp.penerima]].forEach(([a, b, n], i) => {
+  [["Pengirim,", pt, kp.pengirim], ["Penerima,", kp.tujuan || "PT NUSA PRIMA GEMILANG", kp.penerima]].forEach(([a, b, n], i) => {
     const cx = k.m + i * lb + lb / 2, c = (t: string, y: number, font: any, sz: number) => { const s = aman(t); k.pg.drawText(s, { x: cx - font.widthOfTextAtSize(s, sz) / 2, y, size: sz, font }); };
     c(a, y0 - 10, k.f, 10); c(b, y0 - 23, k.fb, 10);
     const nm = n || "(......................)"; c(nm, y0 - 95, k.fb, 10);
