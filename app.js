@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.25";
+const APP_VERSION = "2026-11-27.26";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2029,7 +2029,7 @@ async function simpanView(v) {
   v.innerHTML = `<div class="card"><h2>Data tersimpan</h2>
     <p class="muted" style="margin-top:0">Semua data yang sudah tersimpan${klien ? " untuk proyek Anda" : ""}, termasuk yang <b>masih di antrean HP</b> (belum terkirim). Progres resmi = <b>meter DDR</b> (coring + open hole); meter run hanya pembanding. Ketuk tombol di baris untuk membuka foto atau DDR.</p>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div style="flex:1 1 130px"><label>Dari</label><input type="date" id="sdF" value="${F.dari}"></div><div style="flex:1 1 130px"><label>Sampai</label><input type="date" id="sdT" value="${F.sampai}"></div>
-      <div style="flex:1 1 130px"><label>Hole ID</label><input id="sdB" data-bhid value="${esc(F.bh)}" placeholder="semua" autocapitalize="characters"></div>
+      <div style="flex:1 1 130px"><label>Hole ID</label><input id="sdB" data-bhid data-nojenis value="${esc(F.bh)}" placeholder="semua" autocapitalize="characters"></div>
       <div style="flex:1 1 120px"><label>Rig</label><select id="sdR"><option value="">Semua rig</option>${daftarRig().map((r) => `<option ${r === F.rig ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></div>
       <div style="flex:1 1 140px"><label>Jenis data</label><select id="sdJ"><option value="">Semua jenis</option>${Object.entries(JENIS_SIMPAN).filter(([k]) => staf || !["p2h", "marking"].includes(k)).map(([k, l]) => `<option value="${k}" ${k === F.jenis ? "selected" : ""}>${l}</option>`).join("")}</select></div>
       <button id="sdGo" style="flex:0 0 auto">Tampilkan</button></div></div>
@@ -4495,8 +4495,18 @@ function pasangPilihBH(inp) {
   const st = document.createElement("div"); st.style.cssText = "font-size:12px;margin-top:3px";
   const btn = Object.assign(document.createElement("button"), { type: "button", className: "sec", textContent: "📍 Pilih titik rencana" }); btn.style.cssText = "width:auto;padding:4px 10px;margin-top:4px;font-size:13px";
   inp.after(st, btn);
+  // v.26: pilihan UTAMA / REDRILL di setiap kolom Hole ID — REDRILL menambah akhiran R otomatis (DH-NPG 14 → DH-NPG 14R), UTAMA menghapusnya.
+  // Form yang sudah punya pilihan Jenis pemboran (Progres bor #jb, DDR #jbd) memakai pilihan itu.
+  let js = inp.closest(".row")?.querySelector("#jb, #jbd") ?? null;
+  if (!js && !inp.hasAttribute("data-nojenis")) {
+    js = document.createElement("select"); js.title = "UTAMA = titik rencana; REDRILL = bor ulang di titik yang sama (Hole ID otomatis + R)"; js.style.cssText = "width:auto;margin-top:4px;margin-right:6px";
+    js.innerHTML = `<option value="UTAMA">UTAMA</option><option value="REDRILL">REDRILL (+R)</option>`; st.before(js); }
+  if (js) { js.value = jenisDariBH(inp.value);
+    js.addEventListener("change", () => { const v = inp.value.trim(); if (!v) return; const b = bhJenis(v, js.value); if (b && b !== v) { inp.value = b; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); } });
+    inp.addEventListener("input", () => { if (inp.value.trim()) js.value = jenisDariBH(inp.value); }); }
   const cek = () => { const t = inp.value.trim(); if (!t) return (st.textContent = ""); const R = rencanaLokal(), r = R.find((z) => kunciBH(z.bhid) === kunciBH(t));
     if (r) { st.innerHTML = `<span style="color:#1b7a3a">✓ Terhubung ke titik rencana <b>${esc(r.bhid)}</b> di peta</span>${r.bhid !== t.toUpperCase() ? ` <span class="muted">(ejaan disamakan saat disimpan)</span>` : ""}`; }
+    else if (asalRedrill(t) && R.find((z) => kunciBH(z.bhid) === kunciBH(asalRedrill(t)))) st.innerHTML = `<span style="color:#1b7a3a">✓ <b>REDRILL</b> dari titik rencana <b>${esc(R.find((z) => kunciBH(z.bhid) === kunciBH(asalRedrill(t))).bhid)}</b> (titik sama, Hole ID + R)</span>`;
     else if (daftarBHLokal().some(([b]) => kunciBH(b) === kunciBH(t))) st.innerHTML = `<span style="color:#1b7a3a">✓ Hole ID sudah terdaftar${asalRedrill(t) ? " (REDRILL)" : ""}</span>`;
     else st.innerHTML = R.length ? `<span style="color:#a15c00">⚠ Tidak ada di daftar rencana — akan menjadi titik bor BARU di peta. Pastikan bukan salah ketik.</span>` : ""; };
   inp.addEventListener("input", cek); cek();
@@ -4507,7 +4517,7 @@ function pasangPilihBH(inp) {
     const isi = (pos) => { const rows = R.map((r) => ({ ...r, d: pos ? jarakM(pos, [r.lon, r.lat]) : null })).sort((a, b) => (pos ? a.d - b.d : a.bhid.localeCompare(b.bhid)));
       m.querySelector("#plg").textContent = pos ? "Urut dari yang terdekat dengan posisi Anda sekarang." : "GPS tidak tersedia — diurutkan menurut nama.";
       m.querySelector("#pll").innerHTML = rows.map((r) => `<li style="cursor:pointer" data-pl="${esc(r.bhid)}"><span style="flex:1"><b>${esc(r.bhid)}</b>${r.rig ? ` · ${esc(r.rig)}` : ""}${r.rencana_kedalaman ? ` · rencana ${esc(r.rencana_kedalaman)} m` : ""}</span><span class="muted">${r.d != null ? (r.d < 1000 ? Math.round(r.d) + " m" : (r.d / 1000).toFixed(1) + " km") : ""}</span></li>`).join("");
-      m.querySelectorAll("[data-pl]").forEach((li) => (li.onclick = () => { inp.value = li.dataset.pl; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); m.remove(); })); };
+      m.querySelectorAll("[data-pl]").forEach((li) => (li.onclick = () => { inp.value = js?.value === "REDRILL" ? bhJenis(li.dataset.pl, "REDRILL") : li.dataset.pl; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); m.remove(); })); };
     isi(null);
     navigator.geolocation?.getCurrentPosition((p) => isi([p.coords.longitude, p.coords.latitude]), () => isi(null), { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
   };
