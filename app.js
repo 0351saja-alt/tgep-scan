@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.37";
+const APP_VERSION = "2026-11-27.38";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2483,7 +2483,7 @@ async function ddrView(v) {
       <div id="kpInfo" class="muted" style="font-size:12.5px;margin:4px 0"></div>
       <div class="row"><div><label>X / Easting (m)</label><input id="kpX" inputmode="decimal" placeholder="6 digit"></div><div><label>Y / Northing (m)</label><input id="kpY" inputmode="decimal" placeholder="7 digit"></div><div style="flex:.6"><label>Z (m)</label><input id="kpZ" inputmode="decimal" placeholder="boleh kosong"></div></div>
       <div class="row" style="flex-wrap:wrap"><button class="sec" id="kpG" type="button" style="flex:1 1 140px">📍 Ambil GPS sekarang</button><button class="sec" id="kpR" type="button" style="flex:1 1 140px">Pakai titik rencana</button><button class="sec" id="kpC" type="button" style="flex:0 0 auto">Kosongkan</button></div></div>
-    <button class="sec" id="t2Add" type="button" style="width:auto;margin:2px 0 6px">➕ Pindah titik di shift ini (titik ke-2)</button>
+    <div class="row" style="align-items:center;flex-wrap:wrap;margin:2px 0 6px"><button class="sec" id="t2Add" type="button" style="flex:0 0 auto;width:auto">➕ Pindah titik di shift ini (titik ke-2)</button><span class="muted" style="font-size:12px;flex:1;min-width:200px">atau buat <b>DDR terpisah</b> untuk titik baru: isi DDR baru dengan rig/tanggal/shift yang sama dan Hole ID titik baru (BBM, crew, jam diisi bagian titik itu saja).</span></div>
     <div id="t2Box" style="display:none;background:#F4F1FA;border:1px solid #D9D0EA;border-radius:10px;padding:8px 10px;margin:6px 0"><div class="row" style="align-items:center"><b style="flex:1">Titik ke-2 — pindah titik di shift ini</b><button class="sec" id="t2Del" type="button" style="flex:0">✕ Hapus titik ke-2</button></div>
       <p class="muted" style="font-size:12.5px;margin:2px 0 6px">Isi bila setelah finish/STB titik pertama, rig moving dan langsung running di titik baru dalam shift yang sama. Meter titik ke-2 diisi lewat tombol baris di bawah (Hole ID otomatis). Jam moving catat sebagai <b>Pindah titik</b>.</p>
       <div class="row"><div><label>HOLE ID titik ke-2 *</label><input id="bh2" data-bhid autocapitalize="characters"></div></div>
@@ -2693,6 +2693,15 @@ async function ddrView(v) {
         if (x2 != null && !(x2 >= 100000 && x2 <= 900000 && y2 >= 0 && y2 <= 10000000)) return ($("#e").textContent = "Koordinat titik ke-2 tidak wajar: X 6 digit, Y 7 digit (UTM WGS84 51S).");
         if (![...open_hole, ...coring].some((x) => x.bhid === b2) && !confirm(`Belum ada baris coring/open hole untuk ${b2}. Tetap simpan?`)) return;
         row.titik_lain = [{ bhid: b2, koord_x: x2, koord_y: y2, koord_z: z2, koord_sumber: x2 != null ? kp2Sumber ?? "DDR" : null }]; } }
+    // v.38: edit DDR selalu mengganti DDR asal (ganti_id); DDR baru di rig/tanggal/shift yang sudah ada DDR-nya → DDR terpisah per Hole ID (setelah v46b)
+    if (EDIT?.id) row.ganti_id = EDIT.id;
+    else if (online()) { const { data: ada } = await sb.from("ddr").select("id,bhid,status").eq("rig", row.rig).eq("report_date", row.report_date).eq("shift", row.shift);
+      if ((ada ?? []).length) { const { data: perLubang } = await sb.rpc("ddr_boleh_per_lubang"); const sama = ada.find((x) => x.bhid === row.bhid), lain = ada.filter((x) => x.bhid !== row.bhid).map((x) => x.bhid).join(", ");
+        const sh = row.shift === "MALAM" ? "Night" : "Day";
+        if (sama) { if (sama.status === "SIGNED") return ($("#e").textContent = `DDR ${row.rig} ${row.report_date} ${sh} untuk ${row.bhid} sudah ditandatangani — minta verifier/admin Buka TTD lalu Edit DDR.`);
+          if (!confirm(`Sudah ada DDR ${row.rig} ${row.report_date} ${sh} untuk ${row.bhid}. DDR ini akan MENGGANTI isinya (versi lama tetap tersimpan). Lanjut?`)) return; }
+        else if (perLubang) { if (!confirm(`Sudah ada DDR ${row.rig} ${row.report_date} ${sh} untuk ${lain}.\nDDR ini disimpan sebagai DDR TERPISAH untuk ${row.bhid}.\n\nPastikan BBM, oli, barang, crew, HM dan jam diisi hanya bagian titik ${row.bhid} (jangan dobel). Lanjut?`)) return; }
+        else return ($("#e").textContent = `Sudah ada DDR ${row.rig} ${row.report_date} ${sh} untuk ${lain}. Satu shift saat ini hanya boleh 1 DDR — pakai "➕ Pindah titik di shift ini (titik ke-2)" di DDR itu (Edit DDR), atau minta admin menjalankan v46b agar boleh DDR terpisah per Hole ID.`); } }
     const miss = ["bhid", "rig", "report_date", "contractor", "driller_name", "crew_count"].filter((k) => row[k] === null || row[k] === "");
     if (miss.length) return ($("#e").textContent = "Lengkapi kolom bertanda * (" + miss.join(", ") + ").");
     if (row.crew_count < crewMin()) return ($("#e").textContent = `Nama crew baru ${row.crew_count} — minimal ${crewMin()} orang (driller + assistant). Tambah dengan "+ crew".`);

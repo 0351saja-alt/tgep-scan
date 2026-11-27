@@ -1,0 +1,3 @@
+-- v46a (27/11/2026, sudah dipasang lewat apply_migration): kolom ddr.ganti_id (kiriman Edit DDR selalu mengganti DDR asal),
+-- fungsi public.ddr_boleh_per_lubang(), gabung_ddr_ganda mencocokkan rig/tanggal/shift + Hole ID bila v46b sudah dijalankan,
+-- pindah_kunci_ddr_impl ikut aturan per Hole ID. Lihat riwayat migrasi Supabase "v46a_ddr_per_lubang_persiapan" untuk isi lengkap.
