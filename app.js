@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.43";
+const APP_VERSION = "2026-11-27.44";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -4836,7 +4836,7 @@ const ago = (t) => { if (!t) return "-"; const m = Math.round((Date.now() - Date
 async function rekapView(v) {
   const tgl = sessionStorage.getItem("rekapTgl") || todayWIB();
   v.innerHTML = `<div class="card"><h2>Rekap & pelacakan operator</h2>
-    <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div>${proyekSelect()}<button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button></div>
+    <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div>${proyekSelect()}<button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button><div style="flex:1 1 200px"><label>📂 Folder operator / wellsite</label><select id="rop"><option value="">— pilih nama —</option></select></div></div>
     <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. Form Logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.${me?.role === "admin" ? " <b>Mengeluarkan operator</b> (mis. akun uji coba atau bukan petugas): tekan <b>✕ Keluarkan</b> di bawah namanya. <b>Menghapus kiriman:</b> tekan <b>Folder</b> pada operator, lalu <b>Hapus</b> per kiriman (atau centang beberapa lalu <b>Hapus terpilih</b>). Data masuk arsip dan bisa dipulihkan." : ""}</p></div>
     <div id="rs" class="card">Memuat…</div><div id="rdm" class="card"><p class="muted">Memuat data masuk…</p></div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rab" class="card"></div><div id="rmp" class="card"></div><div id="rp" class="card"></div><div id="rpj" class="card"></div>` : ""}`;
   $("#rgo").onclick = () => { sessionStorage.setItem("rekapTgl", $("#rt").value); sessionStorage.setItem("filterProyek", $("#fproj").value); rekapView(v); };
@@ -4857,6 +4857,10 @@ async function rekapView(v) {
       <td style="white-space:nowrap"><button class="sec" data-fd="${r.user_id}" data-nm="${esc(r.nama ?? "")}" style="flex:0">Folder</button></td></tr>`).join("") || `<tr><td colspan="14" class="muted">Belum ada operator (driller/geologist) yang disetujui.</td></tr>`}</table></div>`;
   logLubang($("#rl"));
   dataMasuk($("#rdm"), from14, tgl, all ?? [], fp ? PJ : null, fp);
+  { const { data: AU } = await sb.from("app_user").select("user_id,full_name,role").in("role", ["driller", "geologist", "verifier", "admin", "admin_lapangan"]).order("full_name");
+    const peran = { driller: "driller", geologist: "wellsite", verifier: "verifier", admin: "admin", admin_lapangan: "admin lapangan" };
+    $("#rop").innerHTML = `<option value="">— pilih nama —</option>` + (AU ?? []).filter((u) => u.full_name).map((u) => `<option value="${u.user_id}">${esc(u.full_name)} · ${peran[u.role] ?? u.role}</option>`).join("");
+    $("#rop").onchange = () => { const o = $("#rop").selectedOptions[0]; if (o?.value) folderView(v, o.value, o.textContent.split(" · ")[0]); }; }
   const dates = [...Array(14)].map((_, i) => new Date(Date.parse(tgl) - (13 - i) * 864e5).toISOString().slice(0, 10)), ops = [...new Map((all ?? []).map((r) => [r.user_id, r])).values()];
   const sym = { LENGKAP: "✓", SEBAGIAN: "½", BELUM: "✗", "RIG TIDAK BEROPERASI": "–", "TANPA PENUGASAN": "?", "ADA KIRIMAN (TANPA PENUGASAN)": "+", "TIDAK WAJIB": "–" };
   $("#rm").innerHTML = `<h3>14 hari terakhir</h3><p class="muted">✓ lengkap · ½ sebagian · ✗ belum · – rig tidak beroperasi / tidak wajib · ? tanpa penugasan</p><div class="tw"><table><tr><th>Operator</th>${dates.map((d) => `<th>${d.slice(8)}/${d.slice(5, 7)}</th>`).join("")}<th>% lengkap</th></tr>
@@ -5053,21 +5057,30 @@ async function dataMasuk(box, dari, sampai, ops, PJ, fp) {
   box.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => bukaFile(b.dataset.b, b.dataset.p)));
   box.querySelectorAll("[data-ddr]").forEach((b) => (b.onclick = () => printDDR(b.dataset.ddr)));
 }
+// v.44: Folder operator — semua kegiatan seorang operator/wellsite (v_aktivitas_operator) per tanggal → sub folder per kegiatan
+const SUB_OP = [["progres", "📷 Foto aktivitas / progres bor", (j) => j === "PROGRES"], ["p2h", "🛠 P2H", (j) => j === "P2H"], ["ddr", "📋 DDR & TTD", (j) => /^(DDR|TTD DDR|ARSIP DDR)$/.test(j)],
+  ["marking", "📍 Marking & koordinat", (j) => /^(MARKING|KOORDINAT LUBANG)$/.test(j)], ["core", "🪨 Foto core", (j) => j === "FOTO CORE"], ["logging", "📝 Form Logging & pemeriksaan", (j) => /FORM LOGGING|KOREKSI CONTO/.test(j)],
+  ["periksa", "✅ Konfirmasi, ubah foto & edit data", (j) => /^(KONFIRMASI FOTO|UBAH FOTO|EDIT DATA)$/.test(j)], ["sample", "📦 Kirim sample & berita acara", (j) => /^(KIRIM SAMPLE|BERITA ACARA)$/.test(j)], ["arsip", "🗂 Arsip formulir lain", (j) => j.startsWith("ARSIP")], ["lain", "Lainnya", () => true]];
+const subOp = (j) => SUB_OP.find(([, , f]) => f(String(j ?? "")))[0];
 async function folderView(v, uid, nama) {
   const admin = me?.role === "admin";
   const to = sessionStorage.getItem("rekapTgl") || todayWIB(), from = new Date(Date.parse(to) - 29 * 864e5).toISOString().slice(0, 10);
   v.innerHTML = `<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">Folder: ${esc(nama || "-")}</h2><button class="sec" id="bk" style="flex:0">← Rekap</button></div>
     <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Dari</label><input id="ff" type="date" value="${from}"></div><div><label>Sampai</label><input id="ft" type="date" value="${to}"></div>
-    <div><label>Jenis</label><select id="fj"><option value="">Semua</option>${["PROGRES", "P2H", "DDR", "TTD DDR", "FORM LOGGING", "FOTO CORE", "ARSIP DDR", "ARSIP P2H", "ARSIP DRILL_LOG_LAMA", "ARSIP SURVEY", "ARSIP LAINNYA"].map((j) => `<option>${j}</option>`).join("")}</select></div><button id="fg" style="flex:0">Tampilkan</button></div></div>
+    <div><label>Jenis</label><select id="fj"><option value="">Semua</option>${["PROGRES", "P2H", "DDR", "TTD DDR", "FORM LOGGING", "PERIKSA FORM LOGGING", "FOTO CORE", "MARKING", "KOORDINAT LUBANG", "KONFIRMASI FOTO", "UBAH FOTO", "KOREKSI CONTO", "EDIT DATA", "KIRIM SAMPLE", "BERITA ACARA", "ARSIP DDR", "ARSIP P2H", "ARSIP DRILL_LOG_LAMA", "ARSIP SURVEY", "ARSIP LAINNYA"].map((j) => `<option>${j}</option>`).join("")}</select></div><button id="fg" style="flex:0">Tampilkan</button></div></div>
     <div class="card" id="fl">Memuat…</div>`;
   $("#bk").onclick = () => rekapView(v);
   const load = async () => {
-    let q = sb.from("v_upload_item").select("*").eq("user_id", uid).gte("waktu", `${$("#ff").value}T00:00:00+07:00`).lte("waktu", `${$("#ft").value}T23:59:59+07:00`).order("waktu", { ascending: false }).limit(1000);
+    let q = sb.from("v_aktivitas_operator").select("*").eq("user_id", uid).gte("waktu", `${$("#ff").value}T00:00:00+07:00`).lte("waktu", `${$("#ft").value}T23:59:59+07:00`).order("waktu", { ascending: false }).limit(1000);
     if ($("#fj").value) q = q.eq("jenis", $("#fj").value);
     const { data, error } = await q; if (error) return ($("#fl").innerHTML = `<p class="err">${esc(error.message)}</p>`);
-    const byDay = {}; for (const r of data ?? []) (byDay[fmtT(r.waktu).slice(0, 10)] ??= []).push(r);
+    const byDay = {}; for (const r of data ?? []) (byDay[new Date(r.waktu).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" })] ??= []).push(r);
+    const bukaOF = JSON.parse(sessionStorage.getItem("ofFolder") || "[]");
     const tot = Object.entries((data ?? []).reduce((m, r) => ((m[r.jenis] = (m[r.jenis] ?? 0) + 1), m), {}));
-    $("#fl").innerHTML = `<p><b>${(data ?? []).length}</b> kiriman · ${tot.map(([k, n]) => `${esc(k)} ${n}`).join(" · ") || "-"}</p>` + (Object.entries(byDay).map(([d, rs]) => `<h3 style="margin:12px 0 4px">${d} <span class="muted">(${rs.length})</span></h3><ul class="list">${rs.map((r) => `<li style="flex-wrap:wrap"><span style="flex:1">${fmtT(r.waktu).slice(-8)} · <b>${esc(r.jenis)}</b> ${esc(r.rig ?? "")} ${esc(r.bhid ?? "")}${r.status ? ` <span class="pill ${esc(r.status)}">${esc(r.status)}</span>` : ""}<br><span class="muted">${esc(r.ket ?? "")}</span></span>${r.photo_path && r.bucket ? `<button class="sec" data-b="${esc(r.bucket)}" data-p="${esc(r.photo_path)}" style="flex:0">Lihat</button>` : r.jenis === "DDR" || r.jenis === "TTD DDR" ? `<button class="sec" data-ddr="${r.ref_id}" style="flex:0">DDR</button>` : ""}${admin && hapusJenis(r.jenis) ? `<button class="sec" data-hx="${esc(r.ref_id)}" data-hj="${esc(r.jenis)}" style="flex:0;color:#B3261E;border-color:#B3261E">Hapus</button><label style="flex:0;margin:0" title="Pilih untuk hapus sekaligus"><input type="checkbox" data-hc="${esc(r.ref_id)}" data-hj="${esc(r.jenis)}" data-hk="${esc(`${fmtT(r.waktu)} · ${r.jenis} ${r.rig ?? ""} ${r.bhid ?? ""}`)}" style="width:auto"></label>` : ""}</li>`).join("")}</ul>`).join("") || `<p class="muted">Tidak ada kiriman pada periode ini.</p>`);
+    $("#fl").innerHTML = `<p><b>${(data ?? []).length}</b> kiriman · ${tot.map(([k, n]) => `${esc(k)} ${n}`).join(" · ") || "-"}</p>` + (Object.keys(byDay).sort().reverse().map((d, i) => { const rs = byDay[d], k = `${uid}|${d}`;
+      return `<details data-of="${k}" ${bukaOF.includes(k) || i === 0 ? "open" : ""} style="border:1px solid #DDE5E0;border-radius:10px;margin:6px 0;background:#FAFCFB"><summary style="cursor:pointer;padding:8px 10px;font-weight:600">📁 ${esc(new Date(d + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }))} <span class="muted" style="font-weight:400">· ${rs.length} kegiatan</span></summary><div style="margin:0 8px 8px">${SUB_OP.map(([id, nama]) => { const xs = rs.filter((r) => subOp(r.jenis) === id); if (!xs.length) return ""; const kk = `${k}|${id}`;
+        return `<details data-of="${kk}" ${bukaOF.includes(kk) ? "open" : ""} style="border-left:3px solid #CFE3D8;margin:4px 0 4px 4px;padding-left:6px"><summary style="cursor:pointer;padding:5px 4px;font-weight:600;font-size:14px">${nama} <span class="muted" style="font-weight:400">· ${xs.length}</span></summary><ul class="list" style="margin:0">${xs.map((r) => `<li style="flex-wrap:wrap"><span style="flex:1">${fmtT(r.waktu).slice(-8)} · <b>${esc(r.jenis)}</b> ${esc(r.rig ?? "")} ${esc(r.bhid ?? "")}${r.status ? ` <span class="pill ${esc(r.status)}">${esc(r.status)}</span>` : ""}<br><span class="muted">${esc(r.ket ?? "")}</span></span>${r.photo_path && r.bucket ? `<button class="sec" data-b="${esc(r.bucket)}" data-p="${esc(r.photo_path)}" style="flex:0">Lihat</button>` : r.jenis === "DDR" || r.jenis === "TTD DDR" ? `<button class="sec" data-ddr="${r.ref_id}" style="flex:0">DDR</button>` : ""}${admin && hapusJenis(r.jenis) ? `<button class="sec" data-hx="${esc(r.ref_id)}" data-hj="${esc(r.jenis)}" style="flex:0;color:#B3261E;border-color:#B3261E">Hapus</button><label style="flex:0;margin:0" title="Pilih untuk hapus sekaligus"><input type="checkbox" data-hc="${esc(r.ref_id)}" data-hj="${esc(r.jenis)}" data-hk="${esc(`${fmtT(r.waktu)} · ${r.jenis} ${r.rig ?? ""} ${r.bhid ?? ""}`)}" style="width:auto"></label>` : ""}</li>`).join("")}</ul></details>`; }).join("")}</div></details>`; }).join("") || `<p class="muted">Tidak ada kiriman pada periode ini.</p>`);
+    $("#fl").querySelectorAll("details[data-of]").forEach((d) => d.addEventListener("toggle", () => { const S = new Set(JSON.parse(sessionStorage.getItem("ofFolder") || "[]")); d.open ? S.add(d.dataset.of) : S.delete(d.dataset.of); sessionStorage.setItem("ofFolder", JSON.stringify([...S])); }));
     $("#fl").querySelectorAll("[data-p]").forEach((b) => (b.onclick = async () => { bukaFile(b.dataset.b, b.dataset.p); }));
     $("#fl").querySelectorAll("[data-ddr]").forEach((b) => (b.onclick = () => printDDR(b.dataset.ddr)));
     if (!admin) return;
