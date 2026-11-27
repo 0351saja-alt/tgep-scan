@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.41";
+const APP_VERSION = "2026-11-27.42";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2287,9 +2287,11 @@ async function catatanKurang(holes) {
     sb.from("v_ddr_baris").select("bhid,ddr_id,ddr_status").in("bhid", holes),
     sb.from("v_sample_photo").select("bhid,chk_foto_utuh,chk_foto_belah").in("bhid", holes),
     sb.from("core_photo").select("bhid").in("bhid", holes).limit(2000)]);
+  const RDc = await petaRedrill().catch(() => ({}));
   for (const b of holes) {
     const X = K[b], L = (lg ?? []).find((x) => x.bhid === b), E = new Set((ev ?? []).filter((x) => x.bhid === b).map((x) => x.event_type));
     const D = [...new Map((dd ?? []).filter((x) => x.bhid === b).map((x) => [x.ddr_id, x.ddr_status])).values()], S = (sp ?? []).filter((x) => x.bhid === b);
+    if (L?.status?.startsWith("TIDAK PERLU") || RDc[b]) { const nd = D.filter((x) => x !== "SIGNED").length; if (nd) X.push(`${nd} DDR belum ditandatangani`); if (!D.length) X.push("DDR belum ada"); continue; } // lubang lama diganti redrill: cukup DDR
     if (!L || !(L.jumlah_conto > 0)) X.push("Form Logging belum ada"); else if (L.status !== "LENGKAP") X.push(`logging belum lengkap${L.belum_logging_m > 0 ? ` (${L.belum_logging_m} m)` : ""}${L.status === "TERLAMBAT" ? " — TERLAMBAT" : ""}`);
     if (!(cp ?? []).some((x) => x.bhid === b)) X.push("foto core belum ada");
     else { const nu = S.filter((x) => x.chk_foto_utuh && x.chk_foto_utuh !== "OK").length, nb = S.filter((x) => x.chk_foto_belah && x.chk_foto_belah !== "OK").length;
@@ -4887,7 +4889,7 @@ async function rekapView(v) {
 async function logLubang(box) {
   const [{ data, error }, { data: gp }] = await Promise.all([sb.from("v_logging_lubang").select("*").neq("status", "BELUM ADA RUN").order("terakhir_bor", { ascending: false }).limit(200), sb.from("qc_param").select("value").eq("name", "LOGGING_GRACE_DAYS").maybeSingle()]);
   if (error) return (box.innerHTML = `<p class="err">${esc(error.message)}</p>`);
-  const g = gp?.value ?? 2, col = { LENGKAP: "#C8EBD4", "MENUNGGU PERIKSA": "#FFE58A", "DALAM TENGGAT": "#E3E8E1", TERLAMBAT: "#F6C9C3" }, rows = (data ?? []).sort((a, b) => ["TERLAMBAT", "MENUNGGU PERIKSA", "DALAM TENGGAT", "LENGKAP"].indexOf(a.status) - ["TERLAMBAT", "MENUNGGU PERIKSA", "DALAM TENGGAT", "LENGKAP"].indexOf(b.status));
+  const g = gp?.value ?? 2, col = { LENGKAP: "#C8EBD4", "TIDAK PERLU (DIGANTI REDRILL)": "#E3E8E1", "MENUNGGU PERIKSA": "#FFE58A", "DALAM TENGGAT": "#E3E8E1", TERLAMBAT: "#F6C9C3" }, rows = (data ?? []).sort((a, b) => ["TERLAMBAT", "MENUNGGU PERIKSA", "DALAM TENGGAT", "LENGKAP"].indexOf(a.status) - ["TERLAMBAT", "MENUNGGU PERIKSA", "DALAM TENGGAT", "LENGKAP"].indexOf(b.status));
   box.innerHTML = `<h3>Form Logging per lubang</h3><p class="muted">Kedalaman bor (dari foto RUN) dibandingkan kedalaman yang sudah masuk database. Form Logging boleh dikirim per hari atau per lubang; baru <b>TERLAMBAT</b> bila interval yang sudah dibor belum di-logging lebih dari <b>${g} hari</b>.${me?.role === "admin" ? ` Ubah tenggat: <input id="gd" type="number" min="0" max="30" value="${g}" style="width:70px"> hari <button class="sec" id="gs" style="width:auto">Simpan</button>` : ""}</p>
     <div class="tw"><table><tr><th>Hole ID</th><th>Rig</th><th>Bor (m)</th><th>Logging (m)</th><th>Belum (m)</th><th>Conto</th><th>Scan menunggu</th><th>Belum sejak</th><th>Status</th></tr>
     ${rows.map((l) => `<tr><td><b>${esc(l.bhid)}</b></td><td>${esc(l.rig ?? "")}</td><td>${l.kedalaman_bor ?? ""}</td><td>${l.kedalaman_logging}</td><td>${l.belum_logging_m}</td><td>${l.jumlah_conto}</td><td>${l.scan_menunggu}</td><td>${l.belum_sejak ? `${fmtT(l.belum_sejak).slice(0, 10)} (${l.umur_hari} hr)` : "-"}</td><td style="background:${col[l.status] ?? "#fff"}">${esc(l.status)}</td></tr>`).join("") || `<tr><td colspan="9" class="muted">Belum ada lubang dengan foto RUN.</td></tr>`}</table></div>`;
@@ -6754,7 +6756,8 @@ async function panelDdrLogging(el, pilih) {
   const logBH = {}; for (const s of S ?? []) (logBH[s.bhid] ??= []).push([+s.depth_from, +s.depth_to]);
   for (const k in logBH) { const xs = logBH[k].sort((a, b) => a[0] - b[0]), m = []; for (const x of xs) { const t = m.at(-1); if (t && x[0] <= t[1] + 0.05) t[1] = Math.max(t[1], x[1]); else m.push([...x]); } logBH[k] = m; }
   const tertutup = (b, f, t) => { let n = 0; for (const [a, z] of logBH[b] ?? []) n += Math.max(0, Math.min(t, z) - Math.max(f, a)); return n; };
-  const baris = (B ?? []).map((x) => { const f = +x.dari_m, t = +x.sampai_m, log = tertutup(x.bhid, f, t); return { ...x, f, t, m: t - f, log, kurang: Math.max(0, t - f - log) }; }).filter((x) => x.m > 0);
+  const RDL = await petaRedrill().catch(() => ({})); // v.42: lubang lama yang sudah di-redrill tidak perlu logging (cukup DDR)
+  const baris = (B ?? []).filter((x) => !RDL[x.bhid]).map((x) => { const f = +x.dari_m, t = +x.sampai_m, log = tertutup(x.bhid, f, t); return { ...x, f, t, m: t - f, log, kurang: Math.max(0, t - f - log) }; }).filter((x) => x.m > 0);
   const per = {}; for (const x of baris) { const p = (per[x.bhid] ??= { bhid: x.bhid, rig: new Set(), ddr: 0, kurang: 0, tgl: new Set(), tglTua: null }); p.rig.add(x.rig); p.ddr = Math.max(p.ddr, x.t);
     if (x.kurang > 0.05) { p.kurang += x.kurang; p.tgl.add(x.tanggal); if (!p.tglTua || x.tanggal < p.tglTua) p.tglTua = x.tanggal; } }
   for (const b in logBH) per[b] ??= { bhid: b, rig: new Set(), ddr: 0, kurang: 0, tgl: new Set(), tglTua: null };
