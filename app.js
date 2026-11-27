@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.47";
+const APP_VERSION = "2026-11-27.48";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2764,10 +2764,10 @@ async function ddrView(v) {
       <span style="flex:1">${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">Coring DDR ${d.coring_ddr_m ?? 0} m · Diesel ${d.bbm_liter} L${d.bbm_per_meter ? ` (${d.bbm_per_meter} L/m)` : ""}<br>${esc(d.ttd ?? "belum ada TTD")}</span></span>
       ${!/CLIENT/.test(d.ttd ?? "") ? `<button class="sec" data-sg="${d.id}" style="flex:0">Tanda tangani</button>` : ""}${bisaEdit(d) ? `<button data-ef="${d.id}" style="flex:0;white-space:nowrap">✏️ Edit DDR</button>` : d.status === "SIGNED" && ["verifier", "admin"].includes(me?.role) ? `<button class="danger" data-bt="${d.id}" style="flex:0;white-space:nowrap">🔓 Buka TTD</button>` : ""}<button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`; const L = data ?? []; if (!L.length) return `<p class="muted">Belum ada DDR draf.</p>`;
       const tglPj = (t) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch { return t; } };
-      const bk = JSON.parse(sessionStorage.getItem("ddrFolder") || "[]"), rigs = [...new Set(L.map((d) => d.rig))].sort(urutBH);
-      return rigs.map((r, ri) => { const lr = L.filter((d) => d.rig === r), tg = [...new Set(lr.map((d) => d.report_date))].sort().reverse(), kr = `r|${r}`;
-        return `<details data-df="${esc(kr)}" ${bk.includes(kr) || ri === 0 ? "open" : ""} style="border:1px solid #DDE5E0;border-radius:10px;margin:6px 0;background:#FAFCFB"><summary style="cursor:pointer;padding:8px 10px;font-weight:600">🚜 ${esc(r)} <span class="muted" style="font-weight:400">· ${lr.length} DDR draf · ${tg.length} hari</span></summary><div style="margin:0 8px 8px">` +
-          tg.map((t, ti) => { const lt = lr.filter((d) => d.report_date === t), kt = `${kr}|${t}`; return `<details data-df="${esc(kt)}" ${bk.includes(kt) || (ri === 0 && ti === 0) ? "open" : ""} style="border-left:3px solid #CFE3D8;margin:4px 0 4px 4px;padding-left:6px"><summary style="cursor:pointer;padding:5px 4px;font-weight:600;font-size:14px">📅 ${esc(tglPj(t))} <span class="muted" style="font-weight:400">· ${lt.length} DDR</span></summary><ul class="list" style="margin:0">${lt.map(liDDR).join("")}</ul></details>`; }).join("") + `</div></details>`; }).join(""); })()}
+      // v.48: folder per TANGGAL (terbaru di atas), isinya DDR semua rig tanggal itu
+      const bk = JSON.parse(sessionStorage.getItem("ddrFolder") || "[]"), tg = [...new Set(L.map((d) => d.report_date))].sort().reverse();
+      return tg.map((t, ti) => { const lt = L.filter((d) => d.report_date === t).sort((x, y) => urutBH(x.rig, y.rig) || (x.shift === "PAGI" ? -1 : 1)), kt = `t|${t}`;
+        return `<details data-df="${esc(kt)}" ${bk.includes(kt) || ti === 0 ? "open" : ""} style="border:1px solid #DDE5E0;border-radius:10px;margin:6px 0;background:#FAFCFB"><summary style="cursor:pointer;padding:8px 10px;font-weight:600">📅 ${esc(tglPj(t))} <span class="muted" style="font-weight:400">· ${lt.length} DDR draf · ${esc([...new Set(lt.map((d) => d.rig))].join(", "))}</span></summary><ul class="list" style="margin:0 8px 8px">${lt.map(liDDR).join("")}</ul></details>`; }).join(""); })()}
       <p class="muted" style="font-size:12px;margin:6px 0 0">✏️ Edit DDR = ubah semua isian DDR yang masih DRAF (crew, jam, open hole, coring/run, barang, catatan) lalu tekan simpan; versi lama tetap tersimpan di server. DDR yang sudah ditandatangani harus dibuka verifier/admin (🔓 Buka TTD) sebelum diedit — TTD lama dihapus dan DDR perlu ditandatangani ulang.</p>`;
     $("#lst").querySelectorAll("[data-ef]").forEach((b) => (b.onclick = () => editDDR(b.dataset.ef)));
     $("#lst").querySelectorAll("details[data-df]").forEach((d) => d.addEventListener("toggle", () => { const S = new Set(JSON.parse(sessionStorage.getItem("ddrFolder") || "[]")); d.open ? S.add(d.dataset.df) : S.delete(d.dataset.df); sessionStorage.setItem("ddrFolder", JSON.stringify([...S])); }));
