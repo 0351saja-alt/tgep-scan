@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.29";
+const APP_VERSION = "2026-11-27.30";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2101,8 +2101,9 @@ async function simpanView(v) {
   const keys = Object.keys(G).sort((x, y) => (x.startsWith("~") - y.startsWith("~")) || urutBH(x, y));
   $("#sdL").innerHTML = keys.map((k) => { const ix = G[k], nM = ix.filter((i) => masalah(B[i])).length, nama = k.replace(/^~/, "");
     return `<li style="display:block;padding:0;border:none"><details data-fd="${esc(k)}" ${bukaF.includes(k) || f.bh || keys.length === 1 ? "open" : ""} style="border:1px solid #DDE5E0;border-radius:10px;margin:6px 0;background:#FAFCFB">
-      <summary style="cursor:pointer;padding:8px 10px;font-weight:600">📁 ${esc(nama)} <span class="muted" style="font-weight:400">· ${ix.length} data</span>${nM ? ` <span style="color:#B3261E">· ${nM} perlu dicek</span>` : ""}</summary>
+      <summary style="cursor:pointer;padding:8px 10px;font-weight:600">📁 ${esc(nama)} <span class="muted" style="font-weight:400">· ${ix.length} data</span>${nM ? ` <span style="color:#B3261E">· ${nM} perlu dicek</span>` : ""}${k.startsWith("~") ? "" : `<div data-kr="${esc(k)}" style="color:#B3261E;font-size:11.5px;font-weight:400;margin-top:2px"></div>`}</summary>
       <ul class="list" style="margin:0 8px 8px">${ix.map(baris).join("")}</ul></details></li>`; }).join("") || `<li class="muted">Tidak ada data untuk filter ini.</li>`;
+  if (online() && !klien) catatanKurang(keys.filter((k) => !k.startsWith("~"))).then((K) => { for (const [bh, xs] of Object.entries(K)) { const el = $("#sdL")?.querySelector(`[data-kr="${CSS.escape(bh)}"]`); if (el && xs.length) el.textContent = "Kurang: " + xs.join(" · "); } }).catch(() => {});
   $("#sdL").querySelectorAll("details[data-fd]").forEach((d) => d.addEventListener("toggle", () => { const S = new Set(JSON.parse(sessionStorage.getItem("sdFolder") || "[]")); d.open ? S.add(d.dataset.fd) : S.delete(d.dataset.fd); sessionStorage.setItem("sdFolder", JSON.stringify([...S])); }));
   if (B.length) $("#sdSum").insertAdjacentHTML("beforeend", `<br><span style="font-size:12px">💡 Data dikelompokkan per Hole ID. Klik baris untuk membuka (ada tombol ✅ Konfirmasi untuk yang bertanda merah); klik kanan / tekan lama untuk Foto, Edit, Hapus.</span>`);
   $("#sdL").querySelectorAll("[data-si]").forEach((li) => { pasangMenuKlikKanan(li, () => B[+li.dataset.si].aksi); li.addEventListener("click", () => { if (Date.now() - (li._lp || 0) < 900) return; bukaDataTersimpan(B[+li.dataset.si], ulang); }); });
@@ -2224,6 +2225,30 @@ function aksiBarisDb(ds, r, ulang) {
     case "arsip": if (adm && !r.restored_at) A.push({ l: "♻️ Pulihkan", fn: async () => { const { error } = await sb.rpc("admin_restore", { p_id: Number(r.id) }); if (error) alert(error.message); else ulang(); } }); break;
   }
   return A;
+}
+// v.30: catatan merah kecil per folder Hole ID — kelengkapan data lubang (seluruh data lubang, bukan hanya periode filter)
+async function catatanKurang(holes) {
+  const K = Object.fromEntries(holes.map((b) => [b, []])); if (!holes.length) return K;
+  const [{ data: lg }, { data: mk }, { data: ev }, { data: dd }, { data: sp }, { data: cp }] = await Promise.all([
+    sb.from("v_logging_lubang").select("bhid,status,belum_logging_m,jumlah_conto").in("bhid", holes),
+    sb.from("v_titik_belum_marking").select("bhid,kategori").in("bhid", holes),
+    sb.from("drill_event").select("bhid,event_type").in("bhid", holes).in("event_type", ["SELESAI_BOR", "FOTO_DRILL_PAD", "FOTO_PATOK", "FOTO_AKHIR"]),
+    sb.from("v_ddr_baris").select("bhid,ddr_id,ddr_status").in("bhid", holes),
+    sb.from("v_sample_photo").select("bhid,chk_foto_utuh,chk_foto_belah").in("bhid", holes),
+    sb.from("core_photo").select("bhid").in("bhid", holes).limit(2000)]);
+  for (const b of holes) {
+    const X = K[b], L = (lg ?? []).find((x) => x.bhid === b), E = new Set((ev ?? []).filter((x) => x.bhid === b).map((x) => x.event_type));
+    const D = [...new Map((dd ?? []).filter((x) => x.bhid === b).map((x) => [x.ddr_id, x.ddr_status])).values()], S = (sp ?? []).filter((x) => x.bhid === b);
+    if (!L || !(L.jumlah_conto > 0)) X.push("Form Logging belum ada"); else if (L.status !== "LENGKAP") X.push(`logging belum lengkap${L.belum_logging_m > 0 ? ` (${L.belum_logging_m} m)` : ""}${L.status === "TERLAMBAT" ? " — TERLAMBAT" : ""}`);
+    if (!(cp ?? []).some((x) => x.bhid === b)) X.push("foto core belum ada");
+    else { const nu = S.filter((x) => x.chk_foto_utuh && x.chk_foto_utuh !== "OK").length, nb = S.filter((x) => x.chk_foto_belah && x.chk_foto_belah !== "OK").length;
+      if (nu) X.push(`${nu} conto belum foto core utuh`); if (nb) X.push(`${nb} conto belum foto core belah`); }
+    if ((mk ?? []).some((x) => x.bhid === b)) X.push("belum marking / koordinat");
+    const nd = D.filter((x) => x !== "SIGNED").length; if (nd) X.push(`${nd} DDR belum ditandatangani`);
+    if (!D.length) X.push("DDR belum ada");
+    if (E.has("SELESAI_BOR")) { if (!E.has("FOTO_DRILL_PAD") && !E.has("FOTO_AKHIR")) X.push("foto drill pad belum ada"); if (!E.has("FOTO_PATOK") && !E.has("FOTO_AKHIR")) X.push("foto patok belum ada"); }
+  }
+  return K;
 }
 // v.29: buka satu data tersimpan: foto + keterangan + ✅ Konfirmasi (langsung diterima) + semua aksi
 async function bukaDataTersimpan(b, ulang) {
