@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.66";
+const APP_VERSION = "2026-11-28.67";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6603,13 +6603,13 @@ async function sampelView(v) {
   if (!online()) { v.innerHTML = `<div class="card"><h2>Kirim sample ke preparasi</h2><p class="muted">Perlu sinyal internet.</p></div>`; return; }
   const hariIni = todayWIB();
   v.innerHTML = `<div class="card"><h2>Kirim sample ke preparasi</h2>
-    <p class="muted" style="margin-top:0">Daftar diambil dari <b>data logging bor</b> yang sudah masuk database dan belum pernah dikirim. Centang sample yang dikirim, isi berat (kg) dan no. kantong, lalu simpan. Bisa juga lewat templat Excel.</p>
-    <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 160px"><label>Titik bor</label><select id="kpB"><option value="">Semua titik</option></select></div>
+    <p class="muted" style="margin-top:0"><b>Satu form = satu titik bor.</b> Pilih titik dari daftar; sample diambil dari <b>data logging bor</b> titik itu yang sudah masuk database dan belum pernah dikirim. Centang sample yang dikirim, isi berat (kg), no. kantong dan jumlah karung titik ini, lalu simpan. Bisa juga lewat templat Excel.</p>
+    <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 200px"><label>Titik bor *</label><select id="kpB"><option value="">— pilih titik —</option></select></div>
       <div style="flex:1 1 130px"><label>Tanggal kirim</label><input type="date" id="kpT" value="${hariIni}"></div>
       <div style="flex:1 1 150px"><label>Tujuan</label><input id="kpJ" value="PREPARASI" placeholder="mis. Preparasi lapangan / nama lab"></div></div>
     <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 150px"><label>Pengirim</label><input id="kpP" value="${esc(me?.full_name ?? "")}"></div>
       <div style="flex:1 1 150px"><label>Penerima</label><input id="kpR"></div>
-      <div style="flex:0 1 110px"><label>Jumlah karung</label><input id="kpK" inputmode="numeric"></div>
+      <div style="flex:0 1 110px"><label>Jumlah karung titik ini</label><input id="kpK" inputmode="numeric"></div>
       <div style="flex:1 1 130px"><label>No. segel</label><input id="kpS"></div></div>
     <label>Catatan</label><input id="kpC">
     <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="sec" id="kpTpl" style="flex:0;white-space:nowrap">⬇ Templat Excel</button><button class="sec" id="kpUp" style="flex:0;white-space:nowrap">⬆ Unggah Excel terisi</button><button class="sec" id="kpAll" style="flex:0;white-space:nowrap">Centang semua</button>
@@ -6619,17 +6619,18 @@ async function sampelView(v) {
     <div class="card"><h3>Pengiriman tersimpan</h3><ul class="list" id="kpL"><li class="muted">Memuat…</li></ul></div>`;
   let S = [];
   const muat = async () => {
-    const b = $("#kpB").value; let q = sb.from("v_sample_belum_kirim").select("*").order("bhid").order("depth_from").limit(2000); if (b) q = q.eq("bhid", b);
-    const { data, error } = await q; if (error) { $("#kpI").innerHTML = `<span class="err">${esc(error.message)}</span>`; return; }
-    S = data ?? []; $("#kpI").textContent = S.length ? `${S.length} sample belum dikirim${b ? ` di ${b}` : ""}.` : "Semua sample hasil logging sudah dikirim (atau logging belum masuk).";
+    const b = $("#kpB").value; if (!b) { S = []; $("#kpTb").innerHTML = ""; $("#kpI").textContent = "Pilih titik bor dulu — satu form pengiriman untuk satu titik."; return; }
+    const { data, error } = await sb.from("v_sample_belum_kirim").select("*").eq("bhid", b).order("depth_from").limit(2000); if (error) { $("#kpI").innerHTML = `<span class="err">${esc(error.message)}</span>`; return; }
+    S = data ?? []; $("#kpI").textContent = S.length ? `${S.length} sample ${b} belum dikirim.` : `Semua sample hasil logging ${b} sudah dikirim (atau logging ${b} belum masuk).`;
+    if (!$("#kpC").value.trim() || /^Titik /.test($("#kpC").value)) $("#kpC").value = `Titik ${b}`;
     $("#kpTb").innerHTML = S.length ? `<tr><th>✓</th><th>Titik</th><th>No. sample</th><th>ID</th><th>From</th><th>To</th><th>Zona</th><th>Berat (kg)</th><th>No. kantong</th><th>Catatan</th></tr>` + S.map((s, i) => `<tr data-i="${i}"><td><input type="checkbox" data-c style="width:auto"></td><td>${esc(s.bhid)}</td><td>${esc(s.sample_no)}</td><td>${esc(s.sample_id ?? "")}</td><td>${fmtD(s.depth_from)}</td><td>${fmtD(s.depth_to)}</td><td>${esc(s.geozone_id ?? "")}</td>
       <td><input data-w inputmode="decimal" value="${s.berat_kg_logging ?? ""}" style="max-width:80px"></td><td><input data-k value="${esc(s.sample_no)}" style="max-width:130px"></td><td><input data-n style="min-width:120px"></td></tr>`).join("") : "";
   };
   const ambilBaris = () => [...$("#kpTb").querySelectorAll("tr[data-i]")].filter((tr) => tr.querySelector("[data-c]").checked).map((tr) => ({ sample_no: S[+tr.dataset.i].sample_no,
     berat_kg: tr.querySelector("[data-w]").value.trim(), no_kantong: tr.querySelector("[data-k]").value.trim(), catatan: tr.querySelector("[data-n]").value.trim() }));
   const daftar = async () => {
-    const { data } = await sb.from("kirim_preparasi").select("id,no_kirim,tanggal,tujuan,status,pengirim,penerima,jumlah_karung,no_segel,kirim_preparasi_item(count)").order("created_at", { ascending: false }).limit(50);
-    $("#kpL").innerHTML = (data ?? []).map((k) => `<li style="flex-wrap:wrap"><span class="pill ${k.status === "DITERIMA" ? "APPROVED" : k.status === "DIKIRIM" ? "NEEDS_REVIEW" : "ANTRE"}">${esc(k.status)}</span><span style="flex:1;min-width:180px"><b>${esc(k.no_kirim)}</b> · ${esc(k.tanggal)} · ${esc(k.tujuan)}<br><span class="muted">${k.kirim_preparasi_item?.[0]?.count ?? 0} sample${k.jumlah_karung ? ` · ${k.jumlah_karung} karung` : ""}${k.no_segel ? ` · segel ${esc(k.no_segel)}` : ""}${k.pengirim ? ` · ${esc(k.pengirim)}` : ""}${k.penerima ? ` → ${esc(k.penerima)}` : ""}</span></span>
+    const { data } = await sb.from("kirim_preparasi").select("id,no_kirim,tanggal,tujuan,status,pengirim,penerima,jumlah_karung,no_segel,catatan,kirim_preparasi_item(count)").order("created_at", { ascending: false }).order("no_kirim", { ascending: false }).limit(50);
+    $("#kpL").innerHTML = (data ?? []).map((k) => `<li style="flex-wrap:wrap"><span class="pill ${k.status === "DITERIMA" ? "APPROVED" : k.status === "DIKIRIM" ? "NEEDS_REVIEW" : "ANTRE"}">${esc(k.status)}</span><span style="flex:1;min-width:180px"><b>${esc(k.no_kirim)}</b> · ${esc(k.tanggal)} · ${esc(k.tujuan)}<br><span class="muted">${k.catatan ? `${esc(k.catatan)} · ` : ""}${k.kirim_preparasi_item?.[0]?.count ?? 0} sample${k.jumlah_karung ? ` · ${k.jumlah_karung} karung` : ""}${k.no_segel ? ` · segel ${esc(k.no_segel)}` : ""}${k.pengirim ? ` · ${esc(k.pengirim)}` : ""}${k.penerima ? ` → ${esc(k.penerima)}` : ""}</span></span>
       <button class="sec" data-edk="${k.id}" style="flex:0;white-space:nowrap">✏️ Edit</button><button data-pdf="${k.id}" style="flex:0;white-space:nowrap">📄 PDF</button><button class="sec" data-x="${k.id}" style="flex:0">⬇ Excel</button>${k.status !== "DITERIMA" ? `<button class="sec" data-st="${k.id}" data-v="${k.status === "DRAFT" ? "DIKIRIM" : "DITERIMA"}" style="flex:0">Tandai ${k.status === "DRAFT" ? "dikirim" : "diterima"}</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada.</li>`;
     $("#kpL").querySelectorAll("[data-x]").forEach((b) => (b.onclick = () => excelKirim(b.dataset.x)));
     $("#kpL").querySelectorAll("[data-pdf]").forEach((b) => (b.onclick = () => cetakKirim(b.dataset.pdf)));
@@ -6644,8 +6645,13 @@ async function sampelView(v) {
       [], ["", "", `Total ${it?.length ?? 0} sample`, "", "", "", "", "", (it ?? []).reduce((s, r) => s + (+r.berat_kg || 0), 0)], [], ["Pengirim,", "", "", "", "Penerima,"], [], [], [k.pengirim ?? "(.................)", "", "", "", k.penerima ?? "(.................)"]];
     X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Form Kirim"); X.writeFile(wb, `Kirim_Sample_${k.no_kirim}.xlsx`);
   };
+  // v.67: dropdown titik = semua titik terdaftar (lubang, DDR, logging, dst.); yang punya sample belum dikirim tampil di atas dengan jumlahnya
   const { data: H } = await sb.from("v_sample_belum_kirim").select("bhid").limit(5000);
-  $("#kpB").innerHTML = `<option value="">Semua titik</option>` + [...new Set((H ?? []).map((x) => x.bhid))].sort((a, b) => a.localeCompare(b, "id", { numeric: true })).map((b) => `<option>${esc(b)}</option>`).join("");
+  const nB = (H ?? []).reduce((m, x) => ((m[x.bhid] = (m[x.bhid] ?? 0) + 1), m), {});
+  const ada = Object.keys(nB).sort(urutBH), lain = [...new Set(daftarBHLokal().map(([b]) => b).concat(rencanaLokal().map((r) => r.bhid)))].filter((b) => b && !nB[b]).sort(urutBH);
+  $("#kpB").innerHTML = `<option value="">— pilih titik —</option>` + (ada.length ? `<optgroup label="Ada sample belum dikirim">${ada.map((b) => `<option value="${esc(b)}">${esc(b)} (${nB[b]} sample)</option>`).join("")}</optgroup>` : "")
+    + (lain.length ? `<optgroup label="Titik lain (semua sudah dikirim / logging belum masuk)">${lain.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join("")}</optgroup>` : "");
+  if (ada.length) $("#kpB").value = ada[0];
   $("#kpB").onchange = muat;
   $("#kpAll").onclick = () => { const cb = [...$("#kpTb").querySelectorAll("[data-c]")], semua = cb.every((c) => c.checked); cb.forEach((c) => (c.checked = !semua)); };
   $("#kpTpl").onclick = async () => { if (!S.length) return alert("Tidak ada sample yang belum dikirim.");
@@ -6665,13 +6671,14 @@ async function sampelView(v) {
       $("#kpI").textContent = `Excel terbaca: ${cocok} sample dicentang.${tidak.length ? ` ${tidak.length} no. sample tidak ada di daftar (sudah dikirim / salah tulis): ${tidak.slice(0, 8).join(", ")}${tidak.length > 8 ? "…" : ""}` : ""} Periksa lalu tekan Simpan.`;
     } catch (e) { $("#kpE").textContent = "Excel tidak bisa dibaca: " + e.message; } };
   $("#kpOk").onclick = async () => { const items = ambilBaris(); $("#kpE").textContent = "";
+    if (!$("#kpB").value) return ($("#kpE").textContent = "Pilih titik bor — satu form pengiriman untuk satu titik.");
     if (!items.length) return ($("#kpE").textContent = "Centang minimal satu sample.");
     const salah = items.find((x) => x.berat_kg && !(Number(x.berat_kg.replace(",", ".")) >= 0)); if (salah) return ($("#kpE").textContent = `Berat ${salah.sample_no} bukan angka.`);
-    if (!confirm(`Simpan form pengiriman ${items.length} sample ke ${$("#kpJ").value || "PREPARASI"}?`)) return;
+    if (!confirm(`Simpan form pengiriman ${$("#kpB").value}: ${items.length} sample${$("#kpK").value ? `, ${$("#kpK").value} karung` : ""} ke ${$("#kpJ").value || "PREPARASI"}?`)) return;
     $("#kpOk").disabled = true;
     const { data, error } = await sb.rpc("simpan_kirim_preparasi", { p: { tanggal: $("#kpT").value, tujuan: $("#kpJ").value, pengirim: $("#kpP").value, penerima: $("#kpR").value, jumlah_karung: $("#kpK").value, no_segel: $("#kpS").value, catatan: $("#kpC").value, items } });
     $("#kpOk").disabled = false; if (error) return ($("#kpE").textContent = "Gagal: " + error.message);
-    toast(`Tersimpan ${data.no_kirim} · ${data.jumlah} sample`); await muat(); daftar(); cetakKirim(data.id); };
+    toast(`Tersimpan ${data.no_kirim} · ${$("#kpB").value} · ${data.jumlah} sample`); $("#kpK").value = ""; $("#kpS").value = ""; await muat(); daftar(); cetakKirim(data.id); };
   // v.39: Form Logging yang sudah dikirim tetapi belum ✅ Terima & simpan — sample-nya belum ada di database, jadi belum bisa dikirim ke preparasi
   const { data: tunggu } = await sb.from("scan_job").select("id,bhid_hint,page_no,status,draft_at,merged").in("status", ["NEEDS_REVIEW", "MANUAL", "ERROR", "UPLOADED"]).in("form_type", ["SHEET", "LOG"]).order("bhid_hint");
   if ((tunggu ?? []).length) { const ver = ["verifier", "admin"].includes(me?.role);

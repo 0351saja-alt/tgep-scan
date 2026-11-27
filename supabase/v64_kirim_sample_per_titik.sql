@@ -1,0 +1,5 @@
+-- v64 (28/11/2026): Form kirim sample = SATU TITIK per form.
+--  • simpan_kirim_preparasi menolak bila sample yang dipilih berasal dari > 1 titik; catatan kosong → 'Titik <bhid>'.
+--    (diterapkan dengan replace dinamis pada pg_get_functiondef setelah baris 'Pilih minimal satu sample')
+--  • PREP-20261127-01 (71 conto, 5 titik) dipecah: -01 DH-NPG 12 (18 conto, 4 karung), -02 08R (19, 4), -03 09 (13, 3), -04 13 (12, 2), -05 14R (9, 2).
+--  • Aplikasi v.67: dropdown Titik bor wajib (titik dengan sample belum dikirim di atas + jumlahnya, titik terdaftar lain di bawah).
