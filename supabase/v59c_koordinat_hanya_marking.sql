@@ -1,4 +1,4 @@
--- STATUS 27/11: BELUM DITERAPKAN (persetujuan server tidak dijawab) — menunggu konfirmasi user.
+-- STATUS 27/11: DITERAPKAN (apply_migration v59c_koordinat_hanya_marking) — 08 → 363864,07/9812185,90; 13 → 363534,27/9814253,50.
 -- v59c (27/11/2026): atas permintaan user "tetap titiknya koordinat pakai titik marking":
 -- koordinat lubang otomatis HANYA dari marking terbaru (foto patok / drill pad tidak lagi mengubah koordinat).
 -- Tanpa DROP: fungsi trigger mengabaikan drill_event.
