@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.68";
+const APP_VERSION = "2026-11-28.69";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6645,7 +6645,7 @@ async function sampelView(v) {
     const aoa = [["FORM PENGIRIMAN SAMPLE"], ["No. kirim", k.no_kirim, "", "Tanggal", k.tanggal], ["Tujuan", k.tujuan, "", "Status", k.status], ["Pengirim", k.pengirim ?? "", "", "Penerima (u.p.)", k.penerima ?? ""], ["Jumlah karung", k.jumlah_karung ?? "", "", "No. segel", k.no_segel ?? ""], ["Catatan", k.catatan ?? ""], [],
       ["No", "Titik", "No. sample", "ID", "From (m)", "To (m)", "Zona", "Core (m)", "Berat (kg)", "No. kantong", "Catatan"], ...(it ?? []).map((r) => [r.urut, r.bhid, r.sample_no, r.sample_id, r.depth_from, r.depth_to, r.geozone_id, r.core_length, r.berat_kg, r.no_kantong, r.catatan]),
       [], ["", "", `Total ${it?.length ?? 0} sample`, "", "", "", "", "", (it ?? []).reduce((s, r) => s + (+r.berat_kg || 0), 0)], [], ["Pengirim,", "", "", "", "Penerima,"], [], [], [k.pengirim ?? "(.................)", "", "", "", k.penerima ?? "(.................)"]];
-    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Form Kirim"); X.writeFile(wb, `Kirim_Sample_${k.no_kirim}.xlsx`);
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), "Form Kirim"); X.writeFile(wb, `Kirim_Sample_${String(k.no_kirim).replace(/[\\/:*?"<>|]+/g, "-")}.xlsx`);
   };
   // v.67: dropdown titik = semua titik terdaftar (lubang, DDR, logging, dst.); yang punya sample belum dikirim tampil di atas dengan jumlahnya
   const { data: H } = await sb.from("v_sample_belum_kirim").select("bhid").limit(5000);

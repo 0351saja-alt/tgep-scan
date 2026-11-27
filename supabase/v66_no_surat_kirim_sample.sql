@@ -1,0 +1,5 @@
+-- v66 (28/11/2026): nomor surat form pengiriman sample mengikuti pola BA: KS/TGEP/<titik tanpa spasi>/<bulan romawi>/<tahun>
+--   mis. KS/TGEP/DH-NPG08R/XI/2026; bila titik yang sama dikirim lagi di bulan yang sama → akhiran -2, -3, …
+--  • private.no_kirim_sample(bhid, tanggal, kecuali_id)
+--  • simpan_kirim_preparasi memakai fungsi itu (ganti rumus PREP-YYYYMMDD-NN, replace dinamis pada functiondef)
+--  • 5 form PREP-20261127-01..05 dinomori ulang.
