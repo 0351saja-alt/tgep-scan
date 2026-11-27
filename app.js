@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.60";
+const APP_VERSION = "2026-11-27.61";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2140,11 +2140,52 @@ async function simpanView(v) {
   $("#sdL").querySelectorAll("[data-si]").forEach((li) => { pasangMenuKlikKanan(li, () => B[+li.dataset.si].aksi); li.addEventListener("click", () => { if (Date.now() - (li._lp || 0) < 900) return; bukaDataTersimpan(B[+li.dataset.si], ulang); }); });
 }
 // 🗑 Hapus dari Data tersimpan: pengirim / verifier / admin (yang final hanya admin). Masuk Arsip terhapus, admin bisa memulihkan.
+// v.61: hapus marking oleh admin langsung (arsip dulu ke deleted_record), lalu koordinat lubang disesuaikan
+async function hapusMarkingAdmin(id, alasan) {
+  const { data: m, error } = await sb.from("marking").select("*").eq("id", id).maybeSingle(); if (error) return error.message; if (!m) return "Marking tidak ditemukan.";
+  const { error: e1 } = await sb.from("deleted_record").insert({ table_name: "marking", record_key: id, bhid: m.bhid, data: m, reason: alasan, deleted_by: session.user.id }); if (e1) return e1.message;
+  const { data: d, error: e2 } = await sb.from("marking").delete().eq("id", id).select("id"); if (e2) return e2.message; if (!d?.length) return "Marking tidak bisa dihapus (hak akses).";
+  await sesuaikanKoordinatSetelahHapus(m.bhid, m); return null;
+}
+// Bila koordinat lubang berasal dari marking yang dihapus → pakai marking sah terbaru (akurasi ≤ 15 m, rata-rata bacaan ±15 menit); bila tidak ada, minta isi manual.
+async function sesuaikanKoordinatSetelahHapus(bh, mDihapus) {
+  if (!bh) return;
+  const [{ data: b }, { data: ms }] = await Promise.all([sb.from("borehole").select("bhid,xgps,ygps,zgps,koordinat_sumber").eq("bhid", bh).maybeSingle(),
+    sb.from("marking").select("x_utm,y_utm,z_gps,z_dem,akurasi_m,captured_at").eq("bhid", bh).order("captured_at", { ascending: false })]);
+  if (!b) return;
+  const sah = (k) => +k.x_utm >= 100000 && +k.x_utm <= 900000 && +k.y_utm >= 9000000 && +k.y_utm <= 10000000 && (k.akurasi_m == null || +k.akurasi_m <= 15);
+  const okSkrg = +b.xgps >= 100000 && +b.xgps <= 900000;
+  const dariYgDihapus = mDihapus ? Math.hypot(+b.xgps - +mDihapus.x_utm, +b.ygps - +mDihapus.y_utm) < 2 : !okSkrg;
+  if (okSkrg && !dariYgDihapus) return;
+  const L = (ms ?? []).filter(sah);
+  if (!L.length) { if (confirm(`Koordinat ${bh} masih memakai marking yang dihapus / tidak wajar dan tidak ada marking lain yang sah.\nIsi koordinat lubang sekarang?`)) koordinatLubang(bh, () => render()); return; }
+  const t0 = new Date(L[0].captured_at).getTime(), sesi = L.filter((k) => Math.abs(new Date(k.captured_at).getTime() - t0) <= 15 * 60e3), avg = (f) => sesi.reduce((s, k) => s + +f(k), 0) / sesi.length;
+  const z = sesi.some((k) => k.z_gps ?? k.z_dem) ? avg((k) => k.z_gps ?? k.z_dem ?? 0) : null;
+  const { error } = await sb.rpc("set_koordinat_lubang", { p_bhid: bh, p_x: avg((k) => k.x_utm), p_y: avg((k) => k.y_utm), p_z: z, p_sumber: "MARKING TERBARU", p_alasan: "Marking yang salah dihapus — koordinat dari marking sah terbaru" });
+  if (error) alert(`Koordinat ${bh} belum diperbarui: ${error.message}`); else toast(`Koordinat ${bh} diperbarui dari marking sah terbaru`);
+}
+// v.61: 🧭 Kelola koordinat & marking semua titik (dari Peta) — titik dengan koordinat salah tetap bisa dijangkau walau di luar layar peta
+async function kelolaKoordinat() {
+  const [{ data: B }, { data: M }] = await Promise.all([sb.from("borehole").select("bhid,xgps,ygps,zgps,koordinat_sumber,status").order("bhid"), sb.from("marking").select("bhid,x_utm,akurasi_m").limit(5000)]);
+  const wajar = (x) => +x >= 100000 && +x <= 900000, L = (B ?? []).slice().sort((a, b) => urutBH(a.bhid, b.bhid));
+  const m = modal(`<h3 style="margin-top:0">🧭 Koordinat & marking titik</h3><p class="muted" style="margin-top:0">Koordinat lubang dipakai di semua sheet (Collar, Peta, BA/BASTP, ekspor). Ubah koordinat atau hapus marking yang salah di sini. Alasan wajib, semua perubahan tercatat.</p>
+    <ul class="list">${L.map((b) => { const mk = (M ?? []).filter((k) => k.bhid === b.bhid), nSalah = mk.filter((k) => !wajar(k.x_utm) || +k.akurasi_m > 15).length;
+      const st = b.xgps == null ? `<b style="color:#B3261E">KOORDINAT KOSONG</b>` : !wajar(b.xgps) ? `<b style="color:#B3261E">KOORDINAT TIDAK WAJAR</b>` : "";
+      return `<li style="flex-wrap:wrap"><span style="flex:1;min-width:210px"><b>${esc(b.bhid)}</b> ${st}<br><span class="muted">X ${esc(b.xgps ?? "-")} · Y ${esc(b.ygps ?? "-")}${b.zgps != null ? ` · Z ${esc(b.zgps)}` : ""} · ${esc(b.koordinat_sumber ?? "-")}<br>${mk.length} marking${nSalah ? ` · <b style="color:#B3261E">${nSalah} salah / tidak akurat</b>` : ""}</span></span>
+        <button class="sec" data-kk="${esc(b.bhid)}" style="flex:0;white-space:nowrap">🧭 Edit koordinat</button><button class="sec" data-km="${esc(b.bhid)}" style="flex:0;white-space:nowrap">📍 Marking</button></li>`; }).join("") || `<li class="muted">Belum ada titik.</li>`}</ul>
+    <div class="row"><button class="sec" id="kkX">Tutup</button></div>`);
+  m.querySelector("#kkX").onclick = () => m.remove();
+  m.querySelectorAll("[data-kk]").forEach((x) => (x.onclick = () => { m.remove(); koordinatLubang(x.dataset.kk, () => kelolaKoordinat()); }));
+  m.querySelectorAll("[data-km]").forEach((x) => (x.onclick = () => { m.remove(); daftarMarking(x.dataset.km); }));
+}
 async function hapusTersimpan(tbl, id, label, ulang) {
   const alasan = prompt(`Hapus ${label}?\nData dipindah ke Arsip terhapus (admin bisa memulihkan). Setelah itu kirim ulang yang benar bila perlu.\n\nAlasan (wajib):`);
   if (!alasan?.trim()) return;
   const { error } = await sb.rpc("hapus_data_tersimpan", { p_table: tbl, p_id: id, p_alasan: alasan.trim() });
+  if (error && /hapus_data_tersimpan/.test(error.message) && tbl === "marking" && me?.role === "admin") { // v.61: marking bisa dihapus admin walau fungsi server belum dipasang
+    const e2 = await hapusMarkingAdmin(id, alasan.trim()); if (e2) return alert(e2); toast("Marking dihapus (masuk Arsip terhapus)."); return ulang?.(); }
   if (error) return alert(/hapus_data_tersimpan/.test(error.message) ? "Fungsi database belum dipasang — jalankan hapus_data_tersimpan.sql di Supabase." : error.message);
+  if (tbl === "marking") await sesuaikanKoordinatSetelahHapus(label.replace(/^marking\s+/, ""));
   toast("Data dihapus (masuk Arsip terhapus)."); ulang?.();
 }
 // ---------- v.20: ✏️ Edit data (admin/verifier) untuk sheet yang belum punya layar edit — salah tulis, salah marking, salah upload ----------
@@ -5578,12 +5619,13 @@ async function petaView(v) {
       <select id="pmB" style="flex:0 0 140px"><option value="sat">Citra satelit</option><option value="osm">Peta jalan (OSM)</option><option value="none">Tanpa latar</option></select>
       <button class="sec" id="pm3" style="flex:0">3D</button><button class="sec" id="pmA3" style="flex:0;white-space:nowrap" title="Ekspor peta lokasi titik bor ke PDF A3 lanskap">🖨 Peta PDF A3</button><button class="sec" id="pmBP" style="flex:0;white-space:nowrap;background:#12251E;color:#fff">🧊 3D bawah permukaan</button><label id="pmKl" style="flex:0;white-space:nowrap;margin:0;display:none">Kolom bor <input id="pmK" type="range" min="0.5" max="3" step="0.25" value="${localStorage.getItem("kolom3d") || 1}" style="width:80px;vertical-align:middle"></label><select id="pmTopo" title="Tampilan topografi saat 3D" style="flex:0 0 150px">${[["redup", "Topo redup (bor jelas)"], ["sedang", "Topo sedang"], ["asli", "Topo asli"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select><label style="flex:0;white-space:nowrap;margin:0">Tinggi <input id="pmX" type="range" min="1" max="4" step="0.5" value="1.5" style="width:80px;vertical-align:middle"> <span id="pmXv">1,5×</span></label>
       <button class="sec" id="pmL" style="flex:0">Lapisan ▾</button><button class="sec" id="pmF" style="flex:0">Impor file</button><input type="file" id="pmFi" multiple accept=".zip,.shp,.dbf,.prj,.shx,.cpg,.kml,.kmz,.geojson,.json,.csv,.txt" style="display:none">
-      <button class="sec" id="pmT" style="flex:0">● Lacak</button><button class="sec" id="pmI" style="flex:0">Ke IUP</button><button class="sec" id="pmO" style="flex:0">Simpan offline</button></div>
+      ${isStaff() ? `<button class="sec" id="pmKK" style="flex:0;white-space:nowrap" title="Edit koordinat titik / hapus marking yang salah">🧭 Koordinat & marking</button>` : ""}<button class="sec" id="pmT" style="flex:0">● Lacak</button><button class="sec" id="pmI" style="flex:0">Ke IUP</button><button class="sec" id="pmO" style="flex:0">Simpan offline</button></div>
     <div id="pmPanel" class="card" style="display:none;margin:8px 0 0;padding:8px;background:#f6f7f2"></div>
     <div style="position:relative"><div id="pmap" style="height:70vh;margin-top:8px;border-radius:10px;overflow:hidden;background:#dfe5df"></div>
       <div id="pmLeg" style="position:absolute;left:8px;top:16px;background:rgba(255,255,255,.88);border-radius:8px;padding:6px 8px;font-size:12px;line-height:1.6">${[["RENCANA", "Rencana"], ["PROGRES", "Progres (continue)"], ["EOH", "EOH / STB (selesai bor)"]].map(([k, t]) => `<div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${WARNA_STATUS[k]};border:1.5px solid #111;vertical-align:-1px"></span> ${t}</div>`).join("")}<div><span style="display:inline-block;width:11px;height:11px;border-radius:50%;border:2.5px solid #e00;vertical-align:-1px"></span> di luar IUP</div></div></div>
     <div class="muted" id="pmInfo" style="margin-top:6px;min-height:1.2em">Memuat peta…</div><div id="pm3info" style="font-size:12px;color:#12251E;margin-top:2px"></div>
     <p class="muted" style="margin:4px 0 0">Relief: DEMNAS (BIG) ±8 m sampai pantai; di hutan bisa mengikuti puncak pohon. Citra: Esri World Imagery. Bagian peta yang pernah tampil (citra satelit, OSM, relief, citra drone) otomatis tersimpan di HP dan bisa dibuka & diekspor saat offline; “Simpan offline” menyimpan seluruh relief & citra drone sekaligus.</p></div>`;
+  $("#pmKK")?.addEventListener("click", () => kelolaKoordinat());
   try { if (!window.maplibregl) { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "vendor/maplibre-gl.css"; document.head.appendChild(l); await muatJS("vendor/maplibre-gl.js", () => window.maplibregl); } }
   catch (e) { return ($("#pmInfo").textContent = e.message); }
   const BB = [121.725, -1.8, 121.85, -1.622], demURL = new URL("peta/dem/", location.href).href + "{z}/{x}/{y}.png";
