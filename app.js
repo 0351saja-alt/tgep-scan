@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.53";
+const APP_VERSION = "2026-11-27.54";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -637,7 +637,7 @@ function editKirimanModal(t, r, selesai) {
     <p class="muted" style="margin:0 0 8px">Untuk salah tulis Hole ID, nomor halaman, jenis formulir, rig, tanggal, dll. Fotonya tetap. Kalau fotonya yang salah, tutup lalu pakai 🗑 Hapus dan kirim ulang.</p>
     <label>Jenis formulir<select id="kJ">${scan ? opsi(FORMS, r.form_type) : opsi(ARSIP, r.jenis)}</select></label>
     <label>Hole ID<input id="kB" value="${esc((scan ? r.bhid_hint : r.bhid) ?? "")}" placeholder="mis. DH-NPG 12" autocapitalize="characters"></label>
-    ${scan ? "" : `<div class="row"><label>Rig<input id="kR" value="${esc(r.rig ?? "")}" placeholder="RIG 1" autocapitalize="characters"></label><label>Tanggal<input id="kT" type="date" value="${r.tanggal ?? ""}"></label></div>
+    ${scan ? "" : `<div class="row"><label>Rig<input id="kR" list="dlRig" value="${esc(r.rig ?? "")}" placeholder="pilih rig" autocapitalize="characters"></label><label>Tanggal<input id="kT" type="date" value="${r.tanggal ?? ""}"></label></div>
     <label>Shift<select id="kS"><option value="">—</option><option value="PAGI"${r.shift === "PAGI" ? " selected" : ""}>Day (PAGI)</option><option value="MALAM"${r.shift === "MALAM" ? " selected" : ""}>Night (MALAM)</option></select></label>`}
     <div class="row"><label>Halaman<input id="kH" type="number" min="1" inputmode="numeric" value="${(scan ? r.page_no : r.halaman) ?? ""}"></label>${scan ? "" : `<label>Jumlah halaman<input id="kN" type="number" min="1" inputmode="numeric" value="${r.jumlah_halaman ?? ""}"></label>`}</div>
     ${scan ? "" : `<label>Keterangan<input id="kK" value="${esc(r.keterangan ?? "")}"></label>`}
@@ -2979,12 +2979,12 @@ async function petaDashboard(st, basi = () => false) {
 async function dashView(v) {
   const tok = (dashView.tok = (dashView.tok ?? 0) + 1), basi = () => tok !== dashView.tok || tab !== "dash";   // render lama dibatalkan bila ada render baru
   const to = todayWIB(), from = new Date(Date.now() - 30 * 864e5).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
-  const st = JSON.parse(sessionStorage.getItem("dash") || "null") ?? { from, to, rig: "" };
+  const st = JSON.parse(sessionStorage.getItem("dash") || "null") ?? { from, to, rig: "" }; st.rig = bakuRig(st.rig);
   v.innerHTML = `<div class="card dashHead" style="display:flex;align-items:center;gap:14px;background:linear-gradient(120deg,#0d1f18,#12251E 60%,#1b4a37);color:#fff">${logoPT(46)}
     <div style="flex:1"><div style="font:700 11px Arial;letter-spacing:.16em;color:#7CE0B0">PT TERRA GRAPINDO ECO PRIMA</div><div style="font:800 21px Arial">Dashboard eksplorasi nikel laterit</div><div style="font-size:12px;opacity:.75">X-Terra · data dari lapangan, terverifikasi</div></div></div>
     <div class="card"><h2>Dashboard progres & evaluasi</h2>
     <style>.dfil>div{flex:1 1 140px;min-width:140px}.dfil>div select,.dfil>div input{width:100%}@media(max-width:520px){.dfil>button{flex:1 1 45%!important}}</style><div class="row dfil" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
-    ${proyekSelect()}<div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><div><label>Topografi 3D</label><select id="topo3d">${[["redup", "Redup (bor menonjol)"], ["sedang", "Sedang"], ["asli", "Asli (tajam)"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button><button id="pres" style="flex:0;white-space:nowrap;background:#12251E">🎞 Presentasi 16:9</button>${isClient() ? "" : `<button id="waPr" style="flex:0;white-space:nowrap;background:#1FA855">💬 WA progres ke client</button>`}</div></div>
+    ${proyekSelect()}<div><label>Rig</label>${rigSelect("r", st.rig)}</div><div><label>Topografi 3D</label><select id="topo3d">${[["redup", "Redup (bor menonjol)"], ["sedang", "Sedang"], ["asli", "Asli (tajam)"]].map(([k, l]) => `<option value="${k}" ${(localStorage.getItem("topo3d") || "redup") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="dx" style="flex:0;white-space:nowrap">Unduh Excel</button><button id="lap" style="flex:0;white-space:nowrap">Laporan PDF (peta + profil)</button><button id="pres" style="flex:0;white-space:nowrap;background:#12251E">🎞 Presentasi 16:9</button>${isClient() ? "" : `<button id="waPr" style="flex:0;white-space:nowrap;background:#1FA855">💬 WA progres ke client</button>`}</div></div>
     <div id="dSlide" style="background:#3a4741;border-radius:14px;padding:6px 3px;margin-bottom:12px"><p style="color:#fff;font-family:Arial;padding:16px;margin:0">Menyusun tampilan presentasi…</p></div>
     <details class="card" id="rinci" open><summary style="font-weight:700;cursor:pointer">Indikator & grafik dashboard</summary><div id="kpi" style="margin-top:8px"></div>
     <div id="ch" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-top:10px"></div></details>`;
@@ -4546,10 +4546,10 @@ async function aksesKlien(box) {
 }
 async function klienView(v) {
   const to = todayWIB(), from = new Date(Date.now() - 30 * 864e5).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
-  const st = JSON.parse(sessionStorage.getItem("klien") || "null") ?? { from, to, rig: "" };
+  const st = JSON.parse(sessionStorage.getItem("klien") || "null") ?? { from, to, rig: "" }; st.rig = bakuRig(st.rig);
   v.innerHTML = `<div class="card"><h2>Laporan rig</h2><p class="muted">Rekap operasional rig yang dibuka untuk akun Anda. Data masuk dari aplikasi lapangan (foto bergeotag, P2H, DDR bertanda tangan).</p>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div><label>Dari</label><input id="f" type="date" value="${st.from}"></div><div><label>Sampai</label><input id="t" type="date" value="${st.to}"></div>
-    <div><label>Rig</label><input id="r" value="${esc(st.rig)}" placeholder="semua"></div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="xl" style="flex:0;white-space:nowrap">Unduh Excel rekap</button>
+    <div><label>Rig</label>${rigSelect("r", st.rig)}</div><button id="go" style="flex:0">Tampilkan</button><button class="sec" id="xl" style="flex:0;white-space:nowrap">Unduh Excel rekap</button>
     <button class="sec" id="lp" style="flex:0;white-space:nowrap">Laporan progres</button></div><div id="info" class="muted"></div></div>
     <div class="card" id="kr">Memuat…</div><div class="card" id="kd"></div>`;
   const rd = () => ({ from: $("#f").value, to: $("#t").value, rig: $("#r").value.trim().toUpperCase() });
@@ -4663,12 +4663,34 @@ function isiDlBH() {
   dl.innerHTML = [...M.keys()].sort(urutBH).map((b) => `<option value="${esc(b)}" label="${esc([asalRedrill(b) ? "REDRILL" : null, ...M.get(b)].filter(Boolean).join(" · "))}">`).join("");
 }
 async function muatDaftarBH() {
-  if (!online() || isClient()) return isiDlBH();
+  if (!online() || isClient()) { isiDlRig(); return isiDlBH(); }
   const Q = [["borehole", "bhid", "lubang"], ["v_ddr_baris", "bhid", "DDR"], ["ddr", "bhid", "DDR"], ["drill_event", "bhid", "progres bor"], ["core_photo", "bhid", "foto core"], ["scan_job", "bhid_hint", "Form Logging"], ["marking", "bhid", "marking"]];
   const res = await Promise.all(Q.map(([t, c]) => sb.from(t).select(c).not(c, "is", null).limit(5000).then((r) => r.data ?? [], () => [])));
   const M = new Map(); res.forEach((rows, i) => { for (const r of rows) { const b = String(r[Q[i][1]] ?? "").trim().toUpperCase(); if (!b) continue; if (!M.has(b)) M.set(b, new Set()); M.get(b).add(Q[i][2]); } });
   try { localStorage.setItem("daftarBH", JSON.stringify([...M].map(([b, x]) => [b, [...x]]))); } catch {}
   isiDlBH();
+  // v.54: daftar unit rig yang sudah terdaftar (DDR, progres bor, lubang) untuk pilihan Rig di semua layar
+  const RQ = [["ddr", "rig"], ["drill_event", "rig"], ["borehole", "rigmc_id"]];
+  const rr = await Promise.all(RQ.map(([t, c]) => sb.from(t).select(c).not(c, "is", null).limit(5000).then((r) => (r.data ?? []).map((x) => x[c]), () => [])));
+  try { localStorage.setItem("daftarRigDB", JSON.stringify([...new Set(rr.flat().map((x) => String(x).trim().toUpperCase()).filter(Boolean))])); } catch {}
+  isiDlRig();
+}
+// v.54: semua unit rig yang terdaftar + datalist dlRig + <select> rig untuk filter
+function semuaRig() {
+  const ls = (k) => { try { return JSON.parse(localStorage.getItem(k) || "[]"); } catch { return []; } };
+  const L = isClient() && (myTugas?.rigs ?? []).length ? myTugas.rigs : [...daftarRig(), ...ls("daftarRig"), ...ls("daftarRigDB"), ...(myTugas?.rigs ?? [])];
+  return [...new Set(L.map((x) => String(x).trim().toUpperCase()).filter(Boolean))].sort(urutBH);
+}
+// "1" / "rig1" / "Rig 01" → "RIG 1" (bila ada di daftar); selain itu huruf besar apa adanya
+function bakuRig(x) { const v = String(x ?? "").trim().toUpperCase(); if (!v) return ""; const L = semuaRig(); if (L.includes(v)) return v;
+  const m = /^(?:RIG)?\s*0*(\d+)$/.exec(v); return m && L.includes(`RIG ${m[1]}`) ? `RIG ${m[1]}` : v; }
+function isiDlRig() {
+  const dl = document.getElementById("dlRig") ?? document.body.appendChild(Object.assign(document.createElement("datalist"), { id: "dlRig" }));
+  dl.innerHTML = semuaRig().map((r) => `<option value="${esc(r)}">`).join("");
+}
+function rigSelect(id, sel, semua = "Semua rig") {
+  const L = semuaRig(), v = String(sel ?? "").trim().toUpperCase(); if (v && !L.includes(v)) L.unshift(v);
+  return `<select id="${id}"><option value="">${esc(semua)}</option>${L.map((r) => `<option ${r === v ? "selected" : ""}>${esc(r)}</option>`).join("")}</select>`;
 }
 // Semua kolom Hole ID (termasuk filter Hole ID di Database & Data tersimpan, form edit) memakai daftar pilihan dlBH
 const ID_BH = new Set(["fb", "sdB", "kB", "kfB", "eb_bhid", "eb_lubang_asal"]);
@@ -5939,9 +5961,9 @@ async function dbView(v) {
       const tampil = cols.filter((c) => !["id", "ddr_id", "rig", "report_date"].includes(c));
       $("#tb").innerHTML = `<div class="row" style="align-items:center;margin-bottom:6px"><span class="muted" style="flex:1">Folder per rig → tanggal. ✏️ Edit di tiap baris, atau klik kanan / tekan lama untuk menu.</span><button class="sec" id="ddrTbl" style="flex:0;white-space:nowrap">Tampilkan sebagai tabel</button></div>` +
         rigs.map((rg, ri) => { const lr = data.map((r, i) => [r, i]).filter(([r]) => r.rig === rg), tg = [...new Set(lr.map(([r]) => String(r.report_date).slice(0, 10)))].sort().reverse(), kr = `${f.ds}|${rg}`;
-          return `<details data-dd="${esc(kr)}" ${bk.includes(kr) || ri === 0 ? "open" : ""} style="border:1px solid #DDE5E0;border-radius:10px;margin:6px 0;background:#FAFCFB"><summary style="cursor:pointer;padding:8px 10px;font-weight:600">🚜 ${esc(rg ?? "-")} <span class="muted" style="font-weight:400">· ${lr.length} DDR · ${tg.length} hari</span></summary><div style="margin:0 8px 8px">` +
-            tg.map((t) => { const lt = lr.filter(([r]) => String(r.report_date).slice(0, 10) === t), kt = `${kr}|${t}`, nD = lt.filter(([r]) => (r.status ?? r.ddr_status) !== "SIGNED").length;
-              return `<details data-dd="${esc(kt)}" ${bk.includes(kt) ? "open" : ""} style="border-left:3px solid #CFE3D8;margin:4px 0 4px 4px;padding-left:6px"><summary style="cursor:pointer;padding:5px 4px;font-weight:600;font-size:14px">📅 ${esc(tglPj(t))} <span class="muted" style="font-weight:400">· ${lt.length} DDR</span>${nD ? ` <span style="color:#B3261E;font-weight:400">· ${nD} DRAF</span>` : ""}</summary>
+          return `<details data-dd="${esc(kr)}" ${bk.includes(kr) || !bk.length || ri === 0 ? "open" : ""} style="border:1px solid #DDE5E0;border-radius:10px;margin:6px 0;background:#FAFCFB"><summary style="cursor:pointer;padding:8px 10px;font-weight:600">🚜 ${esc(rg ?? "-")} <span class="muted" style="font-weight:400">· ${lr.length} DDR · ${tg.length} hari</span></summary><div style="margin:0 8px 8px">` +
+            tg.map((t, ti) => { const lt = lr.filter(([r]) => String(r.report_date).slice(0, 10) === t), kt = `${kr}|${t}`, nD = lt.filter(([r]) => (r.status ?? r.ddr_status) !== "SIGNED").length;
+              return `<details data-dd="${esc(kt)}" ${bk.includes(kt) || (!bk.length && ti === 0) ? "open" : ""} style="border-left:3px solid #CFE3D8;margin:4px 0 4px 4px;padding-left:6px"><summary style="cursor:pointer;padding:5px 4px;font-weight:600;font-size:14px">📅 ${esc(tglPj(t))} <span class="muted" style="font-weight:400">· ${lt.length} DDR</span>${nD ? ` <span style="color:#B3261E;font-weight:400">· ${nD} DRAF</span>` : ""}</summary>
                 <div class="tw"><table><tr><th></th>${tampil.map((c) => `<th style="padding:4px 7px">${esc(c)}</th>`).join("")}</tr>${lt.map(([r, i]) => `<tr data-ri="${i}" style="cursor:context-menu"><td style="white-space:nowrap"><button data-ed1="${i}" style="padding:2px 8px;width:auto">✏️ Edit</button> <button class="sec" data-mn="${i}" style="padding:2px 8px;width:auto">⋯</button></td>${tampil.map((c) => cell(c, r[c])).join("")}</tr>`).join("")}</table></div></details>`; }).join("") + `</div></details>`; }).join("");
       $("#ddrTbl").onclick = () => { try { localStorage.setItem("dbDdrTabel", "1"); } catch {} show(page); };
       $("#tb").querySelectorAll("details[data-dd]").forEach((d) => d.addEventListener("toggle", () => { const S = new Set(JSON.parse(sessionStorage.getItem("dbDdrFolder") || "[]")); d.open ? S.add(d.dataset.dd) : S.delete(d.dataset.dd); sessionStorage.setItem("dbDdrFolder", JSON.stringify([...S])); }));
