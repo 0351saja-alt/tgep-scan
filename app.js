@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.26";
+const APP_VERSION = "2026-11-27.27";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2572,16 +2572,19 @@ async function ddrView(v) {
   };
   $("#sy").onclick = sync;
   if (online()) {
-    const { data } = await sb.from("v_ddr_list").select("id,report_date,shift,rig,bhid,status,driller_name,meter_bor,coring_ddr_m,selisih_ddr_vs_foto_m,bbm_liter,bbm_per_meter,ttd").order("report_date", { ascending: false }).limit(30);
+    // v.27: DDR yang sudah LENGKAP (ditandatangani) pindah ke Database (sheet Rekap DDR) — daftar ini hanya DDR yang masih DRAF
+    const [{ data }, { count: nLengkap }] = await Promise.all([sb.from("v_ddr_list").select("id,report_date,shift,rig,bhid,status,driller_name,meter_bor,coring_ddr_m,selisih_ddr_vs_foto_m,bbm_liter,bbm_per_meter,ttd").neq("status", "SIGNED").order("report_date", { ascending: false }).limit(60),
+      sb.from("ddr").select("id", { count: "exact", head: true }).eq("status", "SIGNED")]);
     const { data: pb } = (data ?? []).length ? await sb.from("ddr").select("id,created_by").in("id", data.map((d) => d.id)) : { data: [] };
     const pembuat = Object.fromEntries((pb ?? []).map((x) => [x.id, x.created_by]));
     const bisaEdit = (d) => d.status !== "SIGNED" && (["geologist", "verifier", "admin"].includes(me?.role) || pembuat[d.id] === session?.user?.id);
     const kurangDrl = (data ?? []).filter((d) => d.status !== "SIGNED" && !/DRILLER:/.test(d.ttd ?? ""));
-    $("#lst").innerHTML = `${bisaTtdLayar("DRILLER") && kurangDrl.length ? `<div class="row" style="margin-bottom:8px"><button id="ttdMassal" style="flex:0;white-space:nowrap">✍️ Lengkapi TTD driller (${kurangDrl.length} DDR)</button><span class="muted" style="font-size:12px;align-self:center">DDR yang sudah selesai tapi belum ada TTD driller — diisi wellsite/admin tanpa driller memakai aplikasi</span></div>` : ""}<ul class="list">${(data ?? []).map((d) => `<li style="flex-wrap:wrap"><span class="pill ${d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW"}">${d.status === "SIGNED" ? "LENGKAP" : "DRAF"}</span>
+    $("#lst").innerHTML = `${nLengkap ? `<div class="row" style="align-items:center;margin-bottom:8px;background:#E8F4EC;border-radius:8px;padding:6px 10px"><span style="flex:1">📦 <b>${nLengkap} DDR LENGKAP</b> (sudah ditandatangani) sudah pindah ke <b>Database → Rekap DDR</b>.</span>${!isStaff() ? "" : `<button class="sec" id="keRekap" style="flex:0;white-space:nowrap">Buka Rekap DDR</button>`}</div>` : ""}${!(data ?? []).length ? `<p class="muted">Tidak ada DDR draf — semua DDR sudah lengkap.</p>` : ""}${bisaTtdLayar("DRILLER") && kurangDrl.length ? `<div class="row" style="margin-bottom:8px"><button id="ttdMassal" style="flex:0;white-space:nowrap">✍️ Lengkapi TTD driller (${kurangDrl.length} DDR)</button><span class="muted" style="font-size:12px;align-self:center">DDR yang sudah selesai tapi belum ada TTD driller — diisi wellsite/admin tanpa driller memakai aplikasi</span></div>` : ""}<ul class="list">${(data ?? []).map((d) => `<li style="flex-wrap:wrap"><span class="pill ${d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW"}">${d.status === "SIGNED" ? "LENGKAP" : "DRAF"}</span>
       <span style="flex:1">${esc(d.report_date)} · ${d.shift === "PAGI" ? "Day" : "Night"} · <b>${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">Coring DDR ${d.coring_ddr_m ?? 0} m · Diesel ${d.bbm_liter} L${d.bbm_per_meter ? ` (${d.bbm_per_meter} L/m)` : ""}<br>${esc(d.ttd ?? "belum ada TTD")}</span></span>
       ${!/CLIENT/.test(d.ttd ?? "") ? `<button class="sec" data-sg="${d.id}" style="flex:0">Tanda tangani</button>` : ""}${bisaEdit(d) ? `<button data-ef="${d.id}" style="flex:0;white-space:nowrap">✏️ Edit DDR</button>` : d.status === "SIGNED" && ["verifier", "admin"].includes(me?.role) ? `<button class="danger" data-bt="${d.id}" style="flex:0;white-space:nowrap">🔓 Buka TTD</button>` : ""}<button class="sec" data-pr="${d.id}" style="flex:0">Lihat / cetak</button></li>`).join("") || `<li class="muted">Belum ada.</li>`}</ul>
       <p class="muted" style="font-size:12px;margin:6px 0 0">✏️ Edit DDR = ubah semua isian DDR yang masih DRAF (crew, jam, open hole, coring/run, barang, catatan) lalu tekan simpan; versi lama tetap tersimpan di server. DDR yang sudah ditandatangani harus dibuka verifier/admin (🔓 Buka TTD) sebelum diedit — TTD lama dihapus dan DDR perlu ditandatangani ulang.</p>`;
     $("#lst").querySelectorAll("[data-ef]").forEach((b) => (b.onclick = () => editDDR(b.dataset.ef)));
+    $("#keRekap")?.addEventListener("click", () => { const st = JSON.parse(sessionStorage.getItem("dbst") || "{}"); sessionStorage.setItem("dbst", JSON.stringify({ ...st, ds: "rekapddr", page: 0 })); tab = "db"; localStorage.setItem("tab", "db"); render(); });
     $("#ttdMassal")?.addEventListener("click", () => lengkapiTtdDriller(kurangDrl, () => render()));
     $("#lst").querySelectorAll("[data-bt]").forEach((b) => (b.onclick = async () => {
       const alasan = prompt("Alasan membuka tanda tangan DDR ini (wajib, tercatat di log):"); if (!alasan || alasan.trim().length < 5) return alert("Alasan wajib diisi (minimal 5 huruf).");
