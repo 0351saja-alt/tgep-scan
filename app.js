@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.27";
+const APP_VERSION = "2026-11-27.28";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2089,8 +2089,10 @@ async function simpanView(v) {
   const hit = {}; for (const b of B) hit[b.jenis] = (hit[b.jenis] ?? 0) + 1;
   const mDDR = B.filter((b) => b.jenis === "ddr" && b.status !== "BELUM TERKIRIM").reduce((s, b) => s + (Number(/Meter DDR ([\d,]+)/.exec(b.ket)?.[1]?.replace(",", ".")) || 0), 0);
   $("#sdSum").innerHTML = `${B.length} baris · ${Object.entries(hit).filter(([k]) => JENIS_SIMPAN[k]).map(([k, n]) => `${JENIS_SIMPAN[k]} ${n}`).join(" · ")}${hit.ddr ? ` · <b>meter DDR ${fmtD(mDDR)} m</b>` : ""}`;
-  $("#sdL").innerHTML = B.map((b, i) => `<li style="flex-wrap:wrap"><span class="pill ${b.kelas}">${esc(b.status ?? "")}</span><span style="flex:1;min-width:200px"><b>${esc(JENIS_SIMPAN[b.jenis] ?? "")}</b> · ${esc(b.judul)}<br><span class="muted">${b.t ? esc(fmtT(new Date(b.t))) : ""}${b.ket ? " · " + esc(b.ket) : ""}</span></span>${b.aksi.map((a, k) => `<button class="${a.c ?? "sec"}" data-sa="${i}:${k}" style="flex:0;white-space:nowrap">${esc(a.l)}</button>`).join("")}</li>`).join("") || `<li class="muted">Tidak ada data untuk filter ini.</li>`;
-  $("#sdL").querySelectorAll("[data-sa]").forEach((el) => (el.onclick = () => { const [i, k] = el.dataset.sa.split(":").map(Number); B[i].aksi[k].fn(); }));
+  // v.28: tombol aksi (Foto, Edit, Hapus, …) disembunyikan — muncul lewat klik kanan / tekan lama / klik dua kali pada baris
+  $("#sdL").innerHTML = B.map((b, i) => `<li data-si="${i}" style="flex-wrap:wrap;cursor:context-menu" title="${b.aksi.length ? "Klik kanan (HP: tekan lama) untuk Foto / Edit / Hapus" : ""}"><span class="pill ${b.kelas}">${esc(b.status ?? "")}</span><span style="flex:1;min-width:200px"><b>${esc(JENIS_SIMPAN[b.jenis] ?? "")}</b> · ${esc(b.judul)}<br><span class="muted">${b.t ? esc(fmtT(new Date(b.t))) : ""}${b.ket ? " · " + esc(b.ket) : ""}</span></span></li>`).join("") || `<li class="muted">Tidak ada data untuk filter ini.</li>`;
+  if (B.some((b) => b.aksi.length)) $("#sdSum").insertAdjacentHTML("beforeend", `<br><span style="font-size:12px">💡 Klik kanan pada baris (HP: tekan lama) untuk Foto, Edit, Hapus, dll.</span>`);
+  $("#sdL").querySelectorAll("[data-si]").forEach((li) => pasangMenuKlikKanan(li, () => B[+li.dataset.si].aksi));
 }
 // 🗑 Hapus dari Data tersimpan: pengirim / verifier / admin (yang final hanya admin). Masuk Arsip terhapus, admin bisa memulihkan.
 async function hapusTersimpan(tbl, id, label, ulang) {
@@ -2209,6 +2211,21 @@ function aksiBarisDb(ds, r, ulang) {
     case "arsip": if (adm && !r.restored_at) A.push({ l: "♻️ Pulihkan", fn: async () => { const { error } = await sb.rpc("admin_restore", { p_id: Number(r.id) }); if (error) alert(error.message); else ulang(); } }); break;
   }
   return A;
+}
+// Menu aksi melayang (klik kanan / tekan lama): A = [{l, fn, c?, info?}]
+function menuAksi(A, x, y) {
+  document.getElementById("dbPop")?.remove(); if (!A?.length) return;
+  const p = document.createElement("div"); p.id = "dbPop";
+  p.style.cssText = `position:fixed;left:${Math.max(4, Math.min(x, innerWidth - 250))}px;top:${Math.max(4, Math.min(y, innerHeight - 44 * A.length - 16))}px;z-index:60;background:#fff;border:1px solid #ccd;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.25);padding:6px;min-width:220px`;
+  p.innerHTML = A.map((a, k) => `<button class="${a.c ?? "sec"}" data-k="${k}" style="display:block;width:100%;text-align:left;margin:3px 0">${esc(a.l)}</button>`).join("");
+  document.body.appendChild(p); p.querySelectorAll("[data-k]").forEach((b) => (b.onclick = () => { p.remove(); A[+b.dataset.k].fn(); }));
+  setTimeout(() => document.addEventListener("click", function tutup(e) { if (!p.contains(e.target)) { p.remove(); document.removeEventListener("click", tutup); } }), 0);
+}
+function pasangMenuKlikKanan(el, ambilAksi) {
+  el.addEventListener("contextmenu", (e) => { e.preventDefault(); menuAksi(ambilAksi(), e.clientX, e.clientY); });
+  el.addEventListener("dblclick", (e) => { if (e.target.closest("button,a,input")) return; menuAksi(ambilAksi(), e.clientX, e.clientY); });
+  let tm = null; el.addEventListener("touchstart", (e) => { const t = e.touches[0]; tm = setTimeout(() => menuAksi(ambilAksi(), t.clientX, t.clientY), 550); }, { passive: true });
+  ["touchend", "touchmove", "touchcancel"].forEach((n) => el.addEventListener(n, () => clearTimeout(tm), { passive: true }));
 }
 // Bilah ✏️ Edit di atas tabel + klik baris (pilih), klik dua kali (edit), klik kanan / tekan lama (menu)
 function pasangEditTabel(wadah, ds, rows, ulang) {
