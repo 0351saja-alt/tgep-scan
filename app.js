@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.28";
+const APP_VERSION = "2026-11-27.29";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2048,7 +2048,7 @@ async function simpanView(v) {
   for (const x of await qAll()) { const r = x.row ?? {}, jen = x.kind === "ddr" ? "ddr" : x.kind === "event" ? "run" : x.kind === "core" ? "core" : !x.kind ? "scan" : x.kind === "arsip" ? "arsip" : x.kind === "p2h" ? "p2h" : x.kind === "marking" ? "marking" : null;
     if (!jen || !mau(jen)) continue; const bh = r.bhid ?? x.bhid ?? x.bhid_hint ?? "", rg = r.rig ?? "";
     if (f.bh && bakuBH(bh) !== f.bh) continue; if (f.rig && rg && rg !== f.rig) continue;
-    B.push({ t: r.captured_at ?? x.captured_at ?? new Date(x.antre_at ?? Date.now()).toISOString(), jenis: jen, judul: ringkasAntre(x), ket: x.error ? `galat: ${x.error}` : "menunggu sinyal", status: "BELUM TERKIRIM", kelas: x.error ? "REJECTED" : "ANTRE", aksi: [{ l: "Antrean", fn: () => antreanModal() }] }); }
+    B.push({ bh, t: r.captured_at ?? x.captured_at ?? new Date(x.antre_at ?? Date.now()).toISOString(), jenis: jen, judul: ringkasAntre(x), ket: x.error ? `galat: ${x.error}` : "menunggu sinyal", status: "BELUM TERKIRIM", kelas: x.error ? "REJECTED" : "ANTRE", aksi: [{ l: "Antrean", fn: () => antreanModal() }] }); }
   if (online()) {
     const jobs = [];
     // 2) DDR
@@ -2058,26 +2058,26 @@ async function simpanView(v) {
       else { const { data } = await Q(sb.from("ddr").select("id,report_date,shift,rig,bhid,status,coring,open_hole,consumables,crew_count,driller_name,created_at"), "report_date", null); rows = (data ?? []).filter((d) => !f.bh || d.bhid === f.bh || [...(d.coring ?? []), ...(d.open_hole ?? [])].some((x) => x.bhid === f.bh)); }
       for (const d of rows) { const bs = [...(d.coring ?? []), ...(d.open_hole ?? [])].filter((x) => +x.to > +x.from), m = bs.reduce((s, x) => s + (+x.to - +x.from), 0);
         const lb = [...new Set(bs.map((x) => x.bhid || d.bhid).filter(Boolean))], bbm = staf ? (d.consumables ?? []).filter((c) => c.kategori === "BBM").reduce((s, c) => s + (+c.qty || 0), 0) : null;
-        B.push({ t: `${d.report_date}T${d.shift === "MALAM" ? "18" : "06"}:00:00+07:00`, jenis: "ddr", judul: `${d.report_date} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${d.rig} · ${lb.join(", ") || d.bhid || "-"}`,
+        B.push({ bh: d.bhid, t: `${d.report_date}T${d.shift === "MALAM" ? "18" : "06"}:00:00+07:00`, jenis: "ddr", judul: `${d.report_date} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${d.rig} · ${lb.join(", ") || d.bhid || "-"}`,
           ket: `Meter DDR ${fmtD(m)} m (coring ${fmtD((d.coring ?? []).filter((x) => +x.to > +x.from).reduce((s, x) => s + (+x.to - +x.from), 0))} m)${staf ? ` · crew ${d.crew_count ?? "-"} · BBM ${bbm} L` : ""}`,
           status: d.status === "SIGNED" ? "LENGKAP TTD" : "DRAF", kelas: d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW", aksi: [{ l: "Lihat DDR", fn: () => (staf ? printDDR(d.id) : ddrClientModal(d)) }, ...del("ddr", d.id, `DDR ${d.rig} ${d.report_date} ${d.shift === "MALAM" ? "Night" : "Day"}${d.status === "SIGNED" ? " (sudah ditandatangani)" : ""}`)] }); }
     })());
     // 3) Progres bor (run & kejadian)
-    if (mau("run")) jobs.push(Q(sb.from("drill_event").select("*").order("captured_at", { ascending: false })).then(({ data }) => { for (const e of data ?? []) B.push({ t: e.captured_at, jenis: "run", judul: `${EV[e.event_type] ?? e.event_type} · ${e.rig ?? ""} ${e.bhid ?? ""}${e.jenis_bor === "REDRILL" ? " (redrill)" : ""}`,
+    if (mau("run")) jobs.push(Q(sb.from("drill_event").select("*").order("captured_at", { ascending: false })).then(({ data }) => { for (const e of data ?? []) B.push({ bh: e.bhid, foto: e.photo_path ? ["progress-photos", e.photo_path] : null, t: e.captured_at, jenis: "run", judul: `${EV[e.event_type] ?? e.event_type} · ${e.rig ?? ""} ${e.bhid ?? ""}${e.jenis_bor === "REDRILL" ? " (redrill)" : ""}`,
       ket: [e.depth_to != null ? `${e.depth_from ?? "?"}–${e.depth_to} m${e.core_length != null ? ` · core ${e.core_length} m` : ""}` : null, e.status_akhir, e.lat ? "GPS ✓" : "tanpa GPS", e.reason].filter(Boolean).join(" · "), status: "TERKIRIM", kelas: "APPROVED", aksi: [...(e.photo_path ? [{ l: "Foto", fn: () => bukaFile("progress-photos", e.photo_path) }] : []), ...(staf && (isStaff() || e.created_by === session?.user?.id) ? [{ l: "✏️ Ubah / ganti foto", fn: () => editFotoAktivitas(e.id, ulang) }] : []), ...(ver ? [{ l: "✏️ Edit data", fn: () => editBaris("drill_event", e.id, ulang) }] : []), ...del("drill_event", e.id, `${EV[e.event_type] ?? e.event_type} ${e.rig ?? ""} ${e.bhid ?? ""}`)] }); }));
     // 4) Foto core
-    if (mau("core")) jobs.push(Q(sb.from("core_photo").select("id,bhid,box_no,depth_from,depth_to,photo_type,status,sop_ok,reviewer_override,ditolak,alasan_tolak,error,photo_path,preview_path,captured_at"), "captured_at", "bhid", null).then(({ data }) => { for (const c of data ?? []) B.push({ t: c.captured_at, jenis: "core", judul: `${c.bhid} · kotak ${c.box_no ?? "?"} · ${c.depth_from}–${c.depth_to} m${c.photo_type ? ` · ${c.photo_type}` : ""}`,
+    if (mau("core")) jobs.push(Q(sb.from("core_photo").select("id,bhid,box_no,depth_from,depth_to,photo_type,status,sop_ok,reviewer_override,ditolak,alasan_tolak,error,photo_path,preview_path,captured_at"), "captured_at", "bhid", null).then(({ data }) => { for (const c of data ?? []) B.push({ bh: c.bhid, raw: c, foto: (c.preview_path || c.photo_path) ? ["core-photos", c.preview_path || c.photo_path] : null, t: c.captured_at, jenis: "core", judul: `${c.bhid} · kotak ${c.box_no ?? "?"} · ${c.depth_from}–${c.depth_to} m${c.photo_type ? ` · ${c.photo_type}` : ""}`,
       ket: coreDitolak(c) ? `ditolak: ${c.alasan_tolak ?? "-"}` : c.error ?? "", status: coreDitolak(c) ? "DITOLAK" : c.status === "CHECKED" ? ((c.reviewer_override ?? c.sop_ok) ? "SESUAI SOP" : "TIDAK SESUAI") : c.status, kelas: coreDitolak(c) || c.status === "ERROR" ? "REJECTED" : c.status === "APPROVED" || (c.status === "CHECKED" && (c.reviewer_override ?? c.sop_ok)) ? "APPROVED" : "NEEDS_REVIEW", aksi: [{ l: "Foto", fn: () => bukaFile("core-photos", c.preview_path || c.photo_path) }, ...(isStaff() ? [{ l: "✏️ Ubah / ganti foto", fn: () => editFotoCore(c.id, ulang) }] : []), ...ana("core", c.id), ...del("core_photo", c.id, `foto core ${c.bhid} kotak ${c.box_no ?? "?"}`)] }); }));
     // 5) Form Logging
-    if (mau("scan")) jobs.push(Q(sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,error,photo_path,captured_at,sumber"), "captured_at", "bhid_hint", null).then(({ data }) => { for (const j of data ?? []) B.push({ t: j.captured_at, jenis: "scan", judul: `${FORMS?.[j.form_type] ?? "Form Logging"} · ${j.bhid_hint ?? ""} · hal. ${j.page_no ?? "?"}`,
+    if (mau("scan")) jobs.push(Q(sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,error,photo_path,captured_at,sumber"), "captured_at", "bhid_hint", null).then(({ data }) => { for (const j of data ?? []) B.push({ bh: j.bhid_hint, raw: j, foto: j.photo_path ? ["scan-photos", j.photo_path] : null, t: j.captured_at, jenis: "scan", judul: `${FORMS?.[j.form_type] ?? "Form Logging"} · ${j.bhid_hint ?? ""} · hal. ${j.page_no ?? "?"}`,
       ket: j.error ?? (j.sumber ? `sumber ${j.sumber}` : ""), status: j.status, kelas: j.status === "ERROR" || j.status === "REJECTED" ? "REJECTED" : j.status === "APPROVED" ? "APPROVED" : "NEEDS_REVIEW", aksi: [...(j.photo_path ? [{ l: "Foto", fn: () => bukaFile("scan-photos", j.photo_path) }] : []), ...(j.status !== "APPROVED" && j.sumber !== "EXCEL" ? ana("scan", j.id) : []), ...del("scan_job", j.id, `Form Logging ${j.bhid_hint ?? ""} hal. ${j.page_no ?? "?"}`)] }); }));
     // 6) Arsip foto
-    if (mau("arsip")) jobs.push(Q(sb.from("form_photo").select("id,jenis,rig,bhid,tanggal,shift,halaman,jumlah_halaman,keterangan,photo_path,captured_at")).then(({ data }) => { for (const a of data ?? []) B.push({ t: a.captured_at, jenis: "arsip", judul: `${ARSIP?.[a.jenis] ?? a.jenis} · ${a.rig ?? ""} ${a.bhid ?? ""}${a.halaman ? ` · hal. ${a.halaman}${a.jumlah_halaman ? "/" + a.jumlah_halaman : ""}` : ""}`,
+    if (mau("arsip")) jobs.push(Q(sb.from("form_photo").select("id,jenis,rig,bhid,tanggal,shift,halaman,jumlah_halaman,keterangan,photo_path,captured_at")).then(({ data }) => { for (const a of data ?? []) B.push({ bh: a.bhid, foto: a.photo_path ? ["scan-photos", a.photo_path] : null, t: a.captured_at, jenis: "arsip", judul: `${ARSIP?.[a.jenis] ?? a.jenis} · ${a.rig ?? ""} ${a.bhid ?? ""}${a.halaman ? ` · hal. ${a.halaman}${a.jumlah_halaman ? "/" + a.jumlah_halaman : ""}` : ""}`,
       ket: [a.tanggal, a.keterangan].filter(Boolean).join(" · "), status: "TERKIRIM", kelas: "APPROVED", aksi: [...(a.photo_path ? [{ l: "Foto", fn: () => bukaFile("scan-photos", a.photo_path) }] : []), ...(staf && a.photo_path && ["DRILL_LOG_LAMA", "LAINNYA"].includes(a.jenis) ? [{ l: "🔄 Scan sebagai Form Logging", fn: () => scanDariArsip(a, ulang) }] : []), ...del("form_photo", a.id, `${ARSIP?.[a.jenis] ?? a.jenis} ${a.bhid || a.rig || ""}`)] }); }));
     // 7) P2H & marking (staf)
-    if (staf && mau("p2h")) jobs.push(Q(sb.from("p2h_check").select("id,rig,shift,unit,hour_meter,n_not_ok,layak_operasi,photo_path,captured_at"), "captured_at", null).then(({ data }) => { for (const p of data ?? []) B.push({ t: p.captured_at, jenis: "p2h", judul: `P2H ${p.rig ?? ""} · ${p.shift ?? ""}${p.unit ? ` · ${p.unit}` : ""}`,
+    if (staf && mau("p2h")) jobs.push(Q(sb.from("p2h_check").select("id,rig,shift,unit,hour_meter,n_not_ok,layak_operasi,photo_path,captured_at"), "captured_at", null).then(({ data }) => { for (const p of data ?? []) B.push({ foto: p.photo_path ? ["progress-photos", p.photo_path] : null, t: p.captured_at, jenis: "p2h", judul: `P2H ${p.rig ?? ""} · ${p.shift ?? ""}${p.unit ? ` · ${p.unit}` : ""}`,
       ket: `${p.n_not_ok ?? 0} item tidak OK${p.hour_meter ? ` · HM ${p.hour_meter}` : ""}`, status: p.layak_operasi ? "LAYAK" : "TIDAK LAYAK", kelas: p.layak_operasi ? "APPROVED" : "REJECTED", aksi: [...(p.photo_path ? [{ l: "Foto", fn: () => bukaFile("progress-photos", p.photo_path) }] : []), ...(ver ? [{ l: "✏️ Edit", fn: () => editBaris("p2h_check", p.id, ulang) }] : []), ...del("p2h_check", p.id, `P2H ${p.rig ?? ""} ${p.shift ?? ""}`)] }); }));
-    if (staf && mau("marking")) jobs.push(Q(sb.from("marking").select("id,bhid,lat,lon,akurasi_m,x_utm,y_utm,catatan,rig,captured_at")).then(({ data }) => { for (const k of data ?? []) B.push({ t: k.captured_at, jenis: "marking", judul: `Marking ${k.bhid ?? ""} · ${k.rig ?? ""}`,
+    if (staf && mau("marking")) jobs.push(Q(sb.from("marking").select("id,bhid,lat,lon,akurasi_m,x_utm,y_utm,catatan,rig,captured_at")).then(({ data }) => { for (const k of data ?? []) B.push({ bh: k.bhid, t: k.captured_at, jenis: "marking", judul: `Marking ${k.bhid ?? ""} · ${k.rig ?? ""}`,
       ket: `${(+k.lat).toFixed(6)}, ${(+k.lon).toFixed(6)} ±${k.akurasi_m ?? "?"} m${k.catatan ? ` · ${k.catatan}` : ""}`, status: "TERKIRIM", kelas: "APPROVED", aksi: [...(ver ? [{ l: "✏️ Edit", fn: () => editBaris("marking", k.id, ulang) }] : []), ...del("marking", k.id, `marking ${k.bhid ?? ""}`)] }); }));
     if (staf && mau("sampel")) jobs.push((async () => { let q = sb.from("kirim_preparasi").select("id,no_kirim,tanggal,tujuan,status,pengirim,penerima,created_at,kirim_preparasi_item(count)").gte("tanggal", f.dari).lte("tanggal", f.sampai).limit(400);
       const { data, error } = await q; if (error) throw error;
@@ -2089,10 +2089,23 @@ async function simpanView(v) {
   const hit = {}; for (const b of B) hit[b.jenis] = (hit[b.jenis] ?? 0) + 1;
   const mDDR = B.filter((b) => b.jenis === "ddr" && b.status !== "BELUM TERKIRIM").reduce((s, b) => s + (Number(/Meter DDR ([\d,]+)/.exec(b.ket)?.[1]?.replace(",", ".")) || 0), 0);
   $("#sdSum").innerHTML = `${B.length} baris · ${Object.entries(hit).filter(([k]) => JENIS_SIMPAN[k]).map(([k, n]) => `${JENIS_SIMPAN[k]} ${n}`).join(" · ")}${hit.ddr ? ` · <b>meter DDR ${fmtD(mDDR)} m</b>` : ""}`;
-  // v.28: tombol aksi (Foto, Edit, Hapus, …) disembunyikan — muncul lewat klik kanan / tekan lama / klik dua kali pada baris
-  $("#sdL").innerHTML = B.map((b, i) => `<li data-si="${i}" style="flex-wrap:wrap;cursor:context-menu" title="${b.aksi.length ? "Klik kanan (HP: tekan lama) untuk Foto / Edit / Hapus" : ""}"><span class="pill ${b.kelas}">${esc(b.status ?? "")}</span><span style="flex:1;min-width:200px"><b>${esc(JENIS_SIMPAN[b.jenis] ?? "")}</b> · ${esc(b.judul)}<br><span class="muted">${b.t ? esc(fmtT(new Date(b.t))) : ""}${b.ket ? " · " + esc(b.ket) : ""}</span></span></li>`).join("") || `<li class="muted">Tidak ada data untuk filter ini.</li>`;
-  if (B.some((b) => b.aksi.length)) $("#sdSum").insertAdjacentHTML("beforeend", `<br><span style="font-size:12px">💡 Klik kanan pada baris (HP: tekan lama) untuk Foto, Edit, Hapus, dll.</span>`);
-  $("#sdL").querySelectorAll("[data-si]").forEach((li) => pasangMenuKlikKanan(li, () => B[+li.dataset.si].aksi));
+  // v.28/.29: tombol aksi disembunyikan (klik kanan / tekan lama = menu; klik = buka detail + ✅ Konfirmasi). Data dikelompokkan dalam folder per Hole ID
+  // (nama folder = Hole ID yang terdaftar di DDR; Hole ID yang belum ada di DDR dikumpulkan di folder "Belum terdaftar di DDR — cek Hole ID").
+  const ddrBH = new Set(daftarBHLokal().filter(([, src]) => src.includes("DDR")).map(([b]) => kunciBH(b)));
+  for (const b of B.filter((x) => x.jenis === "ddr" && x.bh)) ddrBH.add(kunciBH(b.bh));
+  const masalah = (b) => ["REJECTED", "NEEDS_REVIEW"].includes(b.kelas) && b.jenis !== "ddr";
+  const folderOf = (b) => { const bh = b.bh ? bakuBH(b.bh) : ""; if (!bh) return "~Tanpa Hole ID (P2H, kiriman sample, dll.)"; return ddrBH.has(kunciBH(bh)) ? bh : "~Belum terdaftar di DDR — cek Hole ID"; };
+  const G = {}; B.forEach((b, i) => (G[folderOf(b)] ??= []).push(i));
+  const bukaF = JSON.parse(sessionStorage.getItem("sdFolder") || "[]");
+  const baris = (i) => { const b = B[i]; return `<li data-si="${i}" style="flex-wrap:wrap;cursor:pointer" title="Klik = buka · klik kanan (HP: tekan lama) = Foto / Edit / Hapus"><span class="pill ${b.kelas}">${esc(b.status ?? "")}</span><span style="flex:1;min-width:200px"><b>${esc(JENIS_SIMPAN[b.jenis] ?? "")}</b> · ${esc(b.judul)}<br><span class="muted">${b.t ? esc(fmtT(new Date(b.t))) : ""}${b.ket ? " · " + esc(b.ket) : ""}</span></span>${masalah(b) ? `<span title="perlu dicek" style="color:#B3261E;font-weight:700">●</span>` : ""}</li>`; };
+  const keys = Object.keys(G).sort((x, y) => (x.startsWith("~") - y.startsWith("~")) || urutBH(x, y));
+  $("#sdL").innerHTML = keys.map((k) => { const ix = G[k], nM = ix.filter((i) => masalah(B[i])).length, nama = k.replace(/^~/, "");
+    return `<li style="display:block;padding:0;border:none"><details data-fd="${esc(k)}" ${bukaF.includes(k) || f.bh || keys.length === 1 ? "open" : ""} style="border:1px solid #DDE5E0;border-radius:10px;margin:6px 0;background:#FAFCFB">
+      <summary style="cursor:pointer;padding:8px 10px;font-weight:600">📁 ${esc(nama)} <span class="muted" style="font-weight:400">· ${ix.length} data</span>${nM ? ` <span style="color:#B3261E">· ${nM} perlu dicek</span>` : ""}</summary>
+      <ul class="list" style="margin:0 8px 8px">${ix.map(baris).join("")}</ul></details></li>`; }).join("") || `<li class="muted">Tidak ada data untuk filter ini.</li>`;
+  $("#sdL").querySelectorAll("details[data-fd]").forEach((d) => d.addEventListener("toggle", () => { const S = new Set(JSON.parse(sessionStorage.getItem("sdFolder") || "[]")); d.open ? S.add(d.dataset.fd) : S.delete(d.dataset.fd); sessionStorage.setItem("sdFolder", JSON.stringify([...S])); }));
+  if (B.length) $("#sdSum").insertAdjacentHTML("beforeend", `<br><span style="font-size:12px">💡 Data dikelompokkan per Hole ID. Klik baris untuk membuka (ada tombol ✅ Konfirmasi untuk yang bertanda merah); klik kanan / tekan lama untuk Foto, Edit, Hapus.</span>`);
+  $("#sdL").querySelectorAll("[data-si]").forEach((li) => { pasangMenuKlikKanan(li, () => B[+li.dataset.si].aksi); li.addEventListener("click", () => { if (Date.now() - (li._lp || 0) < 900) return; bukaDataTersimpan(B[+li.dataset.si], ulang); }); });
 }
 // 🗑 Hapus dari Data tersimpan: pengirim / verifier / admin (yang final hanya admin). Masuk Arsip terhapus, admin bisa memulihkan.
 async function hapusTersimpan(tbl, id, label, ulang) {
@@ -2212,6 +2225,27 @@ function aksiBarisDb(ds, r, ulang) {
   }
   return A;
 }
+// v.29: buka satu data tersimpan: foto + keterangan + ✅ Konfirmasi (langsung diterima) + semua aksi
+async function bukaDataTersimpan(b, ulang) {
+  const ver = ["verifier", "admin"].includes(me?.role), c = b.raw;
+  const coreMasalah = b.jenis === "core" && c && (coreDitolak(c) || c.status !== "CHECKED" || !(c.reviewer_override ?? c.sop_ok));
+  const scanMasalah = b.jenis === "scan" && c && !["APPROVED", "PROCESSING"].includes(c.status);
+  const url = b.foto && online() ? (await sb.storage.from(b.foto[0]).createSignedUrl(b.foto[1], 3600)).data?.signedUrl : null;
+  const m = modal(`<h3 style="margin-top:0">${esc(JENIS_SIMPAN[b.jenis] ?? "")} · ${esc(b.judul)}</h3>
+    <p style="margin:0 0 6px"><span class="pill ${b.kelas}">${esc(b.status ?? "")}</span> <span class="muted">${b.t ? esc(fmtT(new Date(b.t))) : ""}</span></p>
+    ${b.ket ? `<p class="muted" style="margin:0 0 8px">${esc(b.ket)}</p>` : ""}
+    ${url ? `<img src="${esc(url)}" style="width:100%;max-height:45vh;object-fit:contain;border-radius:8px;background:#eee">` : ""}
+    ${coreMasalah && ver ? `<label>Catatan konfirmasi</label><input id="bkN" value="Dikonfirmasi sesuai SOP dari Data tersimpan">` : ""}
+    <div class="row" style="flex-wrap:wrap;margin-top:10px">${coreMasalah && ver ? `<button id="bkOk" style="flex:1 1 200px">✅ Konfirmasi — terima</button>` : ""}${scanMasalah && ver ? `<button id="bkSc" style="flex:1 1 200px">✅ Periksa & terima Form Logging</button>` : ""}
+      ${b.aksi.map((a, k) => `<button class="${a.c ?? "sec"}" data-k="${k}" style="flex:1 1 140px">${esc(a.l)}</button>`).join("")}<button class="sec" id="bkX" style="flex:1 1 100px">Tutup</button></div><div id="bkE" class="err"></div>`);
+  const q = (x) => m.querySelector(x);
+  q("#bkX").onclick = () => m.remove();
+  m.querySelectorAll("[data-k]").forEach((x) => (x.onclick = () => { m.remove(); b.aksi[+x.dataset.k].fn(); }));
+  q("#bkSc")?.addEventListener("click", () => { m.remove(); scrollTo(0, 0); reviewDetail($("#v"), c.id, "foto"); });
+  q("#bkOk")?.addEventListener("click", async () => { const note = q("#bkN").value.trim() || "Dikonfirmasi dari Data tersimpan"; q("#bkOk").disabled = true;
+    const { error } = await sb.rpc("terima_foto_core", { p_id: c.id, p_bhid: c.bhid, p_box: c.box_no, p_from: c.depth_from, p_to: c.depth_to, p_type: c.photo_type, p_terima: true, p_note: note });
+    q("#bkOk").disabled = false; if (error) return (q("#bkE").textContent = error.message); m.remove(); toast("✓ Foto core diterima"); ulang?.(); });
+}
 // Menu aksi melayang (klik kanan / tekan lama): A = [{l, fn, c?, info?}]
 function menuAksi(A, x, y) {
   document.getElementById("dbPop")?.remove(); if (!A?.length) return;
@@ -2223,8 +2257,7 @@ function menuAksi(A, x, y) {
 }
 function pasangMenuKlikKanan(el, ambilAksi) {
   el.addEventListener("contextmenu", (e) => { e.preventDefault(); menuAksi(ambilAksi(), e.clientX, e.clientY); });
-  el.addEventListener("dblclick", (e) => { if (e.target.closest("button,a,input")) return; menuAksi(ambilAksi(), e.clientX, e.clientY); });
-  let tm = null; el.addEventListener("touchstart", (e) => { const t = e.touches[0]; tm = setTimeout(() => menuAksi(ambilAksi(), t.clientX, t.clientY), 550); }, { passive: true });
+  let tm = null; el.addEventListener("touchstart", (e) => { const t = e.touches[0]; tm = setTimeout(() => { el._lp = Date.now(); menuAksi(ambilAksi(), t.clientX, t.clientY); }, 550); }, { passive: true });
   ["touchend", "touchmove", "touchcancel"].forEach((n) => el.addEventListener(n, () => clearTimeout(tm), { passive: true }));
 }
 // Bilah ✏️ Edit di atas tabel + klik baris (pilih), klik dua kali (edit), klik kanan / tekan lama (menu)
