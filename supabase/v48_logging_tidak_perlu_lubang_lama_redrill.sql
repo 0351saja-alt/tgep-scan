@@ -1,0 +1,3 @@
+-- v48 (27/11/2026, dipasang lewat apply_migration): v_logging_lubang memberi status 'TIDAK PERLU (DIGANTI REDRILL)' untuk lubang lama
+-- yang sudah punya redrill (Hole ID + R di drill_event / v_ddr_baris / borehole, atau lubang_asal di drill_event / ddr) — cukup DDR, tidak perlu logging.
+-- Diterapkan dengan menyisipkan CTE rd dan satu cabang CASE ke definisi view yang ada (lihat migrasi v48_logging_tidak_perlu_lubang_lama_redrill).
