@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.38";
+const APP_VERSION = "2026-11-27.39";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6453,7 +6453,7 @@ async function sampelView(v) {
     <label>Catatan</label><input id="kpC">
     <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="sec" id="kpTpl" style="flex:0;white-space:nowrap">⬇ Templat Excel</button><button class="sec" id="kpUp" style="flex:0;white-space:nowrap">⬆ Unggah Excel terisi</button><button class="sec" id="kpAll" style="flex:0;white-space:nowrap">Centang semua</button>
       <input type="file" id="kpF" accept=".xlsx" class="hide"></div>
-    <div id="kpI" class="muted" style="margin:6px 0"></div><div class="tw"><table id="kpTb"></table></div>
+    <div id="kpW"></div><div id="kpI" class="muted" style="margin:6px 0"></div><div class="tw"><table id="kpTb"></table></div>
     <div class="row" style="margin-top:8px"><button id="kpOk">Simpan form pengiriman</button></div><div id="kpE" class="err"></div></div>
     <div class="card"><h3>Pengiriman tersimpan</h3><ul class="list" id="kpL"><li class="muted">Memuat…</li></ul></div>`;
   let S = [];
@@ -6509,6 +6509,11 @@ async function sampelView(v) {
     const { data, error } = await sb.rpc("simpan_kirim_preparasi", { p: { tanggal: $("#kpT").value, tujuan: $("#kpJ").value, pengirim: $("#kpP").value, penerima: $("#kpR").value, jumlah_karung: $("#kpK").value, no_segel: $("#kpS").value, catatan: $("#kpC").value, items } });
     $("#kpOk").disabled = false; if (error) return ($("#kpE").textContent = "Gagal: " + error.message);
     toast(`Tersimpan ${data.no_kirim} · ${data.jumlah} sample`); await muat(); daftar(); excelKirim(data.id); };
+  // v.39: Form Logging yang sudah dikirim tetapi belum ✅ Terima & simpan — sample-nya belum ada di database, jadi belum bisa dikirim ke preparasi
+  const { data: tunggu } = await sb.from("scan_job").select("id,bhid_hint,page_no,status,draft_at,merged").in("status", ["NEEDS_REVIEW", "MANUAL", "ERROR", "UPLOADED"]).in("form_type", ["SHEET", "LOG"]).order("bhid_hint");
+  if ((tunggu ?? []).length) { const ver = ["verifier", "admin"].includes(me?.role);
+    $("#kpW").innerHTML = `<div style="background:#FFF4D6;border-radius:8px;padding:8px 10px;margin:6px 0"><b>⏳ Form Logging belum disetujui</b> — sample-nya belum masuk database, jadi belum muncul di daftar ini:<ul class="list" style="margin:4px 0 0">${tunggu.map((j) => `<li><span style="flex:1"><b>${esc(j.bhid_hint ?? "")}</b> hal. ${esc(j.page_no ?? "?")} · ${(j.merged?.rows ?? []).length} baris · ${esc(j.status)}${j.draft_at ? " · 💾 editan tersimpan" : ""}</span>${ver ? `<button data-pt="${j.id}" style="flex:0;white-space:nowrap">✅ Periksa & terima</button>` : ""}</li>`).join("")}</ul>${ver ? "" : `<p class="muted" style="margin:4px 0 0">Minta verifier/admin memeriksa & menyetujui.</p>`}</div>`;
+    $("#kpW").querySelectorAll("[data-pt]").forEach((b) => (b.onclick = () => { scrollTo(0, 0); reviewDetail(v, b.dataset.pt, "foto"); })); }
   await muat(); daftar();
 }
 
