@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.40";
+const APP_VERSION = "2026-11-27.41";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2087,7 +2087,7 @@ async function simpanView(v) {
     if (staf && mau("sampel")) jobs.push((async () => { let q = sb.from("kirim_preparasi").select("id,no_kirim,tanggal,tujuan,status,pengirim,penerima,created_at,kirim_preparasi_item(count)").gte("tanggal", f.dari).lte("tanggal", f.sampai).limit(400);
       const { data, error } = await q; if (error) throw error;
       for (const k of data ?? []) B.push({ t: k.created_at, jenis: "sampel", judul: `${k.no_kirim} · ${k.kirim_preparasi_item?.[0]?.count ?? 0} sample → ${k.tujuan}`, ket: [k.tanggal, k.pengirim, k.penerima && "→ " + k.penerima].filter(Boolean).join(" · "),
-        status: k.status, kelas: k.status === "DITERIMA" ? "APPROVED" : "NEEDS_REVIEW", aksi: [{ l: "Buka", fn: () => { tab = "sampel"; localStorage.setItem("tab", "sampel"); render(); } }, ...(ver ? [{ l: "✏️ Edit", fn: () => editBaris("kirim_preparasi", k.id, ulang) }] : []), ...del("kirim_preparasi", k.id, `kiriman ${k.no_kirim}`)] }); })());
+        status: k.status, kelas: k.status === "DITERIMA" ? "APPROVED" : "NEEDS_REVIEW", aksi: [{ l: "Buka", fn: () => { tab = "sampel"; localStorage.setItem("tab", "sampel"); render(); } }, ...(isStaff() ? [{ l: "✏️ Edit (no. kirim, tanggal, penerima, berat, kantong…)", fn: () => editKirim(k.id, ulang) }, { l: "📄 PDF", fn: () => cetakKirim(k.id) }] : []), ...del("kirim_preparasi", k.id, `kiriman ${k.no_kirim}`)] }); })());
     await Promise.all(jobs.map((p) => p.catch((e) => B.push({ t: "", jenis: "-", judul: "Sebagian data gagal dimuat", ket: e.message, status: "-", kelas: "REJECTED", aksi: [] }))));
   } else B.push({ t: "", jenis: "-", judul: "Offline", ket: "Data di server tampil saat ada sinyal. Yang di bawah ini hanya antrean di HP.", status: "-", kelas: "ANTRE", aksi: [] });
   B.sort((a, b) => String(b.t).localeCompare(String(a.t)));
@@ -2232,7 +2232,7 @@ function aksiBarisDb(ds, r, ulang) {
     case "scanfile": if (ver && r.status !== "APPROVED") A.push({ l: "✏️ Edit isian (Periksa scan)", fn: () => { scrollTo(0, 0); reviewDetail($("#v"), r.id); } }); if (staf) A.push({ l: "🛠 Perbaiki data kiriman", fn: () => editKirimanModal("scan_job", r, ulang) }); hapus("scan_job", r.id, "Form Logging"); break;
     case "corefile": if (staf) A.push({ l: "✏️ Ubah / ganti foto core", fn: () => editFotoCore(r.id, ulang) }); hapus("core_photo", r.id, `foto core ${r.bhid ?? ""}`); break;
     case "marking": if (ver && r.id) A.push({ l: "✏️ Edit marking", fn: () => editBaris("marking", r.id, ulang) }); hapus("marking", r.id, `marking ${r.bhid ?? ""}`); break;
-    case "preparasi": if (ver && r.kirim_id) { A.push({ l: `✏️ Edit kiriman ${r.no_kirim ?? ""}`, fn: () => editBaris("kirim_preparasi", r.kirim_id, ulang) }); if (r.urut != null) A.push({ l: "✏️ Edit baris sample ini", fn: () => editItemKirim(r.kirim_id, r.urut, ulang) }); } conto(r.sample_no); hapus("kirim_preparasi", r.kirim_id, `kiriman ${r.no_kirim ?? ""}`); break;
+    case "preparasi": if (staf && r.kirim_id) { A.push({ l: `✏️ Edit kiriman ${r.no_kirim ?? ""}`, fn: () => editKirim(r.kirim_id, ulang) }); A.push({ l: "📄 PDF form kirim", fn: () => cetakKirim(r.kirim_id) }); } conto(r.sample_no); hapus("kirim_preparasi", r.kirim_id, `kiriman ${r.no_kirim ?? ""}`); break;
     case "kepatuhan": info("Rekap operator dihitung otomatis dari P2H, DDR, foto core & Form Logging — edit data sumbernya (sheet P2H, DDR, Foto core, Scan)."); break;
     case "koreksi": info("Riwayat koreksi adalah catatan audit dan tidak bisa diedit."); break;
     case "arsip": if (adm && !r.restored_at) A.push({ l: "♻️ Pulihkan", fn: async () => { const { error } = await sb.rpc("admin_restore", { p_id: Number(r.id) }); if (error) alert(error.message); else ulang(); } }); break;
@@ -6469,9 +6469,10 @@ async function sampelView(v) {
   const daftar = async () => {
     const { data } = await sb.from("kirim_preparasi").select("id,no_kirim,tanggal,tujuan,status,pengirim,penerima,jumlah_karung,no_segel,kirim_preparasi_item(count)").order("created_at", { ascending: false }).limit(50);
     $("#kpL").innerHTML = (data ?? []).map((k) => `<li style="flex-wrap:wrap"><span class="pill ${k.status === "DITERIMA" ? "APPROVED" : k.status === "DIKIRIM" ? "NEEDS_REVIEW" : "ANTRE"}">${esc(k.status)}</span><span style="flex:1;min-width:180px"><b>${esc(k.no_kirim)}</b> · ${esc(k.tanggal)} · ${esc(k.tujuan)}<br><span class="muted">${k.kirim_preparasi_item?.[0]?.count ?? 0} sample${k.jumlah_karung ? ` · ${k.jumlah_karung} karung` : ""}${k.no_segel ? ` · segel ${esc(k.no_segel)}` : ""}${k.pengirim ? ` · ${esc(k.pengirim)}` : ""}${k.penerima ? ` → ${esc(k.penerima)}` : ""}</span></span>
-      <button data-pdf="${k.id}" style="flex:0;white-space:nowrap">📄 PDF</button><button class="sec" data-x="${k.id}" style="flex:0">⬇ Excel</button>${k.status !== "DITERIMA" ? `<button class="sec" data-st="${k.id}" data-v="${k.status === "DRAFT" ? "DIKIRIM" : "DITERIMA"}" style="flex:0">Tandai ${k.status === "DRAFT" ? "dikirim" : "diterima"}</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada.</li>`;
+      <button class="sec" data-edk="${k.id}" style="flex:0;white-space:nowrap">✏️ Edit</button><button data-pdf="${k.id}" style="flex:0;white-space:nowrap">📄 PDF</button><button class="sec" data-x="${k.id}" style="flex:0">⬇ Excel</button>${k.status !== "DITERIMA" ? `<button class="sec" data-st="${k.id}" data-v="${k.status === "DRAFT" ? "DIKIRIM" : "DITERIMA"}" style="flex:0">Tandai ${k.status === "DRAFT" ? "dikirim" : "diterima"}</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada.</li>`;
     $("#kpL").querySelectorAll("[data-x]").forEach((b) => (b.onclick = () => excelKirim(b.dataset.x)));
     $("#kpL").querySelectorAll("[data-pdf]").forEach((b) => (b.onclick = () => cetakKirim(b.dataset.pdf)));
+    $("#kpL").querySelectorAll("[data-edk]").forEach((b) => (b.onclick = () => editKirim(b.dataset.edk, () => { daftar(); muat(); })));
     $("#kpL").querySelectorAll("[data-st]").forEach((b) => (b.onclick = async () => { const { error } = await sb.from("kirim_preparasi").update({ status: b.dataset.v }).eq("id", b.dataset.st); if (error) return alert(error.message); toast("Status diperbarui"); daftar(); }));
   };
   const excelKirim = async (id) => {
@@ -6518,6 +6519,32 @@ async function sampelView(v) {
   await muat(); daftar();
 }
 
+// v.41: ✏️ Edit form pengiriman sample (kepala + isi per sample), juga setelah PDF dibuat; tiap perubahan tercatat (data_edit_log). PDF dibuat ulang dari data terbaru.
+async function editKirim(id, selesai) {
+  const [{ data: k, error }, { data: it }] = await Promise.all([sb.from("kirim_preparasi").select("*").eq("id", id).single(), sb.from("kirim_preparasi_item").select("id,urut,sample_no,no_kantong,berat_kg,catatan").eq("kirim_id", id).order("urut")]);
+  if (error || !k) return alert(error?.message ?? "Form tidak ditemukan.");
+  const H = [["no_kirim", "No. kirim"], ["tanggal", "Tanggal kirim", "date"], ["tujuan", "Tujuan"], ["pengirim", "Pengirim"], ["penerima", "Penerima"], ["jumlah_karung", "Jumlah karung"], ["no_segel", "No. segel"], ["catatan", "Catatan"]];
+  const I = it ?? [], n2 = (x) => (x == null ? "" : String(x).replace(".", ","));
+  const m = modal(`<h3 style="margin-top:0">✏️ Edit form kirim ${esc(k.no_kirim)}</h3><p class="muted" style="margin-top:0">Ubah yang salah lalu tulis alasannya. Setelah disimpan, unduh ulang 📄 PDF — isinya mengikuti data terbaru.</p>
+    <div class="row" style="flex-wrap:wrap">${H.map(([c, l, t]) => `<div style="flex:1 1 140px"><label>${l}</label><input data-h="${c}" type="${t ?? "text"}" value="${esc(k[c] ?? "")}"></div>`).join("")}
+      <div style="flex:1 1 140px"><label>Status</label><select data-h="status">${["DRAFT", "DIKIRIM", "DITERIMA"].map((x) => `<option ${x === k.status ? "selected" : ""}>${x}</option>`).join("")}</select></div></div>
+    <div class="tw" style="margin-top:8px"><table><tr><th>No</th><th>No. sample</th><th>Berat (kg)</th><th>No. kantong</th><th>Catatan</th></tr>${I.map((r, i) => `<tr><td><input data-i="${i}" data-c="urut" inputmode="numeric" value="${esc(r.urut ?? "")}" style="max-width:52px"></td><td>${esc(r.sample_no)}</td><td><input data-i="${i}" data-c="berat_kg" inputmode="decimal" value="${esc(n2(r.berat_kg))}" style="max-width:80px"></td><td><input data-i="${i}" data-c="no_kantong" value="${esc(r.no_kantong ?? "")}" style="max-width:130px"></td><td><input data-i="${i}" data-c="catatan" value="${esc(r.catatan ?? "")}"></td></tr>`).join("")}</table></div>
+    <label>Alasan perubahan *</label><input id="ekA" placeholder="mis. salah tulis berat / no. kantong / penerima">
+    <div class="row" style="margin-top:10px"><button id="ekOk">Simpan perubahan</button><button class="sec" id="ekX" style="flex:0">Batal</button></div><div id="ekE" class="err"></div>`);
+  const q = (x) => m.querySelector(x), E = (t) => (q("#ekE").textContent = t); q("#ekX").onclick = () => m.remove();
+  q("#ekOk").onclick = async () => { const al = q("#ekA").value.trim(); if (!al) { q("#ekA").focus(); return E("Tulis alasan perubahan."); }
+    const hd = {}; m.querySelectorAll("[data-h]").forEach((x) => { const c = x.dataset.h, v0 = String(k[c] ?? ""), v = x.value.trim(); if (v !== v0) hd[c] = v === "" ? null : c === "jumlah_karung" ? Number(v) : v; });
+    if ("jumlah_karung" in hd && hd.jumlah_karung !== null && !Number.isFinite(hd.jumlah_karung)) return E("Jumlah karung bukan angka.");
+    const items = I.map((r, i) => { const d = {}; m.querySelectorAll(`[data-i="${i}"]`).forEach((x) => { const c = x.dataset.c, raw = x.value.trim(), v0 = c === "berat_kg" ? n2(r[c]) : String(r[c] ?? ""); if (raw === v0) return;
+      d[c] = raw === "" ? null : c === "berat_kg" || c === "urut" ? Number(raw.replace(",", ".")) : raw; }); return [r.id, d]; }).filter(([, d]) => Object.keys(d).length);
+    const bad = items.find(([, d]) => ["berat_kg", "urut"].some((c) => c in d && d[c] !== null && !Number.isFinite(d[c]))); if (bad) return E("Berat / No harus angka.");
+    if (!Object.keys(hd).length && !items.length) return E("Belum ada yang diubah.");
+    q("#ekOk").disabled = true; E("Menyimpan…"); let n = 0;
+    try { if (Object.keys(hd).length) { const { data, error: e } = await sb.rpc("admin_ubah_data", { p_tabel: "kirim_preparasi", p_id: id, p_data: hd, p_alasan: al }); if (e) throw e; n += data?.changed ?? 0; }
+      for (const [iid, d] of items) { const { data, error: e } = await sb.rpc("admin_ubah_data", { p_tabel: "kirim_preparasi_item", p_id: iid, p_data: d, p_alasan: al }); if (e) throw e; n += data?.changed ?? 0; }
+    } catch (e) { q("#ekOk").disabled = false; return E(e.message); }
+    m.remove(); toast(`✓ ${n} isian diperbarui — unduh ulang PDF bila perlu`); selesai?.(); };
+}
 // v.40: Form pengiriman sample ke preparasi — PDF A4 dengan kop surat PT Terra Grapindo Eco Prima (sama dengan Berita Acara)
 async function cetakKirim(id) {
   const [{ data: k }, { data: it }] = await Promise.all([sb.from("kirim_preparasi").select("*").eq("id", id).single(), sb.from("v_kirim_preparasi").select("*").eq("kirim_id", id).order("urut")]);
