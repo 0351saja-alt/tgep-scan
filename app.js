@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.62";
+const APP_VERSION = "2026-11-27.63";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6761,6 +6761,7 @@ async function baView(v) {
     <div class="card"><h3>Berita acara tersimpan</h3><ul class="list" id="baL"><li class="muted">Memuat…</li></ul></div><div id="baEd"></div>`;
   const [{ data: H }, { data: LG }, { data: EV }] = await Promise.all([sb.from("v_dash_hole").select("*"), sb.from("v_logging_lubang").select("bhid,rig,kedalaman_bor,mulai,terakhir_bor"), sb.from("drill_event").select("bhid,status_akhir,depth_to,reason,captured_at").eq("event_type", "SELESAI_BOR").not("status_akhir", "is", null)]);
   const ddrB = (await sb.from("v_ddr_baris").select("tanggal,rig,bhid,jenis,dari_m,sampai_m,meter,core_m").limit(5000)).data ?? [];
+  const CL = (await sb.from("v_dh_collar").select("holeid,east,north,rl,coord_source,coord_akurasi_m")).data ?? []; // v.63: koordinat terbaru + akurasi untuk BA
   const bhs = [...new Set([...(H ?? []).map((h) => h.bhid), ...(LG ?? []).map((g) => g.bhid), ...ddrB.map((x) => x.bhid)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
   const akhir = (b) => (EV ?? []).filter((e) => e.bhid === b).sort((x, y) => String(y.captured_at).localeCompare(String(x.captured_at)))[0];
   // v.57: titik juga dianggap selesai bila rig yang sama sudah pindah ke titik lain di DDR berikutnya (mis. 08R selesai 22/11, RIG 2 lanjut 08 pada 23/11)
@@ -6773,9 +6774,9 @@ async function baView(v) {
   const ringkas = (b) => { const xs = ddrB.filter((x) => x.bhid === b), h = (H ?? []).find((y) => y.bhid === b) ?? {}, g = (LG ?? []).find((y) => y.bhid === b) ?? {}, e = akhir(b);
     const cor = xs.filter((x) => x.jenis === "CORING"), mC = cor.reduce((s, x) => s + +x.meter, 0), mO = xs.filter((x) => x.jenis !== "CORING").reduce((s, x) => s + +x.meter, 0), cc = cor.filter((x) => x.core_m != null);
     const dalam = Math.max(0, ...xs.map((x) => +x.sampai_m), +(e?.depth_to ?? 0), +(h.eoh ?? 0));
-    const pd = pindah(b);
+    const pd = pindah(b), cl = CL.find((y) => y.holeid === b) ?? {};
     return { bhid: b, rig: [...new Set(xs.map((x) => x.rig))].join("/") || g.rig || "", mulai: (h.start_date ?? g.mulai ?? xs[0]?.tanggal ?? "").slice(0, 10), stop: (h.stop_date ?? e?.captured_at ?? pd?.stop ?? xs.at(-1)?.tanggal ?? "").slice(0, 10),
-      kedalaman: dalam, status: e?.status_akhir ?? (h.stop_date ? "STB" : ""), alasan: e?.reason ?? "", east: h.east ?? "", north: h.north ?? "", rl: h.rl ?? "", sistem: h.coord_source ?? "UTM WGS84 Zona 51S",
+      kedalaman: dalam, status: e?.status_akhir ?? (h.stop_date ? "STB" : ""), alasan: e?.reason ?? "", east: cl.east ?? h.east ?? "", north: cl.north ?? h.north ?? "", rl: cl.rl ?? h.rl ?? "", sistem: "UTM WGS84 Zona 51S", akurasi: cl.coord_akurasi_m ?? "", sumber_koord: cl.coord_source ?? h.coord_source ?? "",
       coring: +mC.toFixed(2), open: +mO.toFixed(2), recovery: cc.length ? +((100 * cc.reduce((s, x) => s + +x.core_m, 0)) / cc.reduce((s, x) => s + +x.meter, 0)).toFixed(1) : (h.recovery_pct ?? ""),
       conto: h.jumlah_conto ?? "", limonit: h.tebal_limonit ?? "", saprolit: h.tebal_saprolit ?? "", redrill: [asalRedrill(b) ? `Redrill dari ${asalRedrill(b)}` : "", !e && !h.stop_date && pd ? `selesai (rig pindah ke ${pd.ke} sesudah ${pd.stop})` : ""].filter(Boolean).join("; ") }; };
   // titik selesai dalam periode → baris tabel BASTP
@@ -6817,12 +6818,16 @@ async function baView(v) {
       const baru = titikPeriode(r.dari, r.sampai).filter((x) => !ada.has(x.bhid)); nBaru = baru.length;
       if (nBaru) I.titik = [...(I.titik ?? []), ...baru].sort((x, y) => String(x.stop).localeCompare(String(y.stop)) || urutBH(x.bhid, y.bhid)); }
     const awalBH = (I.titik ?? []).map((x) => x.bhid);
+    // v.63: BA stop bor belum FINAL → isian yang masih kosong (koordinat, akurasi, dll.) diisi otomatis dari database terbaru
+    if (r.jenis === "BA_STOP" && r.status !== "FINAL" && (I.bhid || r.bhid)) { const rk = ringkas(I.bhid || r.bhid); let n = 0;
+      for (const k of ["east", "north", "rl", "sistem", "akurasi", "rig", "mulai", "stop", "status", "kedalaman", "coring", "open", "recovery", "conto", "limonit", "saprolit"]) if ((I[k] ?? "") === "" && (rk[k] ?? "") !== "") { I[k] = rk[k]; n++; }
+      if (n) nBaru = -n; }
     const kolomT = [["bhid", "Titik"], ["rig", "Rig"], ["mulai", "Mulai"], ["stop", "Stop"], ["kedalaman", "Kedalaman (m)"], ["status", "EOH/STB"], ["coring", "Coring (m)"], ["open", "Open hole (m)"], ["recovery", "Recovery (%)"], ["conto", "Sample"], ["ket", "Ket."]];
     $("#baEd").innerHTML = `<div class="card"><h3>✏️ Edit ${r.jenis === "BASTP" ? "BASTP" : "BA stop bor " + esc(r.bhid)}</h3>${kunci ? `<p class="err">Sudah FINAL — hanya admin yang bisa mengubah.</p>` : ""}
       <div class="row" style="flex-wrap:wrap"><div style="flex:2 1 220px"><label>Nomor</label><input id="eaN" value="${esc(r.nomor ?? "")}"></div>${inp("tempat", "Tempat")}${inp("tanggal", "Tanggal")}</div>
       ${r.jenis === "BA_STOP" ? `<div class="row" style="flex-wrap:wrap">${inp("bhid", "Hole ID")}${inp("rig", "Rig")}${inp("mulai", "Tgl mulai")}${inp("stop", "Tgl stop")}${inp("status", "Status (EOH/STB)")}${inp("kedalaman", "Kedalaman akhir (m)")}</div>
         <div class="row" style="flex-wrap:wrap">${inp("alasan", "Alasan stop", "2 1 240px")}${inp("redrill", "Redrill")}</div>
-        <div class="row" style="flex-wrap:wrap">${inp("east", "East / X")}${inp("north", "North / Y")}${inp("rl", "Elevasi / Z")}${inp("sistem", "Sistem koordinat")}</div>
+        <div class="row" style="flex-wrap:wrap">${inp("east", "East / X")}${inp("north", "North / Y")}${inp("rl", "Elevasi / Z")}${inp("akurasi", "Akurasi GPS (± m)")}${inp("sistem", "Sistem koordinat")}</div>
         <div class="row" style="flex-wrap:wrap">${inp("coring", "Coring (m)")}${inp("open", "Open hole (m)")}${inp("recovery", "Recovery (%)")}${inp("conto", "Jumlah sample")}${inp("limonit", "Tebal limonit (m)")}${inp("saprolit", "Tebal saprolit (m)")}</div>`
       : `<div class="row">${inp("pekerjaan", "Pekerjaan", "1 1 100%")}</div><div class="tw"><table id="eaT"><tr>${kolomT.map(([, l]) => `<th>${l}</th>`).join("")}<th></th></tr>${(I.titik ?? []).map((t) => `<tr>${kolomT.map(([k]) => `<td><input data-t="${k}" value="${esc(t[k] ?? "")}" style="min-width:${k === "bhid" ? 120 : 70}px"></td>`).join("")}<td><button class="sec" data-x style="flex:0">✕</button></td></tr>`).join("")}</table></div><button class="sec" id="eaAdd" style="flex:0;margin-top:4px">+ baris titik</button>`}
       <label>Pernyataan</label><textarea data-k="pernyataan" rows="3">${esc(I.pernyataan ?? "")}</textarea><label>Catatan</label><textarea data-k="catatan" rows="2">${esc(I.catatan ?? "")}</textarea>
@@ -6833,11 +6838,11 @@ async function baView(v) {
         <h3>Tanda tangan</h3><div class="row" style="flex-wrap:wrap">${inp("direktur", "Pihak Pertama — Direktur TGEP")}${inp("direktur_jabatan", "Jabatan")}</div><div class="row" style="flex-wrap:wrap">${inp("penerima", "Pihak Kedua — nama")}${inp("penerima_jabatan", "Jabatan")}${inp("penerima_pt", "Perusahaan")}</div><div class="row">${inp("penerima_alamat", "Alamat Pihak Kedua (opsional)", "1 1 100%")}</div>`
       : `<h3>Tanda tangan</h3><div class="row" style="flex-wrap:wrap">${inp("geologist", "Wellsite Geologist TGEP")}${inp("geologist_jabatan", "Jabatan")}</div><div class="row" style="flex-wrap:wrap">${inp("penerima", "Perwakilan lapangan — nama")}${inp("penerima_jabatan", "Jabatan")}${inp("penerima_pt", "Perusahaan")}</div>`}
       <div class="row" style="margin-top:8px;flex-wrap:wrap"><button id="eaS">Simpan</button><button class="sec" id="eaV">👁 Lihat surat</button><button class="sec" id="eaP">🖨 Simpan & cetak</button>${r.status !== "FINAL" ? `<button class="sec" id="eaF">Tandai FINAL</button>` : ""}${r.status !== "FINAL" || me?.role === "admin" ? `<button class="danger" id="eaH" style="flex:0">Hapus</button>` : ""}<button class="sec" id="eaX" style="flex:0">Tutup</button></div><div id="eaE" class="err"></div></div>`;
-    const E = $("#baEd"); E.scrollIntoView({ behavior: "smooth" }); if (nBaru) toast(`➕ ${nBaru} titik selesai ditambahkan otomatis dari database — tekan Simpan`); if (kunci) E.querySelectorAll("input,textarea").forEach((x) => (x.disabled = true));
+    const E = $("#baEd"); E.scrollIntoView({ behavior: "smooth" }); if (nBaru > 0) toast(`➕ ${nBaru} titik selesai ditambahkan otomatis dari database — tekan Simpan`); else if (nBaru < 0) toast(`${-nBaru} isian kosong (koordinat dll.) diisi otomatis dari database — tekan Simpan`); if (kunci) E.querySelectorAll("input,textarea").forEach((x) => (x.disabled = true));
     // v.58: kolom Titik / Hole ID = pilihan titik terdaftar; begitu dipilih, kolom lain terisi otomatis dari database (DDR, lubang, logging)
     if (!document.getElementById("dlBH")) isiDlBH();
     const isiDari = (b, set) => { const r = ringkas(b); const m = { bhid: b, rig: r.rig, mulai: r.mulai, stop: r.stop, kedalaman: r.kedalaman, status: r.status, coring: r.coring, open: r.open, recovery: r.recovery, conto: r.conto, ket: r.redrill, redrill: r.redrill,
-      alasan: r.alasan, east: r.east, north: r.north, rl: r.rl, sistem: r.sistem, limonit: r.limonit, saprolit: r.saprolit }; for (const [k, v] of Object.entries(m)) set(k, v ?? ""); };
+      alasan: r.alasan, east: r.east, north: r.north, rl: r.rl, sistem: r.sistem, akurasi: r.akurasi, limonit: r.limonit, saprolit: r.saprolit }; for (const [k, v] of Object.entries(m)) set(k, v ?? ""); };
     const pasangTitik = () => E.querySelectorAll('#eaT input[data-t="bhid"]:not([data-ok]), input[data-k="bhid"]:not([data-ok])').forEach((inp) => { inp.dataset.ok = "1"; inp.setAttribute("list", "dlBH"); inp.setAttribute("autocomplete", "off"); inp.placeholder = "pilih titik";
       inp.addEventListener("change", () => { const b = bakuBH(inp.value); if (!b) return; inp.value = b;
         if (inp.dataset.t) { const tr = inp.closest("tr"); isiDari(b, (k, v) => { const x = tr.querySelector(`[data-t="${k}"]`); if (x && k !== "bhid") x.value = v; }); }
@@ -6914,7 +6919,7 @@ async function cetakBA(id, opsi = {}) {
       <table class="d"><tr><th>No</th><th>Titik</th><th>Rig</th><th>Mulai</th><th>Stop</th><th>Kedalaman (m)</th><th>EOH/STB</th><th>Coring (m)</th><th>Open hole (m)</th><th>Recovery (%)</th><th>Sample</th><th>Ket.</th></tr>${(I.titik ?? []).map((t, i) => `<tr><td>${i + 1}</td>${["bhid", "rig", "mulai", "stop", "kedalaman", "status", "coring", "open", "recovery", "conto", "ket"].map((k) => `<td>${esc(t[k] ?? "")}</td>`).join("")}</tr>`).join("")}</table>
       <h3>2. Kriteria penerimaan pekerjaan</h3><table>${(I.cek ?? []).map((c) => `<tr><td>${esc(c.t)}</td><td style="width:90px;text-align:center"><b>${esc(c.ya)}</b></td></tr>`).join("")}</table>`
     : `<table>${baris("Hole ID", I.bhid)}${I.redrill ? baris("Keterangan", I.redrill) : ""}${baris("Rig", I.rig)}${baris("Tanggal mulai bor", I.mulai)}${baris("Tanggal stop bor", I.stop)}${baris("Status akhir", I.status)}${baris("Kedalaman akhir (m)", I.kedalaman)}${baris("Alasan stop", I.alasan)}
-      ${baris("Koordinat East / X", I.east)}${baris("Koordinat North / Y", I.north)}${baris("Elevasi / Z", I.rl)}${baris("Sistem koordinat", I.sistem)}${baris("Panjang coring (m)", I.coring)}${baris("Panjang open hole (m)", I.open)}${baris("Recovery core (%)", I.recovery)}${baris("Jumlah sample", I.conto)}${baris("Tebal limonit (m)", I.limonit)}${baris("Tebal saprolit (m)", I.saprolit)}</table>`;
+      ${baris("Koordinat East / X", I.east)}${baris("Koordinat North / Y", I.north)}${baris("Elevasi / Z", I.rl)}${baris("Akurasi koordinat (± m)", I.akurasi)}${baris("Sistem koordinat", I.sistem)}${baris("Panjang coring (m)", I.coring)}${baris("Panjang open hole (m)", I.open)}${baris("Recovery core (%)", I.recovery)}${baris("Jumlah sample", I.conto)}${baris("Tebal limonit (m)", I.limonit)}${baris("Tebal saprolit (m)", I.saprolit)}</table>`;
   w.document.open(); w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>${esc(r.nomor ?? "Berita Acara")}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caladea:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
   <style>@page{size:A4 portrait;margin:0} html{background:#eee} body{font-family:Cambria,Caladea,"Times New Roman",serif;font-size:12.5px;color:#111;box-sizing:border-box;width:210mm;max-width:100%;margin:12px auto;padding:0;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25)} @media print{html{background:#fff} body{width:210mm;margin:0;box-shadow:none}}
