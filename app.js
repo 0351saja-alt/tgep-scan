@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.33";
+const APP_VERSION = "2026-11-27.34";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1489,6 +1489,7 @@ function markingForm() {
     if (!bhid) return (e.textContent = "Isi Hole ID.");
     if (!c) return (e.textContent = "GPS belum didapat.");
     if (c.accuracy > 15 && !confirm(`Akurasi baru ±${c.accuracy.toFixed(0)} m. Tetap simpan pembacaan ini?`)) return;
+    { const uu = UTM.ke(c.longitude, c.latitude); if (!(uu[0] >= 100000 && uu[0] <= 900000 && uu[1] > 0 && uu[1] < 10000000)) return (e.textContent = "Posisi GPS di luar zona UTM 51S (bukan di lokasi proyek) — marking tidak disimpan. Lakukan marking di titik bor."); }
     const u = UTM.ke(c.longitude, c.latitude), z = await tinggiDi(c.longitude, c.latitude).catch(() => null), id = crypto.randomUUID();
     const row = { client_uuid: id, bhid, lat: c.latitude, lon: c.longitude, x_utm: +u[0].toFixed(3), y_utm: +u[1].toFixed(3), akurasi_m: +c.accuracy.toFixed(1),
       z_gps: c.altitude != null ? +c.altitude.toFixed(2) : null, akurasi_z_m: c.altitudeAccuracy != null ? +c.altitudeAccuracy.toFixed(1) : null, z_dem: z != null ? +z.toFixed(1) : null,
@@ -2231,6 +2232,20 @@ function aksiBarisDb(ds, r, ulang) {
     case "arsip": if (adm && !r.restored_at) A.push({ l: "♻️ Pulihkan", fn: async () => { const { error } = await sb.rpc("admin_restore", { p_id: Number(r.id) }); if (error) alert(error.message); else ulang(); } }); break;
   }
   return A;
+}
+// v.34: daftar pembacaan marking satu lubang — edit / hapus pembacaan yang salah (mis. GPS di luar lokasi)
+async function daftarMarking(bh) {
+  const { data, error } = await sb.from("marking").select("id,bhid,rig,x_utm,y_utm,lat,lon,akurasi_m,catatan,captured_at").eq("bhid", bh).order("captured_at", { ascending: false });
+  if (error) return alert(error.message);
+  const salah = (k) => !(+k.x_utm >= 100000 && +k.x_utm <= 900000);
+  const m = modal(`<h3 style="margin-top:0">📍 Marking ${esc(bh)}</h3><p class="muted" style="margin-top:0">Koordinat lubang dihitung dari pembacaan marking dengan akurasi terbaik. Hapus atau edit pembacaan yang salah, lalu perbaiki koordinat lubang bila perlu.</p>
+    <ul class="list">${(data ?? []).map((k, i) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:200px">${esc(fmtT(new Date(k.captured_at)))} · ±${esc(k.akurasi_m ?? "?")} m<br><span class="muted">X ${esc(k.x_utm)} · Y ${esc(k.y_utm)}${k.catatan ? ` · ${esc(k.catatan)}` : ""}</span>${salah(k) ? `<br><b style="color:#B3261E;font-size:12px">Koordinat tidak wajar (di luar zona UTM 51S) — kemungkinan GPS dari lokasi lain</b>` : ""}</span>
+      ${["verifier", "admin"].includes(me?.role) ? `<button class="sec" data-me="${i}" style="flex:0">✏️ Edit</button>` : ""}<button class="danger" data-mh="${i}" style="flex:0">🗑 Hapus</button></li>`).join("") || `<li class="muted">Belum ada marking.</li>`}</ul>
+    <div class="row" style="margin-top:8px"><button class="sec" id="mkKo">🧭 Edit koordinat lubang</button><button class="sec" id="mkX">Tutup</button></div>`);
+  m.querySelector("#mkX").onclick = () => m.remove();
+  m.querySelector("#mkKo").onclick = () => { m.remove(); koordinatLubang(bh, () => render()); };
+  m.querySelectorAll("[data-me]").forEach((b) => (b.onclick = () => { m.remove(); editBaris("marking", data[+b.dataset.me].id, () => daftarMarking(bh)); }));
+  m.querySelectorAll("[data-mh]").forEach((b) => (b.onclick = () => { m.remove(); hapusTersimpan("marking", data[+b.dataset.mh].id, `marking ${bh}`, () => daftarMarking(bh)); }));
 }
 // v.30: catatan merah kecil per folder Hole ID — kelengkapan data lubang (seluruh data lubang, bukan hanya periode filter)
 async function catatanKurang(holes) {
@@ -5562,6 +5577,10 @@ async function petaView(v) {
     const pop = new maplibregl.Popup({ offset: 10 }).setLngLat(c).setHTML(`<b>${esc(p.bhid)}</b> · ${esc(LABEL_STATUS[p.status] ?? p.status)}<br>${p.kd != null ? `Kedalaman ${esc(p.kd)} m` : ""}${p.rk != null ? ` · rencana ${esc(p.rk)} m` : ""}${p.rig ? `<br>${esc(p.rig)}` : ""}${p.dip != null ? `<br>Dip ${esc(p.dip)}° · azimuth ${esc(p.az)}°` : ""}<br>E ${u[0].toFixed(1)} N ${u[1].toFixed(1)} <span class="muted">(${esc(p.pos)})</span>${p.dalam ? "" : `<br><b style="color:#c00">DI LUAR IUP</b>`}${isClient() ? "" : `<br><button class="sec" data-pakai="${esc(p.bhid)}" style="width:auto;padding:3px 10px;margin-top:6px">Pakai Hole ID ini di Progres bor</button>`}`).addTo(map);
     pop.getElement().insertAdjacentHTML("beforeend", `<button class="sec" data-prof style="margin-top:4px;width:auto;padding:6px 10px">📊 Profil bor</button>`);
     pop.getElement().querySelector("[data-prof]").addEventListener("click", () => profilModal(p.bhid));
+    // v.34: koreksi salah ploting langsung dari peta (staf): ubah koordinat lubang, edit / hapus pembacaan marking yang salah
+    if (isStaff()) { pop.getElement().insertAdjacentHTML("beforeend", `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"><button class="sec" data-kor style="width:auto;padding:6px 10px">🧭 Edit koordinat</button><button class="sec" data-mkl style="width:auto;padding:6px 10px">📍 Marking (edit / hapus)</button></div>`);
+      pop.getElement().querySelector("[data-kor]").addEventListener("click", () => { pop.remove(); koordinatLubang(p.bhid, () => render()); });
+      pop.getElement().querySelector("[data-mkl]").addEventListener("click", () => { pop.remove(); daftarMarking(p.bhid); }); }
     pop.getElement().querySelector("[data-pakai]")?.addEventListener("click", (e) => { localStorage.setItem("bhid", e.target.dataset.pakai); document.body.style.overflow = ""; tab = "prog"; localStorage.setItem("tab", tab); render(); }); };
   // ---- 3D: kolom log tiap lubang (warna layer) + topografi diredupkan agar lubang terlihat ----
   let PRF = JSON.parse(localStorage.getItem("petaProfil") || "[]");
