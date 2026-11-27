@@ -1,0 +1,3 @@
+-- v50 (27/11/2026, dipasang lewat apply_migration): v_kepatuhan_harian (Rekap operator) juga memuat akun admin/verifier yang punya penugasan proyek
+-- (mis. Imam gazali yang bertugas sebagai wellsite), dinilai sebagai wellsite (kewajiban foto core). Atur "wajib harian" di penugasan bila bukan petugas lapangan.
+-- Diterapkan dengan mengganti klausa WHERE ops dan kolom peran pada definisi view yang ada.
