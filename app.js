@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.23";
+const APP_VERSION = "2026-11-27.24";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -4419,9 +4419,37 @@ const rencanaLokal = () => JSON.parse(localStorage.getItem("rencanaLubang") || "
 async function muatRencana() {
   if (online()) { const { data } = await sb.from("rencana_lubang").select("bhid,lon,lat,rig,rencana_kedalaman,dip,azimuth").order("bhid"); if (data) localStorage.setItem("rencanaLubang", JSON.stringify(data)); }
   const dl = document.getElementById("dlBH") ?? document.body.appendChild(Object.assign(document.createElement("datalist"), { id: "dlBH" }));
-  dl.innerHTML = rencanaLokal().map((r) => `<option value="${esc(r.bhid)}">`).join("");
+  isiDlBH();
   return rencanaLokal();
 }
+// v.24: daftar Hole ID yang SUDAH TERDAFTAR di aplikasi (rencana, lubang, DDR termasuk redrill mis. DH-NPG 08R, progres bor, foto core,
+// Form Logging, marking) → pilihan di SEMUA kolom Hole ID (datalist dlBH). Disimpan di HP agar tetap ada saat offline.
+const daftarBHLokal = () => { try { return JSON.parse(localStorage.getItem("daftarBH") || "[]"); } catch { return []; } };
+const urutBH = (a, b) => String(a).localeCompare(String(b), "id", { numeric: true });
+function isiDlBH() {
+  const dl = document.getElementById("dlBH") ?? document.body.appendChild(Object.assign(document.createElement("datalist"), { id: "dlBH" }));
+  const M = new Map(); for (const r of rencanaLokal()) if (r.bhid) M.set(r.bhid, new Set(["rencana"]));
+  for (const [b, src] of daftarBHLokal()) { if (!b) continue; if (!M.has(b)) M.set(b, new Set()); for (const x of src) M.get(b).add(x); }
+  dl.innerHTML = [...M.keys()].sort(urutBH).map((b) => `<option value="${esc(b)}" label="${esc([asalRedrill(b) ? "REDRILL" : null, ...M.get(b)].filter(Boolean).join(" · "))}">`).join("");
+}
+async function muatDaftarBH() {
+  if (!online() || isClient()) return isiDlBH();
+  const Q = [["borehole", "bhid", "lubang"], ["v_ddr_baris", "bhid", "DDR"], ["ddr", "bhid", "DDR"], ["drill_event", "bhid", "progres bor"], ["core_photo", "bhid", "foto core"], ["scan_job", "bhid_hint", "Form Logging"], ["marking", "bhid", "marking"]];
+  const res = await Promise.all(Q.map(([t, c]) => sb.from(t).select(c).not(c, "is", null).limit(5000).then((r) => r.data ?? [], () => [])));
+  const M = new Map(); res.forEach((rows, i) => { for (const r of rows) { const b = String(r[Q[i][1]] ?? "").trim().toUpperCase(); if (!b) continue; if (!M.has(b)) M.set(b, new Set()); M.get(b).add(Q[i][2]); } });
+  try { localStorage.setItem("daftarBH", JSON.stringify([...M].map(([b, x]) => [b, [...x]]))); } catch {}
+  isiDlBH();
+}
+// Semua kolom Hole ID (termasuk filter Hole ID di Database & Data tersimpan, form edit) memakai daftar pilihan dlBH
+const ID_BH = new Set(["fb", "sdB", "kB", "kfB", "eb_bhid", "eb_lubang_asal"]);
+function pasangDaftarBH(root) {
+  root.querySelectorAll?.("input:not([list]):not([readonly])").forEach((inp) => {
+    if (inp.type && !["text", "search", ""].includes(inp.type)) return;
+    const lbl = inp.closest("label")?.textContent ?? (inp.previousElementSibling?.tagName === "LABEL" ? inp.previousElementSibling.textContent : "") ?? "";
+    if (ID_BH.has(inp.id) || inp.hasAttribute("data-bhid") || inp.hasAttribute("data-rbh") || /hole\s*id|\bbhid\b/i.test(lbl) || /hole\s*id/i.test(inp.placeholder ?? "")) { inp.setAttribute("list", "dlBH"); inp.setAttribute("autocomplete", "off"); }
+  });
+}
+new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) pasangDaftarBH(n); }).observe(document.body, { childList: true, subtree: true });
 // "DHNPG01", "dh-npg01", "DH NPG 1"? -> ejaan resmi rencana bila hurufnya sama
 const bakuBH = (x) => { const t = String(x ?? "").trim().toUpperCase(); if (!t) return ""; const L = rencanaLokal(), r = L.find((z) => kunciBH(z.bhid) === kunciBH(t)); if (r) return r.bhid;
   const k = kunciBH(t), mr = /^(.*\d)(R\d*)$/.exec(k); if (mr) { const d = L.find((z) => kunciBH(z.bhid) === mr[1]); if (d) return d.bhid + mr[2]; } // redrill: Hole ID dasar + R / R2
@@ -4437,12 +4465,13 @@ const jarakM = (a, b) => { const R = 6371000, r = Math.PI / 180, dl = (b[1] - a[
   const h = Math.sin(dl / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
 function pasangPilihBH(inp) {
   if (inp.dataset.bhOk) return; inp.dataset.bhOk = "1"; inp.setAttribute("list", "dlBH");
-  if (!document.getElementById("dlBH")) { const dl = document.body.appendChild(Object.assign(document.createElement("datalist"), { id: "dlBH" })); dl.innerHTML = rencanaLokal().map((r) => `<option value="${esc(r.bhid)}">`).join(""); }
+  if (!document.getElementById("dlBH")) isiDlBH();
   const st = document.createElement("div"); st.style.cssText = "font-size:12px;margin-top:3px";
   const btn = Object.assign(document.createElement("button"), { type: "button", className: "sec", textContent: "📍 Pilih titik rencana" }); btn.style.cssText = "width:auto;padding:4px 10px;margin-top:4px;font-size:13px";
   inp.after(st, btn);
   const cek = () => { const t = inp.value.trim(); if (!t) return (st.textContent = ""); const R = rencanaLokal(), r = R.find((z) => kunciBH(z.bhid) === kunciBH(t));
     if (r) { st.innerHTML = `<span style="color:#1b7a3a">✓ Terhubung ke titik rencana <b>${esc(r.bhid)}</b> di peta</span>${r.bhid !== t.toUpperCase() ? ` <span class="muted">(ejaan disamakan saat disimpan)</span>` : ""}`; }
+    else if (daftarBHLokal().some(([b]) => kunciBH(b) === kunciBH(t))) st.innerHTML = `<span style="color:#1b7a3a">✓ Hole ID sudah terdaftar${asalRedrill(t) ? " (REDRILL)" : ""}</span>`;
     else st.innerHTML = R.length ? `<span style="color:#a15c00">⚠ Tidak ada di daftar rencana — akan menjadi titik bor BARU di peta. Pastikan bukan salah ketik.</span>` : ""; };
   inp.addEventListener("input", cek); cek();
   btn.onclick = async () => {
@@ -4462,7 +4491,7 @@ async function loadTugas() {
   if (!online()) return myTugas;
   const [{ data: a, error }, { data: pj }] = await Promise.all([sb.rpc("my_assignment"), sb.from("project").select("*").eq("aktif", true).order("nama")]);
   localStorage.setItem("projects", JSON.stringify(pj ?? []));
-  loadPersonil(); muatRencana();
+  loadPersonil(); muatRencana().then(() => muatDaftarBH()).catch(() => {});
   sb.from("wilayah").select("nama,nomor_sk,titik").eq("aktif", true).then(({ data }) => { if (data) localStorage.setItem("wilayah", JSON.stringify(data)); });
   sb.from("qc_param").select("value").eq("name", "CREW_MIN").maybeSingle().then(({ data }) => { if (data?.value) localStorage.setItem("crewMin", data.value); });
   if (error) return myTugas;
