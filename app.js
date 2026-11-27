@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.52";
+const APP_VERSION = "2026-11-27.53";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -5909,6 +5909,10 @@ async function dbView(v) {
     if (error) return ($("#tb").innerHTML = `<p class="err">${esc(error.message)}</p>`);
     const nRd = Object.keys(RD).length, geo = GEO_V.has(d.v);
     $("#info").innerHTML = `${count ?? 0} baris · halaman ${page + 1} dari ${Math.max(1, Math.ceil((count ?? 0) / 200))}${nRd && geo ? ` · <span title="${esc(Object.entries(RD).map(([a, b]) => `${a} → ${b}`).join(", "))}">${f.lub === "arsip" ? "🗄 menampilkan ARSIP lubang lama yang sudah di-redrill" : f.lub === "semua" ? "semua lubang termasuk lubang lama yang sudah di-redrill" : `${nRd} lubang lama yang sudah di-redrill disembunyikan (${esc(Object.entries(RD).map(([a, b]) => `${a} → ${b}`).join(", "))}) — lihat pilihan Lubang: Arsip`}</span>` : ""}`;
+    // v.53: filter aktif ditampilkan jelas (filter Hole ID / rig tersimpan saat pindah tabel, sehingga data lain tampak "hilang")
+    { const fl = [f.bh && `Hole ID “${esc(f.bh)}”`, f.rig && `rig ${esc(f.rig)}`, f.bad && "hanya yang bermasalah"].filter(Boolean);
+      if (fl.length) { $("#info").insertAdjacentHTML("beforeend", `<div style="background:#FFF1F0;border:1px solid #F3B6B0;border-radius:8px;padding:6px 10px;margin-top:6px;color:#B3261E;font-weight:600">🔎 Filter aktif: ${fl.join(" · ")} — hanya data yang cocok ditampilkan. <button class="sec" id="dbClr" style="padding:4px 10px;margin-left:6px">✖ Hapus filter (tampilkan semua)</button></div>`);
+        $("#dbClr").onclick = () => { $("#fb").value = ""; $("#frig").value = ""; $("#fbad").checked = false; $("#go").click(); }; } }
     $("#pv").disabled = page === 0; $("#nx").disabled = (page + 1) * 200 >= (count ?? 0);
     if (!data?.length) return ($("#tb").innerHTML = `<p class="muted">Tidak ada data.</p>`);
     const cols = Object.keys(data[0]).filter((c) => !["data", "related"].includes(c));
