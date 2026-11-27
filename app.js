@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.69";
+const APP_VERSION = "2026-11-28.70";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3135,9 +3135,13 @@ function computeKPI(days, tm, cu, holes) {
 
 // ---------- Laporan progres (ringkasan periode; cetak/PDF + Excel) ----------
 // ---------- Titik bor untuk peta (semua peran, termasuk client) ----------
+// v.70: lubang lama yang sudah di-REDRILL (mis. DH-NPG 08 → 08R) tidak ditampilkan di peta, Dashboard & laporan — yang tampil lubang redrill-nya.
+// Data DDR lubang lama tetap ada (meter, jam, BBM) dan arsip geologinya tetap bisa dilihat di Database (pilihan "arsip").
 async function ambilLubangPeta() {
-  const r = await sb.rpc("peta_lubang"); if (!r.error) return r;
-  return sb.from("v_peta_lubang").select("*");
+  const [r0, RDR] = await Promise.all([sb.rpc("peta_lubang"), petaRedrill().catch(() => ({}))]);
+  const r = r0.error ? await sb.from("v_peta_lubang").select("*") : r0;
+  if (r.error || !Array.isArray(r.data)) return r;
+  return { ...r, data: r.data.filter((x) => !RDR[x.bhid]) };
 }
 // ---------- Warna zona + konfirmasi zona baru ----------
 let ZONA = JSON.parse(localStorage.getItem("zonaWarna") || "[]");
