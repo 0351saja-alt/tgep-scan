@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.21";
+const APP_VERSION = "2026-11-27.22";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -718,19 +718,32 @@ async function reviewDetail(v, id, mode) {
     const sama = (r) => (ada ?? []).some((x) => Math.abs(+x.depth_from - +r.depth_from) < 0.011 && Math.abs(+x.depth_to - +r.depth_to) < 0.011);
     for (const r of data.rows ?? []) if (r.depth_from != null && r.depth_to != null && sama(r)) { r._lama = true; lamaN++; }
   }
+  // v.22: No sample OTOMATIS untuk Form Logging (LOG/SHEET): nomor urut mulai 1 per lubang + kode zona (1L, 2L … 6S), tidak diketik.
+  // Lembar lanjutan: nomor dilanjutkan dari jumlah conto lubang ini di database yang berada di atas FROM baris pertama.
+  const autoNo = j.form_type === "SHEET" || j.form_type === "LOG";
+  const isiBaris = (r) => Object.entries(r ?? {}).some(([k, x]) => !["_row", "seq", "_lama"].includes(k) && x !== null && x !== undefined && x !== "");
+  let dbS = [];
+  const ambilNoDb = async () => { dbS = []; const bh = bakuBH(data.header?.bhid ?? ""); if (!autoNo || !bh) return; const { data: x } = await sb.from("sample").select("seq,depth_to").eq("bhid", bh); dbS = x ?? []; };
+  const nomori = () => { if (!autoNo) return; const rows = data.rows ?? [], first = rows.find(isiBaris);
+    const f0 = first && first.depth_from !== null && first.depth_from !== undefined && Number.isFinite(+first.depth_from) ? +first.depth_from : 0;
+    let no = dbS.filter((x) => +x.depth_to <= f0 + 0.005).length;
+    for (const r of rows) r.seq = isiBaris(r) ? ++no : null; };
+  await ambilNoDb(); nomori();
   const cls = (k) => { const f = cf[k]; if (!f) return ""; return f.some((x) => x.type === "BEDA") ? "f-BEDA" : "f-ATURAN"; };
   const KF = j.konfirmasi ?? {};
   const tip = (k) => [...(cf[k] ?? []).map((x) => x.msg), ...(KF[k] ? [KF[k].tidak_tahu ? `Pengirim (${KF[k].nama}) juga tidak yakin` : `Dikonfirmasi pengirim (${KF[k].nama}): ${KF[k].nilai}`] : [])].join(" | ");
   // v.21: kolom No sample = nomor urut (mulai 1) + kode zona dari kolom Zona, mis. 1L, 6S. Yang disimpan tetap nomornya (seq); zona dari kolom Zona.
   const noSampel = (r) => (r?.seq === null || r?.seq === undefined || r?.seq === "" ? "" : `${r.seq}${r.geozone_id ?? ""}`);
-  const cell = (val, key, idx, rowNo) => { if (key === "seq" && idx !== null && idx !== undefined) val = noSampel(data.rows[idx]); const fk = `${rowNo ?? "h"}.${key}`; return `<td class="${bedaDraf(key, idx) ? "edited" : cls(fk)}" title="${esc(tip(fk))}"${KF[fk] && !KF[fk].tidak_tahu ? ' style="outline:2px solid #1E9E69;outline-offset:-2px"' : ""}><input data-k="${key}" data-r="${idx ?? ""}" value="${esc(val ?? "")}" inputmode="${NUMERIC.has(key) ? "decimal" : "text"}"></td>`; };
+  const cell = (val, key, idx, rowNo) => { const oto = key === "seq" && idx !== null && idx !== undefined; if (oto) val = noSampel(data.rows[idx]); const fk = `${rowNo ?? "h"}.${key}`;
+    if (oto && autoNo) return `<td title="No sample otomatis: nomor urut mulai 1 + kode zona"><input data-k="seq" data-r="${idx}" value="${esc(val ?? "")}" readonly tabindex="-1" style="background:#EEF2F0;font-weight:600;width:4.5em"></td>`;
+    return `<td class="${bedaDraf(key, idx) ? "edited" : cls(fk)}" title="${esc(tip(fk))}"${KF[fk] && !KF[fk].tidak_tahu ? ' style="outline:2px solid #1E9E69;outline-offset:-2px"' : ""}><input data-k="${key}" data-r="${idx ?? ""}" value="${esc(val ?? "")}" inputmode="${NUMERIC.has(key) ? "decimal" : "text"}"></td>`; };
   v.innerHTML = `<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}</h2><button class="sec" id="bk" style="flex:0">← Kembali</button></div>
    <p class="muted">Kuning = dua pembacaan berbeda · Merah = melanggar aturan validasi · Hijau = sudah Anda ubah · Bingkai hijau = sudah dikonfirmasi pengirim (${Object.keys(j.konfirmasi ?? {}).length}). Bandingkan dengan foto sebelum menyetujui.</p>
    ${j.status === "ERROR" ? `<p class="err">Gagal diproses: ${esc(j.error)}</p>` : ""}${j.status === "MANUAL" ? `<p class="err">${esc(j.error)}</p>` : ""}
    ${j.sumber === "EXCEL" ? `<p><b>Form Logging manual dari Excel</b> (tanpa pembacaan AI) · <a href="#" id="dlx">⬇ Unduh Excel asli${j.file_name ? " (" + esc(j.file_name) + ")" : ""}</a> — cocokkan setiap baris dengan foto lembar.</p>` : ""}
    ${(j.ai_kali ?? 0) > 0 ? `<p class="muted">Dibaca otomatis ${j.ai_kali}× untuk foto ini · batas 2× per halaman.</p>` : ""}
    ${adaDraf ? `<p style="background:#E3F4EA;padding:8px 10px;border-radius:8px">💾 <b>Melanjutkan editan tersimpan</b> — disimpan ${esc(fmtT(new Date(j.draft_at)))}${j.draft_note ? ` · catatan: ${esc(j.draft_note)}` : ""}. Isian hijau = berbeda dari hasil baca asli. Editan belum masuk database conto sampai <b>✅ Terima & simpan</b>.</p>` : ""}
-   ${isiManual ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px">✍️ <b>Belum ada hasil baca otomatis</b> — tabel kosong sudah disiapkan. Isi langsung dari foto di samping, lalu <b>✅ Terima & simpan</b>. Kolom <b>No sample</b> (nomor mulai 1 + kode zona, mis. 1L, 6S) wajib ada pada setiap baris yang berisi data — tekan <b>🔢 Isi No sample otomatis</b>; baris yang dibiarkan kosong tidak disimpan. Bisa juga tekan <b>Proses ulang</b> bila kunci baca otomatis sudah diperbaiki.</p>` : ""}</div>
+   ${isiManual ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px">✍️ <b>Belum ada hasil baca otomatis</b> — tabel kosong sudah disiapkan. Isi langsung dari foto di samping, lalu <b>✅ Terima & simpan</b>. Kolom <b>No sample</b> terisi otomatis (nomor mulai 1 + kode zona, mis. 1L, 6S); baris yang dibiarkan kosong tidak disimpan. Bisa juga tekan <b>Proses ulang</b> bila kunci baca otomatis sudah diperbaiki.</p>` : ""}</div>
    <div class="rv"><div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Foto</h3><input id="zm" type="range" min="1" max="4" step="0.25" value="1" style="flex:2"></div>
      <div class="photo" id="ph"><img id="im" src="${url?.signedUrl ?? ""}" alt="Foto formulir" style="width:100%"></div></div>
    <div class="card"><h3>Hasil scan (bisa diedit)</h3>
@@ -738,7 +751,7 @@ async function reviewDetail(v, id, mode) {
      ${rowCols.length ? `<div class="tw" style="margin-top:10px"><table><tr><th>Baris</th>${rowCols.map(([, t]) => `<th>${t}</th>`).join("")}</tr>
        ${(data.rows ?? []).map((r, i) => `<tr${r._lama ? ' class="lama" style="opacity:.45;background:#eee" title="Sudah tersimpan dari lembar hari sebelumnya — dilewati"' : ""}><td style="padding:4px 6px">${r._row ?? i + 1}${r._lama ? "<br><small>lama</small>" : ""}</td>${rowCols.map(([k]) => cell(r[k], k, i, r._row)).join("")}</tr>`).join("")}</table></div>
        ${lamaN ? `<p style="background:#E8F1FB;padding:3px 8px;border-radius:6px;margin:4px 0;font-size:11.5px">📄 <b>Lembar lanjutan:</b> ${lamaN} baris pertama sudah tersimpan dari logging hari sebelumnya (abu-abu) dan <b>dilewati</b>. Yang disimpan hanya ${(data.rows ?? []).length - lamaN} baris baru. <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:0"><input type="checkbox" id="ikutLama" style="width:auto"> sertakan juga baris lama (menimpa data tersimpan)</label></p>` : ""}
-       <button class="sec" id="addRow" style="width:auto;margin-top:6px">+ Tambah baris</button>${rowCols.some(([k]) => k === "seq") ? ` <button class="sec" id="autoNo" style="width:auto;margin-top:6px" title="Nomor urut mulai 1 + kode zona (mis. 1L, 2L … 6S)">🔢 Isi No sample otomatis</button>` : ""}` : ""}
+       <button class="sec" id="addRow" style="width:auto;margin-top:6px">+ Tambah baris</button>` : ""}
    </div></div>
    <div class="card"><h3>Temuan (${flags.length})</h3><ul class="list flags">${flags.map((f) => `<li><span><b>${f.row ? "Baris " + f.row : "Kepala"}</b> · ${esc(f.field)} · ${esc(f.type)} — ${esc(f.msg)}
      ${f.saran !== undefined && f.saran !== null ? `<span class="ab"><button class="sec" data-sar="${esc(f.saran)}" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai saran: ${esc(f.saran)}</button></span>` : ""}
@@ -767,35 +780,20 @@ async function reviewDetail(v, id, mode) {
   const rowIdx = (r) => (data.rows ?? []).findIndex((x) => String(x._row) === String(r));
   const pasangInput = (inp) => (inp.oninput = () => {
     const k = inp.dataset.k, r = inp.dataset.r, raw = inp.value.trim();
-    if (k === "seq" && r !== "") { // No sample: "6S" → No 6, zona S (zona diisi bila kolom Zona masih kosong)
-      const m = raw.replace(/\s/g, "").match(/^(\d*)([A-Za-z]{0,3})$/), row = data.rows[Number(r)];
-      row.seq = m && m[1] ? Number(m[1]) : raw === "" ? null : NaN;
-      if (m && m[2] && !row.geozone_id) { row.geozone_id = m[2].toUpperCase(); const zi = v.querySelector(`td input[data-k="geozone_id"][data-r="${r}"]`); if (zi) { zi.value = row.geozone_id; zi.parentElement.className = "edited"; } }
-      inp.parentElement.className = "edited"; return;
-    }
+    if (k === "seq" && r !== "" && autoNo) return; // No sample otomatis — tidak diketik
+    if (k === "seq" && r !== "") { const m = raw.replace(/\s/g, "").match(/^(\d*)([A-Za-z]{0,3})$/); data.rows[Number(r)].seq = m && m[1] ? Number(m[1]) : raw === "" ? null : NaN; inp.parentElement.className = "edited"; return; }
     const val = raw === "" ? null : NUMERIC.has(k) ? Number(raw.replace(",", ".")) : raw;
     if (r === "") data.header[k] = val; else data.rows[Number(r)][k] = val;
     inp.parentElement.className = "edited";
-    if (k === "geozone_id" && r !== "") { const si = v.querySelector(`td input[data-k="seq"][data-r="${r}"]`); if (si && document.activeElement !== si) si.value = noSampel(data.rows[Number(r)]); }
+    if (r === "" && k === "bhid") ambilNoDb().then(tampilNo); else tampilNo();
   });
-  v.querySelectorAll('td input[data-k="seq"]').forEach((si) => si.addEventListener("blur", () => { const r = si.dataset.r; if (r !== "" && Number.isFinite(data.rows[Number(r)]?.seq)) si.value = noSampel(data.rows[Number(r)]); }));
-  // 🔢 Isi No sample otomatis: nomor urut mulai 1 (lembar lanjutan: melanjutkan nomor terakhir lubang ini) + kode zona
-  if ($("#autoNo")) $("#autoNo").onclick = async () => {
-    const adaIsi = (r) => Object.entries(r).some(([k, x]) => !["_row", "seq", "_lama"].includes(k) && x !== null && x !== undefined && x !== "");
-    let no = 0; const hal = Number(String(data.header?.page ?? j.page_no ?? "1").match(/\d+/)?.[0] ?? 1);
-    const pertama = (data.rows ?? []).find((r) => adaIsi(r));
-    if (hal > 1 && data.header?.bhid && !(pertama && Number.isFinite(pertama.seq))) { const { data: mx } = await sb.from("sample").select("seq").eq("bhid", bakuBH(data.header.bhid)).order("seq", { ascending: false }).limit(1); no = mx?.[0]?.seq ?? 0; }
-    let n = 0;
-    (data.rows ?? []).forEach((r, i) => { if (!adaIsi(r)) return; if (Number.isFinite(r.seq) && r.seq > 0) { no = r.seq; return; } r.seq = ++no; n++;
-      const si = v.querySelector(`td input[data-k="seq"][data-r="${i}"]`); if (si) { si.value = noSampel(r); si.parentElement.className = "edited"; } });
-    toast(n ? `${n} No sample diisi otomatis` : "Semua baris berisi sudah punya No sample");
-  };
+  const tampilNo = () => { if (!autoNo) return; nomori(); v.querySelectorAll('td input[data-k="seq"]').forEach((si) => { if (si.dataset.r !== "") si.value = noSampel(data.rows[Number(si.dataset.r)]); }); };
   v.querySelectorAll("td input").forEach(pasangInput);
   if ($("#addRow")) $("#addRow").onclick = () => {
     const i = data.rows.length, no = Math.max(0, ...data.rows.map((x) => Number(x._row) || 0)) + 1; data.rows.push({ _row: no });
     const tb = $("#addRow").previousElementSibling.querySelector("table");
     tb.insertAdjacentHTML("beforeend", `<tr><td style="padding:4px 6px">${no}</td>${rowCols.map(([k]) => cell(null, k, i, no)).join("")}</tr>`);
-    tb.querySelectorAll("tr:last-child td input").forEach(pasangInput);
+    tb.querySelectorAll("tr:last-child td input").forEach(pasangInput); tampilNo();
   };
   v.querySelectorAll("[data-pick]").forEach((b) => (b.onclick = () => {
     const f = b.dataset.f, raw = String(b.dataset.pick === "a" ? flags.find((x) => x.field === f && String(x.row ?? "") === b.dataset.row)?.a : flags.find((x) => x.field === f && String(x.row ?? "") === b.dataset.row)?.b ?? "");
@@ -808,10 +806,10 @@ async function reviewDetail(v, id, mode) {
     const inp = v.querySelector(`td input[data-k="${b.dataset.f}"][data-r="${i ?? ""}"]`);
     if (inp) { inp.value = b.dataset.sar; inp.dispatchEvent(new Event("input")); b.disabled = true; }
   }));
-  const validasi = () => {
+  const validasi = () => { nomori();
     const adaIsi = (r) => Object.entries(r).some(([k, x]) => k !== "_row" && x !== null && x !== undefined && x !== "");
     const kurangNo = (data.rows ?? []).filter((r) => adaIsi(r) && (r.seq === null || r.seq === undefined));
-    if (kurangNo.length) return ($("#e").textContent = `Baris ${kurangNo.map((r) => r._row).join(", ")}: kolom No sample belum diisi — tekan 🔢 Isi No sample otomatis atau ketik nomornya (mis. 1L).`);
+    if (kurangNo.length) return ($("#e").textContent = `Baris ${kurangNo.map((r) => r._row).join(", ")}: kolom No belum diisi.`);
     const salahNo = (data.rows ?? []).filter((r) => adaIsi(r) && !(Number.isInteger(r.seq) && r.seq >= 1));
     if (salahNo.length) return ($("#e").textContent = `Baris ${salahNo.map((r) => r._row).join(", ")}: No sample harus nomor mulai 1 diikuti kode zona (mis. 1L, 6S).`);
     if (!String(data.header?.bhid ?? "").trim()) return ($("#e").textContent = "Isi Hole ID di kepala tabel.");
