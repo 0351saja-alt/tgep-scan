@@ -1,0 +1,3 @@
+-- v67 (28/11/2026): v_dash_hole + tebal_boulder (BD) & tebal_bedrock (BR) untuk histogram tebal zona Dashboard (app v.72).
+--  (replace dinamis viewdef setelah 'AS meter_ddr'); v67b/c: security_invoker = true dipasang lagi di v_dash_hole dan v_dash_rig_day
+--  (create or replace view tanpa WITH di v55/v67 menghapus opsi itu).
