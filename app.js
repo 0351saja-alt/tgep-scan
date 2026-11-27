@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.36";
+const APP_VERSION = "2026-11-27.37";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2483,6 +2483,13 @@ async function ddrView(v) {
       <div id="kpInfo" class="muted" style="font-size:12.5px;margin:4px 0"></div>
       <div class="row"><div><label>X / Easting (m)</label><input id="kpX" inputmode="decimal" placeholder="6 digit"></div><div><label>Y / Northing (m)</label><input id="kpY" inputmode="decimal" placeholder="7 digit"></div><div style="flex:.6"><label>Z (m)</label><input id="kpZ" inputmode="decimal" placeholder="boleh kosong"></div></div>
       <div class="row" style="flex-wrap:wrap"><button class="sec" id="kpG" type="button" style="flex:1 1 140px">📍 Ambil GPS sekarang</button><button class="sec" id="kpR" type="button" style="flex:1 1 140px">Pakai titik rencana</button><button class="sec" id="kpC" type="button" style="flex:0 0 auto">Kosongkan</button></div></div>
+    <button class="sec" id="t2Add" type="button" style="width:auto;margin:2px 0 6px">➕ Pindah titik di shift ini (titik ke-2)</button>
+    <div id="t2Box" style="display:none;background:#F4F1FA;border:1px solid #D9D0EA;border-radius:10px;padding:8px 10px;margin:6px 0"><div class="row" style="align-items:center"><b style="flex:1">Titik ke-2 — pindah titik di shift ini</b><button class="sec" id="t2Del" type="button" style="flex:0">✕ Hapus titik ke-2</button></div>
+      <p class="muted" style="font-size:12.5px;margin:2px 0 6px">Isi bila setelah finish/STB titik pertama, rig moving dan langsung running di titik baru dalam shift yang sama. Meter titik ke-2 diisi lewat tombol baris di bawah (Hole ID otomatis). Jam moving catat sebagai <b>Pindah titik</b>.</p>
+      <div class="row"><div><label>HOLE ID titik ke-2 *</label><input id="bh2" data-bhid autocapitalize="characters"></div></div>
+      <div id="kp2Info" class="muted" style="font-size:12.5px;margin:4px 0"></div>
+      <div class="row"><div><label>X / Easting (m)</label><input id="kp2X" inputmode="decimal" placeholder="6 digit"></div><div><label>Y / Northing (m)</label><input id="kp2Y" inputmode="decimal" placeholder="7 digit"></div><div style="flex:.6"><label>Z (m)</label><input id="kp2Z" inputmode="decimal"></div></div>
+      <div class="row" style="flex-wrap:wrap"><button class="sec" id="kp2G" type="button" style="flex:1 1 140px">📍 GPS sekarang</button><button class="sec" id="kp2R" type="button" style="flex:1 1 140px">Pakai titik rencana</button><button id="t2Oh" type="button" style="flex:1 1 160px">+ baris open hole titik ke-2</button><button id="t2Cr" type="button" style="flex:1 1 160px">+ baris coring titik ke-2</button></div></div>
     <div class="row"><div><label>DATE *</label><input id="dt" type="date" value="${shiftNow.tanggal}"></div><div><label>TIME *</label><select id="sh"><option value="PAGI" ${shift === "PAGI" ? "selected" : ""}>Day (06–18)</option><option value="MALAM" ${shift === "MALAM" ? "selected" : ""}>Night (18–06)</option></select></div><div><label>Client *</label><input id="ct" value="${esc(last.contractor ?? "")}"></div></div>
     <div class="row"><div><label>DRILLER *</label>${me?.role === "driller" ? `<input id="dn" value="${esc(me.full_name ?? "")}" readonly title="Nama akun Anda">` : `<input id="dn" value="${esc(last.driller_name ?? "")}">`}</div><div style="flex:.5"><label>CREW *</label><input id="cc" inputmode="numeric" readonly title="Dihitung otomatis: driller + assistant" value="${esc(last.crew_count ?? "")}"></div></div>
     <label>ASSISTANT / CREW lain * <span class="muted">(minimal ${crewMin()} orang termasuk driller)</span></label>
@@ -2553,6 +2560,7 @@ async function ddrView(v) {
     if (![...$("#rg").options ?? []].some((o) => o.value === d.rig) && $("#rg").tagName === "SELECT") $("#rg").insertAdjacentHTML("afterbegin", `<option>${esc(d.rig)}</option>`);
     set("#rg", d.rig); set("#dt", d.report_date); set("#sh", d.shift); set("#bh", d.bhid); set("#jbd", d.jenis_bor ?? jenisDariBH(d.bhid ?? "")); set("#pj", d.project); set("#lc", d.location); set("#rt", d.rig_type);
     set("#ct", d.contractor); set("#dn", d.driller_name); set("#ht", d.hole_type); set("#rd", d.rod_m); set("#tg", d.target_m); set("#td", d.total_depth_m); set("#h1", d.hm_start); set("#h2", d.hm_end); set("#wx", d.weather); set("#nt", d.notes);
+    { const t2 = (d.titik_lain ?? [])[0]; if (t2?.bhid) { $("#t2Box").style.display = ""; $("#t2Add").style.display = "none"; $("#bh2").value = t2.bhid; $("#kp2X").value = t2.koord_x != null ? String(t2.koord_x).replace(".", ",") : ""; $("#kp2Y").value = t2.koord_y != null ? String(t2.koord_y).replace(".", ",") : ""; $("#kp2Z").value = t2.koord_z != null ? String(t2.koord_z).replace(".", ",") : ""; } }
     if (d.koord_x != null) { $("#kpX").value = String(d.koord_x).replace(".", ","); $("#kpY").value = String(d.koord_y ?? "").replace(".", ","); $("#kpZ").value = d.koord_z != null ? String(d.koord_z).replace(".", ",") : ""; kpSumber = d.koord_sumber; }
     kunciAsal = { rig: d.rig, tanggal: d.report_date, shift: d.shift };
     for (const id of ["#rg", "#dt", "#sh"]) { $(id).style.outline = "2px dashed #F2B705"; $(id).title = "Boleh diubah: DDR ini dipindah ke rig / tanggal / shift (Day–Night) yang baru saat disimpan"; }
@@ -2638,7 +2646,27 @@ async function ddrView(v) {
       if (p.coords.altitude != null) $("#kpZ").value = p.coords.altitude.toFixed(1).replace(".", ","); kpSumber = `GPS APLIKASI ±${Math.round(p.coords.accuracy)} m`; $("#kpG").textContent = `📍 GPS ±${Math.round(p.coords.accuracy)} m`; kpInfo(); },
       (e) => { $("#kpG").textContent = "📍 Ambil GPS sekarang"; alert("GPS gagal: " + e.message); }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }); };
   kpInfo();
-  if (EDIT) { await isiEditDDR(); kpInfo(); }
+  // v.37: titik ke-2 (pindah titik di shift yang sama) — Hole ID & koordinat pelaksanaan sendiri, baris coring/open hole otomatis ber-Hole ID titik ke-2
+  let kp2Sumber = null;
+  const bh2 = () => bakuBH($("#bh2").value);
+  const kp2Info = () => { const b = bh2(), R = b ? (rencanaLokal().find((z) => z.bhid === b) ?? (asalRedrill(b) ? rencanaLokal().find((z) => z.bhid === asalRedrill(b)) : null)) : null, x = kpNum($("#kp2X").value), y = kpNum($("#kp2Y").value);
+    let h = ""; if (R) { const [rx, ry] = UTM.ke(+R.lon, +R.lat); h = `Titik rencana ${esc(R.bhid)}: X ${fmtD(rx)} · Y ${fmtD(ry)}`; if (x != null && y != null) { const d = Math.round(Math.hypot(x - rx, y - ry)); h += ` · jarak <b>${d} m</b>${d > 25 ? " (bergeser)" : ""}`; } }
+    $("#kp2Info").innerHTML = h; $("#kp2R").disabled = !R; };
+  const tampilT2 = (on) => { $("#t2Box").style.display = on ? "" : "none"; $("#t2Add").style.display = on ? "none" : ""; };
+  $("#t2Add").onclick = () => { tampilT2(true); $("#bh2").focus(); };
+  $("#t2Del").onclick = () => { if (v.querySelector(`#oh [data-rbh], #cr [data-rbh]`) && [...v.querySelectorAll("#oh [data-rbh], #cr [data-rbh]")].some((i) => bh2() && bakuBH(i.value) === bh2()) && !confirm("Baris coring/open hole titik ke-2 tetap ada (Hole ID-nya bisa dihapus manual). Hapus titik ke-2?")) return;
+    $("#bh2").value = $("#kp2X").value = $("#kp2Y").value = $("#kp2Z").value = ""; kp2Sumber = null; tampilT2(false); };
+  $("#bh2").addEventListener("input", kp2Info); $("#bh2").addEventListener("change", kp2Info);
+  $("#kp2X").oninput = $("#kp2Y").oninput = () => { kp2Sumber = "DDR (diketik)"; kp2Info(); };
+  $("#kp2R").onclick = () => { const b = bh2(), R = rencanaLokal().find((z) => z.bhid === b) ?? rencanaLokal().find((z) => z.bhid === asalRedrill(b)); if (!R) return; const [x, y] = UTM.ke(+R.lon, +R.lat); $("#kp2X").value = x.toFixed(2).replace(".", ","); $("#kp2Y").value = y.toFixed(2).replace(".", ","); kp2Sumber = "RENCANA"; kp2Info(); };
+  $("#kp2G").onclick = () => { if (!navigator.geolocation) return alert("GPS tidak tersedia."); $("#kp2G").textContent = "Mencari GPS…";
+    navigator.geolocation.getCurrentPosition((p) => { const [x, y] = UTM.ke(p.coords.longitude, p.coords.latitude); if (!(x >= 100000 && x <= 900000)) { $("#kp2G").textContent = "📍 GPS sekarang"; return alert("Posisi GPS di luar zona UTM 51S — bukan di lokasi proyek."); }
+      $("#kp2X").value = x.toFixed(2).replace(".", ","); $("#kp2Y").value = y.toFixed(2).replace(".", ","); if (p.coords.altitude != null) $("#kp2Z").value = p.coords.altitude.toFixed(1).replace(".", ","); kp2Sumber = `GPS APLIKASI ±${Math.round(p.coords.accuracy)} m`; $("#kp2G").textContent = `📍 GPS ±${Math.round(p.coords.accuracy)} m`; kp2Info(); },
+      (e) => { $("#kp2G").textContent = "📍 GPS sekarang"; alert("GPS gagal: " + e.message); }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }); };
+  const toTitik2 = () => { const b = bh2(), xs = [...v.querySelectorAll("#oh .row, #cr .row")].filter((r) => bakuBH(r.querySelector("[data-rbh]")?.value ?? "") === b).map((r) => num(r.querySelectorAll("input")[1].value)).filter((x) => Number.isFinite(x)); return xs.length ? Math.max(...xs) : 0; };
+  $("#t2Cr").onclick = () => { if (!bh2()) return $("#bh2").focus(); crRow({ bhid: bh2(), from: fdK(toTitik2()) }); };
+  $("#t2Oh").onclick = () => { if (!bh2()) return $("#bh2").focus(); ohRow({ bhid: bh2(), from: fdK(toTitik2()) }); };
+  if (EDIT) { await isiEditDDR(); kpInfo(); kp2Info(); }
   $("#sv").onclick = async () => {
     const val = (id) => $(id).value.trim();
     const rows = (box) => [...$(box).querySelectorAll(".row")].map((r) => [...r.querySelectorAll("input,select")].map((x) => x.value.trim()));
@@ -2658,6 +2686,13 @@ async function ddrView(v) {
       if (kx != null && !(kx >= 100000 && kx <= 900000 && ky >= 0 && ky <= 10000000)) return ($("#e").textContent = "Koordinat pelaksanaan tidak wajar: X 6 digit, Y 7 digit (UTM WGS84 51S).");
       if (kz != null && !(kz > -100 && kz < 5000)) return ($("#e").textContent = "Elevasi Z tidak wajar.");
       Object.assign(row, { koord_x: kx, koord_y: ky, koord_z: kz, koord_sumber: kx != null ? kpSumber ?? "DDR" : null }); }
+    { const b2 = $("#t2Box").style.display !== "none" ? bakuBH($("#bh2").value) : ""; row.titik_lain = null;
+      if (b2) { if (b2 === row.bhid) return ($("#e").textContent = "Hole ID titik ke-2 sama dengan Hole ID di atas.");
+        const x2 = kpNum($("#kp2X").value), y2 = kpNum($("#kp2Y").value), z2 = kpNum($("#kp2Z").value);
+        if ((x2 == null) !== (y2 == null)) return ($("#e").textContent = "Koordinat titik ke-2: isi X dan Y keduanya (atau kosongkan keduanya).");
+        if (x2 != null && !(x2 >= 100000 && x2 <= 900000 && y2 >= 0 && y2 <= 10000000)) return ($("#e").textContent = "Koordinat titik ke-2 tidak wajar: X 6 digit, Y 7 digit (UTM WGS84 51S).");
+        if (![...open_hole, ...coring].some((x) => x.bhid === b2) && !confirm(`Belum ada baris coring/open hole untuk ${b2}. Tetap simpan?`)) return;
+        row.titik_lain = [{ bhid: b2, koord_x: x2, koord_y: y2, koord_z: z2, koord_sumber: x2 != null ? kp2Sumber ?? "DDR" : null }]; } }
     const miss = ["bhid", "rig", "report_date", "contractor", "driller_name", "crew_count"].filter((k) => row[k] === null || row[k] === "");
     if (miss.length) return ($("#e").textContent = "Lengkapi kolom bertanda * (" + miss.join(", ") + ").");
     if (row.crew_count < crewMin()) return ($("#e").textContent = `Nama crew baru ${row.crew_count} — minimal ${crewMin()} orang (driller + assistant). Tambah dengan "+ crew".`);
