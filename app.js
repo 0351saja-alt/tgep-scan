@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.55";
+const APP_VERSION = "2026-11-27.56";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3008,8 +3008,10 @@ async function dashView(v) {
   const RDR = await petaRedrill().catch(() => ({}));
   const { data: VB } = await sb.from("v_ddr_baris").select("bhid,meter,tanggal,rig").gte("tanggal", st.from).lte("tanggal", st.to).limit(5000);
   if (basi()) return;
-  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0 && !RDR[h.bhid] && (!pf || pf.bhids.includes(h.bhid))),
-    holesRec = (hl ?? []).filter((h) => h.recovery_pct != null && !RDR[h.bhid] && (!pf || pf.bhids.includes(h.bhid))), K = computeKPI(days, tm ?? [], cu ?? [], holes).filter(([l]) => !isClient() || (l !== "Foto core lengkap" && !/BBM|Oli/i.test(l) && (clientGeo() || !GEO_KPI.includes(l))));
+  // v.56: bila rig dipilih, statistik per lubang (histogram recovery, tebal zona, KPI lubang) hanya lubang yang dibor rig itu pada periode ini (dari DDR)
+  const bhRig = st.rig ? new Set((VB ?? []).filter((x) => String(x.rig ?? "").toUpperCase() === st.rig.toUpperCase()).map((x) => x.bhid)) : null, okRig = (h) => !bhRig || bhRig.has(h.bhid);
+  const days = rd ?? [], holes = (hl ?? []).filter((h) => h.jumlah_conto > 0 && !RDR[h.bhid] && (!pf || pf.bhids.includes(h.bhid)) && okRig(h)),
+    holesRec = (hl ?? []).filter((h) => h.recovery_pct != null && !RDR[h.bhid] && (!pf || pf.bhids.includes(h.bhid)) && okRig(h)), K = computeKPI(days, tm ?? [], cu ?? [], holes).filter(([l]) => !isClient() || (l !== "Foto core lengkap" && !/BBM|Oli/i.test(l) && (clientGeo() || !GEO_KPI.includes(l))));
   { const vb = (VB ?? []).filter((x) => (!st.rig || String(x.rig ?? "").toUpperCase() === st.rig.toUpperCase()) && (!pf || pf.bhids.includes(x.bhid)));
     const mR = vb.filter((x) => asalRedrill(x.bhid)), mL = vb.filter((x) => RDR[x.bhid]), sm = (xs) => xs.reduce((a, x) => a + (+x.meter || 0), 0);
     if (mR.length || mL.length) K.push(["Meter redrill", `${sm(mR).toFixed(1)} m · ${new Set(mR.map((x) => x.bhid)).size} lubang`],
@@ -3058,7 +3060,7 @@ async function dashView(v) {
   const nl = holes.reduce((s, h) => s + h.conto_limonit, 0), ns = holes.reduce((s, h) => s + h.conto_saprolit, 0), nt = holes.reduce((s, h) => s + h.jumlah_conto, 0);
   new Chart(box("c8", "Jumlah conto per zona"), { type: "pie", data: { labels: ["Limonit", "Saprolit", "TP / batuan dasar"], datasets: [{ data: [nl, ns, nt - nl - ns], backgroundColor: ["#E8892B", "#1E9E69", "#7A8B83"] }] } });
   const re = [0, 50, 70, 80, 90, 95, 100.01];
-  new Chart(box("c9", "Histogram recovery per lubang (%) — logging / DDR"), { type: "bar", data: { labels: ["<50", "50–70", "70–80", "80–90", "90–95", "95–100"], datasets: [{ label: "lubang", data: hist(holesRec.map((h) => Number(h.recovery_pct)).filter(isFinite), re), backgroundColor: ["#C8281F", "#C8281F", "#E8892B", "#D4B12A", "#1E9E69", "#1E9E69"] }] } });
+  new Chart(box("c9", `Histogram recovery per lubang (%)${st.rig ? " — " + st.rig : ""} · ${holesRec.length} lubang`), { type: "bar", data: { labels: ["<50", "50–70", "70–80", "80–90", "90–95", "95–100"], datasets: [{ label: "lubang", data: hist(holesRec.map((h) => Number(h.recovery_pct)).filter(isFinite), re), backgroundColor: ["#C8281F", "#C8281F", "#E8892B", "#D4B12A", "#1E9E69", "#1E9E69"] }] } });
   const avg = (k) => { const xs = holes.map((h) => Number(h[k])).filter((x) => isFinite(x) && x > 0); return xs.length ? +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(3) : null; };
   new Chart(box("c10", "Rata-rata density kering per zona (t/m³)"), { type: "bar", data: { labels: ["Limonit", "Saprolit"], datasets: [{ label: "dry density", data: [avg("dry_density_limonit"), avg("dry_density_saprolit")], backgroundColor: ["#E8892B", "#1E9E69"] }] } });
   await statistikConto(Chart, box, pf?.bhids ?? null); if (basi()) return;
