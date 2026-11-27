@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.22";
+const APP_VERSION = "2026-11-27.23";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -530,7 +530,7 @@ async function fotoView(v) {
    <div id="pr" class="muted"></div><div id="e" class="err"></div></div>
    <div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Antrean di HP (${queue.length})</h3><button class="sec" id="sy" style="flex:0">Kirim sekarang</button></div>
    <ul class="list">${queue.map((x) => `<li><span class="pill ANTRE">antre</span><span>${esc(x.kind === "arsip" ? ARSIP[x.row.jenis] : FORMS[x.form_type])} · ${esc(x.bhid || x.row?.bhid || x.row?.rig || "")}${(x.page_no || x.row?.halaman) ? ` · hal. ${x.page_no || x.row.halaman}` : ""} · ${esc(x.sumber || x.row?.sumber || "")}<br><span class="muted">${new Date(x.captured_at || x.row.captured_at).toLocaleString("id-ID")}${x.error ? " · gagal: " + esc(x.error) : ""}</span></span>${x.error || !EV[x.row?.event_type] && x.kind === "event" ? `<button class="sec" data-qdel="${esc(x.client_uuid)}" title="Hapus dari antrean" style="flex:0;padding:4px 10px">🗑</button>` : ""}</li>`).join("") || `<li class="muted">Kosong — semua foto sudah terkirim.</li>`}</ul></div>
-   <div class="card"><h3>Kiriman saya</h3><ul class="list" id="mine"><li class="muted">Memuat…</li></ul></div>`;
+   <div class="card"><h3>${["verifier", "admin"].includes(me?.role) ? "Form Logging (semua pengirim) & kiriman saya" : "Kiriman saya"}</h3>${["verifier", "admin"].includes(me?.role) ? `<p class="muted" style="margin-top:0">✏️ Edit = buka tabel isian + foto. Simpan langsung masuk database conto (yang sudah disetujui pun bisa diubah; tiap perubahan tercatat di Riwayat koreksi).</p>` : ""}<ul class="list" id="mine"><li class="muted">Memuat…</li></ul></div>`;
   v.querySelectorAll("[data-qdel]").forEach((b) => (b.onclick = async () => {
     if (!confirm("Hapus data ini dari antrean HP? Data yang gagal tidak akan pernah terkirim; setelah dihapus, ambil/unggah ulang fotonya.")) return;
     await qDel(b.dataset.qdel); b.closest("li").remove(); cekAntreLama(); toast("Data dihapus dari antrean");
@@ -597,7 +597,7 @@ async function fotoView(v) {
   $("#sy").onclick = sync;
   if (online()) {
     const [{ data: a }, { data: b }] = await Promise.all([
-      staff ? sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,created_at,n_disagree,n_rule_flags,error,sumber,merged,cell_flags,konfirmasi").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30) : Promise.resolve({ data: [] }),
+      staff ? sb.from("scan_job").select("id,form_type,bhid_hint,page_no,status,created_at,n_disagree,n_rule_flags,error,sumber,merged,cell_flags,konfirmasi").or(["verifier", "admin"].includes(me?.role) ? "form_type.not.is.null" : `created_by.eq.${session.user.id}`).order("created_at", { ascending: false }).limit(["verifier", "admin"].includes(me?.role) ? 60 : 30) : Promise.resolve({ data: [] }),
       sb.from("form_photo").select("id,jenis,rig,bhid,tanggal,shift,keterangan,halaman,jumlah_halaman,sumber,created_at").eq("created_by", session.user.id).order("created_at", { ascending: false }).limit(30)]);
     const items = [...(a ?? []).map((j) => ({ id: j.id, t: j.created_at, h: `<li><span class="pill ${j.status}">${j.status === "REJECTED" ? "DITOLAK" : j.status === "MANUAL" ? "ISI MANUAL" : j.status}</span><span>${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}${j.page_no ? " hal. " + j.page_no : ""}${j.sumber ? " · " + j.sumber : ""}<br><span class="muted">${new Date(j.created_at).toLocaleString("id-ID")}${j.status === "NEEDS_REVIEW" ? ` · ${j.n_disagree} beda baca, ${j.n_rule_flags} cek aturan` : ""}${j.error ? " · " + esc(j.error) : ""}</span></span></li>` })),
       ...(b ?? []).map((p) => ({ fid: p.id, t: p.created_at, h: `<li><span class="pill APPROVED">ARSIP</span><span>${esc(ARSIP[p.jenis])} · ${esc(p.bhid || p.rig || "")}${p.halaman ? ` · hal. ${p.halaman}/${p.jumlah_halaman ?? "?"}` : ""} · ${p.sumber}<br><span class="muted">${p.tanggal ?? ""} · dikirim ${new Date(p.created_at).toLocaleString("id-ID")}</span></span></li>` }))].sort((x, y) => (x.t < y.t ? 1 : -1));
@@ -607,9 +607,11 @@ async function fotoView(v) {
       if (!li || (!n && !nk)) return; li.insertAdjacentHTML("beforeend", n ? `<button class="warn" data-kf="${j.id}" style="flex:0 0 auto;width:auto;padding:6px 10px">❓ Konfirmasi ${n}</button>` : `<span class="pill APPROVED" style="flex:0">✓ ${nk} dikonfirmasi</span>`); });
     $("#mine").querySelectorAll("[data-kf]").forEach((b) => (b.onclick = () => konfirmasiModal(b.dataset.kf)));
     // ✏️ Edit isian Form Logging milik sendiri (belum disetujui): buka editor tabel + foto, simpan → dikirim ke verifier
-    (a ?? []).filter((j) => j.status !== "APPROVED" && j.status !== "PROCESSING").forEach((j) => { const li = [...$("#mine").children][items.findIndex((x) => x.id === j.id)];
-      if (li) li.insertAdjacentHTML("beforeend", `<button class="sec" data-edj="${j.id}" style="flex:0 0 auto;width:auto;padding:6px 10px">✏️ Edit</button>`); });
-    $("#mine").querySelectorAll("[data-edj]").forEach((b) => (b.onclick = () => { scrollTo(0, 0); reviewDetail($("#v"), b.dataset.edj, "pengirim"); }));
+    const verF = ["verifier", "admin"].includes(me?.role);
+    (a ?? []).filter((j) => (verF || j.status !== "APPROVED") && j.status !== "PROCESSING").forEach((j) => { const li = [...$("#mine").children][items.findIndex((x) => x.id === j.id)];
+      if (li) li.insertAdjacentHTML("beforeend", `<button class="sec" data-edj="${j.id}" data-st="${j.status}" style="flex:0 0 auto;width:auto;padding:6px 10px">✏️ Edit</button>`); });
+    // v.23: verifier/admin mengedit di sini → langsung ke database (belum disetujui: Terima & simpan; sudah disetujui: Simpan perubahan ke database)
+    $("#mine").querySelectorAll("[data-edj]").forEach((b) => (b.onclick = () => { scrollTo(0, 0); reviewDetail($("#v"), b.dataset.edj, !verF ? "pengirim" : b.dataset.st === "APPROVED" ? "ubah" : "foto"); }));
     // 🛠 Perbaiki data kiriman (salah Hole ID, halaman, jenis, rig, tanggal…) atau 🗑 hapus (diarsipkan, bisa dipulihkan admin)
     const tbl = `style="flex:0 0 auto;width:auto;padding:6px 10px"`;
     (a ?? []).filter((j) => (j.status !== "APPROVED" || ["verifier", "admin"].includes(me?.role)) && j.status !== "PROCESSING").forEach((j) => { const li = [...$("#mine").children][items.findIndex((x) => x.id === j.id)];
@@ -686,6 +688,7 @@ async function reviewList(v) {
 }
 
 async function reviewDetail(v, id, mode) {
+  const ubahFinal = mode === "ubah", dariFoto = mode === "foto" || ubahFinal; // v.23: dibuka verifier/admin dari Foto formulir (ubah = Form Logging yang sudah disetujui)
   const pengirim = mode === "pengirim"; // dibuka dari Foto formulir → Kiriman saya: pengirim mengedit isiannya sendiri, lalu dikirim ke verifier
   const { data: j, error } = await sb.from("scan_job").select("*").eq("id", id).single();
   if (error) return (v.innerHTML = `<p class="err">${esc(error.message)}</p>`);
@@ -713,7 +716,7 @@ async function reviewDetail(v, id, mode) {
   // Lembar lanjutan: bila halaman yang sama berisi baris hari sebelumnya yang SUDAH tersimpan (interval From–To sama di lubang yang sama),
   // baris itu ditandai "sudah tersimpan" dan dilewati; yang disimpan hanya sisanya (baris baru hari ini).
   let lamaN = 0;
-  if (rowCols.some(([k]) => k === "depth_from") && data.header?.bhid && !isiManual) {
+  if (rowCols.some(([k]) => k === "depth_from") && data.header?.bhid && !isiManual && !ubahFinal) {
     const { data: ada } = await sb.from("sample").select("depth_from,depth_to").eq("bhid", bakuBH(data.header.bhid));
     const sama = (r) => (ada ?? []).some((x) => Math.abs(+x.depth_from - +r.depth_from) < 0.011 && Math.abs(+x.depth_to - +r.depth_to) < 0.011);
     for (const r of data.rows ?? []) if (r.depth_from != null && r.depth_to != null && sama(r)) { r._lama = true; lamaN++; }
@@ -758,9 +761,10 @@ async function reviewDetail(v, id, mode) {
      ${f.type === "BEDA" && f.field !== "*" ? `<span class="ab"><button class="sec" data-pick="a" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai A: ${esc(f.a)}</button><button class="sec" data-pick="b" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai B: ${esc(f.b)}</button></span>` : ""}</span></li>`).join("") || `<li class="muted">Tidak ada temuan.</li>`}</ul></div>
    <div class="card"><label>Catatan pemeriksa</label><textarea id="nt" rows="2"></textarea>
      ${pengirim ? `<p class="muted" style="margin:6px 0">Isian Anda dikirim ke verifier untuk diperiksa & disetujui. Setelah disetujui, data masuk ke database conto.</p><div class="row" style="margin-top:10px"><button id="sv">💾 Simpan isian & kirim ke verifier</button></div>` : ""}
-     <div class="row" style="margin-top:10px;${pengirim ? "display:none" : ""}"><button id="ok">✅ Terima & simpan</button><button class="sec" id="sd">💾 Simpan editan</button><button class="danger" id="no">✖ Tidak sesuai SOP</button><button class="warn" id="re">Proses ulang</button></div>
+     ${ubahFinal ? `<p style="background:#E8F1FB;padding:6px 10px;border-radius:8px;margin:6px 0">Form Logging ini <b>sudah disetujui</b>. Ubah isian yang salah, tulis alasannya di catatan, lalu simpan — perubahan langsung masuk database conto dan tercatat di Riwayat koreksi.</p><div class="row" style="margin-top:10px"><button id="ub">💾 Simpan perubahan ke database</button></div>` : ""}<div class="row" style="margin-top:10px;${pengirim || ubahFinal ? "display:none" : ""}"><button id="ok">✅ Terima & simpan</button><button class="sec" id="sd">💾 Simpan editan</button><button class="danger" id="no">✖ Tidak sesuai SOP</button><button class="warn" id="re">Proses ulang</button></div>
      ${pengirim ? "" : `<p class="muted" style="font-size:12px;margin:6px 0 0">💾 Simpan editan = simpan sementara tanpa menyetujui (status tetap menunggu periksa, bisa dilanjutkan nanti). Data baru masuk database conto setelah ✅ Terima & simpan.</p>`}<div id="e" class="err"></div></div>`;
-  $("#bk").onclick = () => (pengirim ? render() : reviewList(v));
+  $("#bk").onclick = () => (pengirim || dariFoto ? render() : reviewList(v));
+  if (ubahFinal) { const lb = v.querySelector("#nt")?.previousElementSibling; if (lb) lb.textContent = "Alasan perubahan (wajib)"; }
   if (pengirim) { const lb = v.querySelector("#nt")?.previousElementSibling; if (lb) lb.textContent = "Catatan untuk verifier (opsional)"; }
   if (adaDraf && j.draft_note) $("#nt").value = j.draft_note;
   if ($("#dlx")) $("#dlx").onclick = async (ev) => { ev.preventDefault(); const { data: u2 } = await sb.storage.from("scan-photos").createSignedUrl(j.excel_path, 600, { download: j.file_name || "form_logging.xlsx" }); if (u2?.signedUrl) location.href = u2.signedUrl; };
@@ -827,6 +831,13 @@ async function reviewDetail(v, id, mode) {
   if (pengirim) $("#sv").onclick = async () => { $("#e").textContent = ""; const isi = validasi(); if (typeof isi !== "object") return;
     $("#sv").disabled = true; const { error } = await sb.rpc("simpan_isian_scan", { p_job: id, p_data: isi, p_note: $("#nt").value || null }); $("#sv").disabled = false;
     if (error) return ($("#e").textContent = error.message); toast("Isian tersimpan — menunggu diperiksa verifier"); render(); };
+  if ($("#ub")) $("#ub").onclick = async () => {
+    $("#e").textContent = ""; const isi = validasi(); if (typeof isi !== "object") return;
+    const alasan = $("#nt").value.trim(); if (!alasan) { $("#nt").focus(); return ($("#e").textContent = "Tulis alasan perubahan."); }
+    $("#ub").disabled = true; const { data: res, error } = await sb.rpc("ubah_logging_disetujui", { p_job: id, p_data: isi, p_alasan: alasan }); $("#ub").disabled = false;
+    if (error) return ($("#e").textContent = /ubah_logging_disetujui/.test(error.message) ? "Fungsi database belum dipasang (v41)." : error.message);
+    alert(`Tersimpan ke database: ${res.rows_written} baris untuk ${res.bhid}.${res.isian_dikoreksi || res.kepala_dikoreksi ? `\nKoreksi tercatat: ${res.isian_dikoreksi ?? 0} isian baris, ${res.kepala_dikoreksi ?? 0} isian kepala.` : ""}`); render();
+  };
   $("#ok").onclick = async () => {
     $("#e").textContent = "";
     const isi = validasi(); if (typeof isi !== "object") return;
@@ -837,7 +848,7 @@ async function reviewDetail(v, id, mode) {
     const { data: res, error } = await sb.rpc("approve_scan", { p_job: id, p_data: isi, p_note: $("#nt").value || null });
     $("#ok").disabled = false;
     if (error) return ($("#e").textContent = error.message);
-    alert(`Tersimpan ke database: ${res.rows_written} baris untuk ${res.bhid}.${res.isian_dikoreksi || res.kepala_dikoreksi ? `\nKoreksi tercatat: ${res.isian_dikoreksi ?? 0} isian baris, ${res.kepala_dikoreksi ?? 0} isian kepala.` : ""}\nCek hasil hitung di tab "Data & cek".`); reviewList(v);
+    alert(`Tersimpan ke database: ${res.rows_written} baris untuk ${res.bhid}.${res.isian_dikoreksi || res.kepala_dikoreksi ? `\nKoreksi tercatat: ${res.isian_dikoreksi ?? 0} isian baris, ${res.kepala_dikoreksi ?? 0} isian kepala.` : ""}\nCek hasil hitung di tab "Data & cek".`); dariFoto ? render() : reviewList(v);
   };
   // v.19: 💾 Simpan editan — simpan isian tabel apa adanya (tanpa menyetujui) ke scan_job.draft
   $("#sd").onclick = async () => {
@@ -854,7 +865,7 @@ async function reviewDetail(v, id, mode) {
   $("#no").onclick = async () => {
     if (!$("#nt").value.trim()) return ($("#e").textContent = "Tulis alasan tidak sesuai SOP di Catatan pemeriksa.");
     const { error } = await sb.from("scan_job").update({ status: "REJECTED", review_note: $("#nt").value, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }).eq("id", id);
-    if (error) $("#e").textContent = error.message; else reviewList(v);
+    if (error) $("#e").textContent = error.message; else dariFoto ? render() : reviewList(v);
   };
 }
 
@@ -2184,6 +2195,7 @@ function aksiBarisDb(ds, r, ulang) {
     case "progres": case "kinerja": hariRig(r.tanggal, r.rig); if (r.bhid) lubang(r.bhid); break;
     case "jam": case "bbm": hariRig(r.tanggal ?? r.report_date, r.rig); break;
     case "ddr": if (staf) { if (r.status !== "SIGNED") A.push({ l: "✏️ Edit DDR", fn: () => editDDR(r.id) }); A.push({ l: r.status === "SIGNED" ? "✏️ Edit DDR (buka TTD dulu)" : "Lihat DDR & foto run hari itu", fn: () => menuEditData({ tanggal: r.report_date, rig: r.rig, konteks: "DDR" }) }); A.push({ l: "Lihat / cetak", fn: () => printDDR(r.id) }); } hapus("ddr", r.id, `DDR ${r.rig} ${r.report_date}`); break;
+    case "rekapddr": case "ddrlubang": { const id = r.ddr_id, st = r.ddr_status, t = r.report_date ?? r.tanggal; if (staf) { if (st !== "SIGNED" && id) A.push({ l: "✏️ Edit DDR", fn: () => editDDR(id) }); A.push({ l: st === "SIGNED" ? "✏️ Edit DDR (buka TTD dulu)" : "Lihat DDR & foto run hari itu", fn: () => menuEditData({ tanggal: t, rig: r.rig, konteks: "Rekap DDR" }) }); if (id) A.push({ l: "Lihat / cetak", fn: () => printDDR(id) }); } hapus("ddr", id, `DDR ${r.rig} ${t}`); break; }
     case "aktivitas": if (ver) A.push({ l: "✏️ Edit data aktivitas", fn: () => editBaris("drill_event", r.id, ulang) }); if (staf) A.push({ l: "📷 Ubah / ganti foto", fn: () => editFotoAktivitas(r.id, ulang) }); hapus("drill_event", r.id, `aktivitas ${r.rig ?? ""} ${r.bhid ?? ""}`); break;
     case "p2h": if (ver) A.push({ l: "✏️ Edit P2H", fn: () => editBaris("p2h_check", r.id, ulang) }); hapus("p2h_check", r.id, `P2H ${r.rig ?? ""}`); break;
     case "lubang": case "logging": case "profil": lubang(r.bhid); break;
@@ -4909,6 +4921,8 @@ const DATASETS = {
   aktivitas: { t: "Log aktivitas bor (foto bergeotag)", v: "v_drill_event_qc", order: ["captured_at"], bh: "bhid", bad: ["flags"] },
   p2h: { t: "P2H rig", v: "p2h_check", order: ["captured_at"], bh: null },
   ddr: { t: "DDR", v: "v_ddr_list", order: ["report_date", "rig"], bh: "bhid" },
+  rekapddr: { t: "Rekap DDR (meter, jam, BBM per DDR)", v: "fix_ddr", sel: "ddr_id,report_date,shift,rig,holeid,ddr_status,coring_ddr_m,open_hole_m,meter_ddr,core_ddr_m,recovery_pct,jam_ddr,standby_menit,bbm_liter,oli_liter,bbm_per_meter_ddr,crew_count,driller_name,ttd", order: ["report_date", "rig"], bh: "holeid" },
+  ddrlubang: { t: "DDR per lubang (interval coring/open hole)", v: "v_ddr_baris", order: ["tanggal", "rig", "bhid", "dari_m"], bh: "bhid" },
   jam: { t: "Distribusi jam DDR", v: "v_ddr_hours", order: ["tanggal", "rig"], bh: "bhid" },
   bbm: { t: "Pemakaian BBM, oli & barang", v: "v_consumable_use", order: ["report_date", "rig"], bh: "bhid" },
   lubang: { t: "Ringkasan per lubang", v: "v_dash_hole", order: ["bhid"], bh: "bhid" },
@@ -4973,7 +4987,7 @@ function dbQuery(d, f) {
   if (f.proj) { if (d.bh) q = q.in(d.bh, f.proj.bhids.length ? f.proj.bhids : ["-"]); else if (["v_dash_rig_day", "p2h_check", "v_kepatuhan_harian"].includes(d.v)) q = q.in("rig", f.proj.rigs.length ? f.proj.rigs : ["-"]); }
   if (f.bad && d.bad && ["chk_harian", "flags"].includes(d.bad[0])) q = q.neq(d.bad[0], "");
   else if (f.bad && d.bad) q = q.or(d.bad.map((c) => `and(${c}.not.is.null,${c}.not.in.(${[...OKV].map((x) => `"${x}"`).join(",")}))`).join(","));
-  const desc = ["v_survey_marking", "v_kepatuhan_harian", "deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "form_photo", "v_ddr_list", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day", "scan_job"].includes(d.v);
+  const desc = ["v_survey_marking", "v_kepatuhan_harian", "deleted_record", "sample_edit_log", "v_drill_progress_daily", "v_drill_event_qc", "p2h_check", "form_photo", "v_ddr_list", "fix_ddr", "v_ddr_baris", "v_ddr_hours", "v_consumable_use", "v_dash_rig_day", "scan_job"].includes(d.v);
   for (const o of d.order) q = q.order(o, { ascending: d.v === "v_survey_marking" ? o !== "tanggal" : !desc }); // marking: tanggal terbaru dulu, pembacaan ke-1,2,3 berurutan
   return q;
 }
@@ -4981,17 +4995,17 @@ async function fetchAll(d, f) {
   const out = []; for (let i = 0; ; i += 1000) { const { data, error } = await dbQuery(d, f).range(i, i + 999); if (error) throw error; out.push(...data); if (data.length < 1000) return tanpaBBM(out); }
 }
 // ---------- Database FIX (hanya data final) untuk Microsoft Access ----------
-// Final: sampel VERIFIED/SYNCED, DDR SIGNED, assay/QAQC yang sudah dilaporkan lab. Satu sheet = satu tabel Access.
+// v.23: semua data (logging & DDR draf ikut, dibedakan kolom status). Satu sheet = satu tabel Access.
 const FIX = [
-  ["collar", "holeid", "", "Collar lubang yang punya data final; status_lubang LENGKAP bila semua sampel final & bor selesai", "holeid,east,north,rl,depth,coord_source,area,prospect,grid,start_date,stop_date,core_size,sample_type,purpose,spacing,depth_tp,depth_l,depth_s,n_sample_final,n_sample_belum,status_lubang"],
+  ["collar", "holeid", "", "Collar lubang yang punya data final; status_lubang LENGKAP bila semua sampel final & bor selesai", "holeid,east,north,rl,depth,coord_source,area,prospect,grid,start_date,stop_date,core_size,sample_type,purpose,spacing,depth_tp,depth_l,depth_s,n_sample_final,n_sample_belum,status_lubang,n_sample"],
   ["survey", "holeid, depth", "holeid → collar", "Survey arah lubang (vertikal)", "holeid,depth,azimuth,dip"],
-  ["geology", "sample_no", "holeid → collar", "Logging geologi per interval (sampel VERIFIED/SYNCED)", "holeid,depth_from,depth_to,sample_no,sample_id,zone,lith1,lith1_pct,lith2,lith2_pct,colour,hardness,weathering,serpentinisation,silica_pct,garnierite_pct,min1,min1_pct,min2,min2_pct,core_length,recovery_pct,loss_from,loss_to,sample_wt_kg,comment,status_data,tgl_verifikasi"],
-  ["density", "sample_no", "sample_no → geology", "Density (caliper & Archimedes) sampel final", "holeid,depth_from,depth_to,sample_no,zone,len_cm,diam_cm,wet_wt_g,dry_wt_g,vol_caliper_ml,vol_arch_ml,wet_density,dry_density,wet_density_arch,dry_density_arch,moisture_pct,arch_diff_pct"],
-  ["assay", "lab_sample_id", "sample_no → geology", "Assay conto primer (hasil lab) dari sampel final", "holeid,depth_from,depth_to,sample_no,lab_sample_id,ni,co,fe,mgo,sio2,al2o3,cr2o3,cao,mno,loi,lab_job_no,method,date_reported"],
+  ["geology", "sample_no", "holeid → collar", "Logging geologi per interval — semua conto tersimpan (kolom status_data: DISETUJUI / BELUM DIPERIKSA / VERIFIED)", "holeid,depth_from,depth_to,sample_no,sample_id,zone,lith1,lith1_pct,lith2,lith2_pct,colour,hardness,weathering,serpentinisation,silica_pct,garnierite_pct,min1,min1_pct,min2,min2_pct,core_length,recovery_pct,loss_from,loss_to,sample_wt_kg,comment,status_data,tgl_verifikasi"],
+  ["density", "sample_no", "sample_no → geology", "Density (caliper & Archimedes) semua conto", "holeid,depth_from,depth_to,sample_no,zone,len_cm,diam_cm,wet_wt_g,dry_wt_g,vol_caliper_ml,vol_arch_ml,wet_density,dry_density,wet_density_arch,dry_density_arch,moisture_pct,arch_diff_pct"],
+  ["assay", "lab_sample_id", "sample_no → geology", "Assay conto primer (hasil lab)", "holeid,depth_from,depth_to,sample_no,lab_sample_id,ni,co,fe,mgo,sio2,al2o3,cr2o3,cao,mno,loi,lab_job_no,method,date_reported"],
   ["qaqc", "lab_sample_id", "", "Hasil QAQC lab (CRM, blank, duplikat)", "dispatch_id,seq_in_batch,lab_sample_id,qc_type,source_sample_no,crm_id,ni_cert_pct,ni_sd_pct,ni,co,fe,crm_z,lab_job_no,date_reported"],
-  ["ddr", "ddr_id", "", "DDR bertanda tangan (SIGNED)", "ddr_id,report_date,shift,rig,holeid,project,location,client,driller_name,helpers,crew_count,crew_nama,hm_start,hm_end,weather,hole_type,rod_m,target_m,total_depth_m,rig_type,notes"],
-  ["ddr_jam", "", "ddr_id → ddr", "Distribusi jam DDR SIGNED", "ddr_id,tanggal,rig,shift,holeid,kategori,kelompok,mulai,selesai,menit,keterangan"],
-  ["ddr_barang", "", "", "Pemakaian barang/consumable DDR SIGNED", "report_date,rig,shift,holeid,kategori,item,unit,qty,note"],
+  ["ddr", "ddr_id", "", "Rekap DDR semua (DRAF & bertanda tangan): meter coring/open hole, jam, BBM, oli, TTD — kolom ddr_status", "ddr_id,report_date,shift,rig,holeid,project,location,client,driller_name,helpers,crew_count,crew_nama,hm_start,hm_end,weather,hole_type,rod_m,target_m,total_depth_m,rig_type,notes,ddr_status,coring_ddr_m,open_hole_m,meter_ddr,core_ddr_m,recovery_pct,jam_ddr_menit,jam_ddr,standby_menit,bbm_liter,oli_liter,bbm_per_meter_ddr,ttd"],
+  ["ddr_jam", "", "ddr_id → ddr", "Distribusi jam semua DDR (kolom ddr_status)", "ddr_id,tanggal,rig,shift,holeid,kategori,kelompok,mulai,selesai,menit,keterangan,ddr_status"],
+  ["ddr_barang", "", "", "Pemakaian barang/consumable semua DDR (kolom ddr_status)", "report_date,rig,shift,holeid,kategori,item,unit,qty,note,ddr_status"],
   ["progres_harian", "", "", "Progres bor harian per rig/lubang dari foto bergeotag", "tanggal,rig,holeid,jam_masuk,jam_mulai_bor,jam_selesai_bor,jam_keluar,jumlah_run,meter_bor,core_terambil_m,recovery_pct,kedalaman_akhir,ganti_mata_bor,standby_menit,jam_kerja_bor,p2h_layak,p2h_item_tidak_ok,kejadian_bermasalah"],
   ["absensi", "", "", "Absensi personil per shift (Masuk/Keluar shift) — data penggajian", "tanggal,shift,rig,project,nama,nama_tertulis,id_karyawan,perusahaan,jabatan,jam_masuk,jam_keluar,durasi_jam,status,status_nama,alasan_masuk"],
   ["lookup", "list_name, code", "", "Daftar kode (zona, litologi, mineral, dll.)", "list_name,code,name,extra,sort"],
@@ -5011,8 +5025,8 @@ async function unduhFix(info) {
       skema.push({ tabel: t, kunci_utama: pk, relasi: fk, jumlah_baris: rows.length, keterangan: ket });
     }
     X.utils.book_append_sheet(wb, X.utils.json_to_sheet(skema), "_skema");
-    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([["TGEP — Database FIX (hanya data final)"], [`Diunduh ${new Date().toLocaleString("id-ID")} oleh ${me?.full_name ?? ""}`],
-      ["Final = sampel VERIFIED/SYNCED; DDR SIGNED; assay & QAQC yang sudah dilaporkan lab. Data draf/belum diperiksa tidak ikut."],
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([["TGEP — Database gabungan (semua data tersimpan)"], [`Diunduh ${new Date().toLocaleString("id-ID")} oleh ${me?.full_name ?? ""}`],
+      ["Semua conto logging & semua DDR ikut. Bedakan dengan kolom status_data (geology) dan ddr_status (ddr, ddr_jam, ddr_barang): DRAFT = belum ditandatangani; SIGNED = bertanda tangan."],
       ["Impor ke Access: unduh 'Macro impor Access' (TGEP_Impor_Access.bas) dari aplikasi, di Access tekan Alt+F11 > File > Import File > pilih .bas, lalu jalankan ImporTGEP (F5)."],
       ["Tanpa macro: Access > External Data > New Data Source > From File > Excel > pilih sheet satu per satu (baris pertama = nama kolom)."]]), "_info");
     X.writeFile(wb, `TGEP_Database_FIX_${todayWIB()}.xlsx`, { cellDates: true });
@@ -5614,7 +5628,7 @@ async function dbView(v) {
     try {
       const X = await import("./vendor/xlsx.js"); const wb = X.utils.book_new();
       const got = {};
-      for (const k of dsAllowed() ?? ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "jam", "bbm", "lubang", "kinerja", "logging", "kepatuhan", "profil", "marking", "corefile", "scanfile", "arsipfoto"]) {
+      for (const k of dsAllowed() ?? ["collar", "survey", "geology", "density", "assay", "qaqc", "foto", "progres", "aktivitas", "p2h", "ddr", "rekapddr", "ddrlubang", "jam", "bbm", "lubang", "kinerja", "logging", "kepatuhan", "profil", "marking", "corefile", "scanfile", "arsipfoto"]) {
         const rows = (await tambahLink(k, await fetchAll(DATASETS[k], { ...f, bad: false }))).map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (Array.isArray(o[c])) o[c] = o[c].join("; "); return o; }); got[k] = rows;
         X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), DATASETS[k].t.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
       }
