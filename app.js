@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.58";
+const APP_VERSION = "2026-11-27.59";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6739,12 +6739,18 @@ async function baView(v) {
   // titik selesai dalam periode → baris tabel BASTP
   const titikPeriode = (f, t) => bhs.filter((b) => { const r = ringkas(b); return selesai(b) && r.stop >= f && r.stop <= t; }).map((b) => { const r = ringkas(b); return { bhid: b, rig: r.rig, mulai: r.mulai, stop: r.stop, kedalaman: r.kedalaman, status: r.status, coring: r.coring, open: r.open, recovery: r.recovery, conto: r.conto, ket: r.redrill }; });
   const nomor = (jenis, b) => { const d = new Date(); return `${jenis === "BASTP" ? "BASTP" : "BA-STOP"}/TGEP/${b ? b.replace(/\s+/g, "") + "/" : ""}${BULAN_ROMAWI[d.getMonth()]}/${d.getFullYear()}`; };
-  const daftar = async () => { const { data } = await sb.from("berita_acara").select("id,jenis,nomor,bhid,dari,sampai,status,created_at").order("created_at", { ascending: false }).limit(100);
+  const daftar = async () => { const { data } = await sb.from("berita_acara").select("id,jenis,nomor,bhid,dari,sampai,status,created_at,created_by").order("created_at", { ascending: false }).limit(100);
     $("#baL").innerHTML = (data ?? []).map((r) => `<li style="flex-wrap:wrap"><span class="pill ${r.status === "FINAL" ? "APPROVED" : "ANTRE"}">${esc(r.status)}</span><span style="flex:1;min-width:170px"><b>${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"}</b> · ${esc(r.bhid ?? `${r.dari} s/d ${r.sampai}`)}<br><span class="muted">${esc(r.nomor ?? "")}</span></span>
-      <button class="sec" data-v="${r.id}" style="flex:0">👁 Lihat</button><button class="sec" data-e="${r.id}" style="flex:0">✏️ Edit</button><button class="sec" data-p="${r.id}" style="flex:0">🖨 Cetak</button></li>`).join("") || `<li class="muted">Belum ada.</li>`;
+      <button class="sec" data-v="${r.id}" style="flex:0">👁 Lihat</button><button class="sec" data-e="${r.id}" style="flex:0">✏️ Edit</button><button class="sec" data-p="${r.id}" style="flex:0">🖨 Cetak</button>${me?.role === "admin" || (r.status !== "FINAL" && r.created_by === session?.user?.id) ? `<button class="danger" data-hb="${r.id}" data-nm="${esc(`${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"} ${r.bhid ?? `${r.dari} s/d ${r.sampai}`}`)}" style="flex:0" title="Hapus berita acara yang salah">🗑 Hapus</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada.</li>`;
     $("#baL").querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => cetakBA(b.dataset.v, { lihat: true })));
     $("#baL").querySelectorAll("[data-e]").forEach((b) => (b.onclick = () => edit(b.dataset.e)));
-    $("#baL").querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => cetakBA(b.dataset.p))); };
+    $("#baL").querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => cetakBA(b.dataset.p)));
+    // v.59: 🗑 Hapus BA yang salah — admin (semua) atau pembuat selama masih DRAFT (aturan server "hapus BA")
+    $("#baL").querySelectorAll("[data-hb]").forEach((b) => (b.onclick = () => hapusBA(b.dataset.hb, b.dataset.nm))); };
+  const hapusBA = async (id, nm) => { if (!confirm(`Hapus ${nm}?\nBerita acara ini akan dihapus permanen. Bila hanya isinya yang salah, lebih baik pakai ✏️ Edit.`)) return;
+    const { data, error } = await sb.from("berita_acara").delete().eq("id", id).select("id"); if (error) return alert(error.message);
+    if (!data?.length) return alert("Tidak bisa dihapus: BA yang sudah FINAL hanya bisa dihapus admin, dan BA DRAFT hanya oleh pembuatnya atau admin.");
+    if ($("#baEd")?.querySelector("#eaN")) $("#baEd").innerHTML = ""; toast("🗑 Berita acara dihapus"); daftar(); };
   const prof = (await sb.from("signature_profile").select("full_name,title").eq("user_id", session.user.id).maybeSingle()).data;
   const ttdAwal = (jenis) => jenis === "BASTP"
     ? { direktur: KOP.direktur, direktur_jabatan: KOP.jabatanDir, penerima: "", penerima_jabatan: "Perwakilan Pemberi Kerja", penerima_pt: KOP.pemberi, tempat: "Luwuk", tanggal: todayWIB() }
@@ -6810,7 +6816,7 @@ async function baView(v) {
     E.querySelector("#eaV").onclick = () => cetakBA(id, { lihat: true, r: { ...r, nomor: E.querySelector("#eaN").value.trim(), isi: kumpul() } });
     E.querySelector("#eaP").onclick = async () => { if (kunci || (await simpan())) cetakBA(id); };
     E.querySelector("#eaF")?.addEventListener("click", async () => { if (confirm("Tandai FINAL? Setelah final hanya admin yang bisa mengubah.") && (await simpan({ status: "FINAL" }))) edit(id); });
-    E.querySelector("#eaH")?.addEventListener("click", async () => { if (!confirm("Hapus berita acara ini?")) return; const { error } = await sb.from("berita_acara").delete().eq("id", id); if (error) return alert(error.message); E.innerHTML = ""; daftar(); });
+    E.querySelector("#eaH")?.addEventListener("click", () => hapusBA(id, `${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"} ${r.nomor ?? ""}`));
     E.querySelector("#eaX").onclick = () => (E.innerHTML = ""); };
   daftar();
 }
