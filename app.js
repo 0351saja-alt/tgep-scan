@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.65";
+const APP_VERSION = "2026-11-27.66";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6778,18 +6778,22 @@ async function baView(v) {
     const pd = pindah(b), cl = CL.find((y) => y.holeid === b) ?? {};
     return { bhid: b, rig: [...new Set(xs.map((x) => x.rig))].join("/") || g.rig || "", mulai: (h.start_date ?? g.mulai ?? xs[0]?.tanggal ?? "").slice(0, 10), stop: (h.stop_date ?? e?.captured_at ?? pd?.stop ?? xs.at(-1)?.tanggal ?? "").slice(0, 10),
       kedalaman: dalam, status: e?.status_akhir ?? (h.stop_date ? "STB" : ""), alasan: e?.reason ?? "", east: cl.east ?? h.east ?? "", north: cl.north ?? h.north ?? "", rl: cl.rl ?? h.rl ?? "", sistem: "UTM WGS84 Zona 51S", akurasi: cl.coord_akurasi_m ?? "", sumber_koord: cl.coord_source ?? h.coord_source ?? "",
-      coring: +mC.toFixed(2), open: +mO.toFixed(2), recovery: cc.length ? +((100 * cc.reduce((s, x) => s + +x.core_m, 0)) / cc.reduce((s, x) => s + +x.meter, 0)).toFixed(1) : (h.recovery_pct ?? ""),
+      coring: +mC.toFixed(2), open: +mO.toFixed(2), recovery: (h.jumlah_conto > 0 && h.recovery_pct != null) ? +h.recovery_pct : cc.length ? +((100 * cc.reduce((s, x) => s + +x.core_m, 0)) / cc.reduce((s, x) => s + +x.meter, 0)).toFixed(1) : (h.recovery_pct ?? ""), sumber_recovery: h.jumlah_conto > 0 ? "logging" : "DDR",
       conto: h.jumlah_conto ?? "", limonit: h.tebal_limonit ?? "", saprolit: h.tebal_saprolit ?? "", redrill: [asalRedrill(b) ? `Redrill dari ${asalRedrill(b)}` : "", !e && !h.stop_date && pd ? `selesai (rig pindah ke ${pd.ke} sesudah ${pd.stop})` : ""].filter(Boolean).join("; ") }; };
   // titik selesai dalam periode → baris tabel BASTP
   const barisT = (b) => { const r = ringkas(b); return { bhid: b, rig: r.rig, mulai: r.mulai, stop: r.stop, kedalaman: r.kedalaman, status: r.status, coring: r.coring, open: r.open, recovery: r.recovery, conto: r.conto, ket: r.redrill }; };
+  const KUNCI_BA = ["east", "north", "rl", "sistem", "akurasi", "rig", "mulai", "stop", "status", "kedalaman", "coring", "open", "recovery", "conto", "limonit", "saprolit", "alasan", "redrill"];
+  const segarIsiBA = (I, rk) => { let n = 0; const man = new Set(I.manual ?? []);
+    for (const k of KUNCI_BA) { const v = rk[k] ?? ""; if (man.has(k) || v === "" || String(I[k] ?? "") === String(v)) continue; I[k] = v; n++; } return n; };
+  const segarBA = (r) => { if (r.jenis !== "BA_STOP" || r.status === "FINAL") return r; const I = { ...(r.isi ?? {}) }; segarIsiBA(I, ringkas(I.bhid || r.bhid)); return { ...r, isi: I }; };
   const titikPeriode = (f, t) => bhs.filter((b) => !RDR[b]).filter((b) => { const r = ringkas(b); return selesai(b) && r.stop >= f && r.stop <= t; }).map(barisT);
   const nomor = (jenis, b) => { const d = new Date(); return `${jenis === "BASTP" ? "BASTP" : "BA-STOP"}/TGEP/${b ? b.replace(/\s+/g, "") + "/" : ""}${BULAN_ROMAWI[d.getMonth()]}/${d.getFullYear()}`; };
   const daftar = async () => { const { data } = await sb.from("berita_acara").select("id,jenis,nomor,bhid,dari,sampai,status,created_at,created_by").order("created_at", { ascending: false }).limit(100);
     $("#baL").innerHTML = (data ?? []).map((r) => `<li style="flex-wrap:wrap"><span class="pill ${r.status === "FINAL" ? "APPROVED" : "ANTRE"}">${esc(r.status)}</span><span style="flex:1;min-width:170px"><b>${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"}</b> · ${esc(r.bhid ?? `${r.dari} s/d ${r.sampai}`)}<br><span class="muted">${esc(r.nomor ?? "")}</span></span>
       <button class="sec" data-v="${r.id}" style="flex:0">👁 Lihat</button><button class="sec" data-e="${r.id}" style="flex:0">✏️ Edit</button><button class="sec" data-p="${r.id}" style="flex:0">🖨 Cetak</button>${me?.role === "admin" || (r.status !== "FINAL" && r.created_by === session?.user?.id) ? `<button class="danger" data-hb="${r.id}" data-nm="${esc(`${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"} ${r.bhid ?? `${r.dari} s/d ${r.sampai}`}`)}" style="flex:0" title="Hapus berita acara yang salah">🗑 Hapus</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada.</li>`;
-    $("#baL").querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => cetakBA(b.dataset.v, { lihat: true })));
+    $("#baL").querySelectorAll("[data-v]").forEach((b) => (b.onclick = async () => { const { data: r } = await sb.from("berita_acara").select("*").eq("id", b.dataset.v).single(); cetakBA(b.dataset.v, { lihat: true, r: r ? segarBA(r) : undefined }); }));
     $("#baL").querySelectorAll("[data-e]").forEach((b) => (b.onclick = () => edit(b.dataset.e)));
-    $("#baL").querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => cetakBA(b.dataset.p)));
+    $("#baL").querySelectorAll("[data-p]").forEach((b) => (b.onclick = async () => { const { data: r } = await sb.from("berita_acara").select("*").eq("id", b.dataset.p).single(); cetakBA(b.dataset.p, { r: r ? segarBA(r) : undefined }); }));
     // v.59: 🗑 Hapus BA yang salah — admin (semua) atau pembuat selama masih DRAFT (aturan server "hapus BA")
     $("#baL").querySelectorAll("[data-hb]").forEach((b) => (b.onclick = () => hapusBA(b.dataset.hb, b.dataset.nm))); };
   const hapusBA = async (id, nm) => { if (!confirm(`Hapus ${nm}?\nBerita acara ini akan dihapus permanen. Bila hanya isinya yang salah, lebih baik pakai ✏️ Edit.`)) return;
@@ -6824,9 +6828,9 @@ async function baView(v) {
         I.titik = (I.titik ?? []).flatMap((x) => (RDR[x.bhid] ? (ada2.has(RDR[x.bhid]) ? [] : [barisT(RDR[x.bhid])]) : [x])); nBaru += ganti.length; } }
     const awalBH = (I.titik ?? []).map((x) => x.bhid);
     // v.63: BA stop bor belum FINAL → isian yang masih kosong (koordinat, akurasi, dll.) diisi otomatis dari database terbaru
-    if (r.jenis === "BA_STOP" && r.status !== "FINAL" && (I.bhid || r.bhid)) { const rk = ringkas(I.bhid || r.bhid); let n = 0;
-      for (const k of ["east", "north", "rl", "sistem", "akurasi", "rig", "mulai", "stop", "status", "kedalaman", "coring", "open", "recovery", "conto", "limonit", "saprolit"]) if ((I[k] ?? "") === "" && (rk[k] ?? "") !== "") { I[k] = rk[k]; n++; }
-      if (n) nBaru = -n; }
+    // v.66: … dan isian data lubang selalu mengikuti database (kedalaman EOH, recovery logging, koordinat, status, tebal zona), kecuali yang diubah manual
+    let rkBA = null;
+    if (r.jenis === "BA_STOP" && r.status !== "FINAL" && (I.bhid || r.bhid)) { rkBA = ringkas(I.bhid || r.bhid); const n = segarIsiBA(I, rkBA); if (n) nBaru = -n; }
     const kolomT = [["bhid", "Titik"], ["rig", "Rig"], ["mulai", "Mulai"], ["stop", "Stop"], ["kedalaman", "Kedalaman (m)"], ["status", "EOH/STB"], ["coring", "Coring (m)"], ["open", "Open hole (m)"], ["recovery", "Recovery (%)"], ["conto", "Sample"], ["ket", "Ket."]];
     $("#baEd").innerHTML = `<div class="card"><h3>✏️ Edit ${r.jenis === "BASTP" ? "BASTP" : "BA stop bor " + esc(r.bhid)}</h3>${kunci ? `<p class="err">Sudah FINAL — hanya admin yang bisa mengubah.</p>` : ""}
       <div class="row" style="flex-wrap:wrap"><div style="flex:2 1 220px"><label>Nomor</label><input id="eaN" value="${esc(r.nomor ?? "")}"></div>${inp("tempat", "Tempat")}${inp("tanggal", "Tanggal")}</div>
@@ -6843,7 +6847,7 @@ async function baView(v) {
         <h3>Tanda tangan</h3><div class="row" style="flex-wrap:wrap">${inp("direktur", "Pihak Pertama — Direktur TGEP")}${inp("direktur_jabatan", "Jabatan")}</div><div class="row" style="flex-wrap:wrap">${inp("penerima", "Pihak Kedua — nama")}${inp("penerima_jabatan", "Jabatan")}${inp("penerima_pt", "Perusahaan")}</div><div class="row">${inp("penerima_alamat", "Alamat Pihak Kedua (opsional)", "1 1 100%")}</div>`
       : `<h3>Tanda tangan</h3><div class="row" style="flex-wrap:wrap">${inp("geologist", "Wellsite Geologist TGEP")}${inp("geologist_jabatan", "Jabatan")}</div><div class="row" style="flex-wrap:wrap">${inp("penerima", "Perwakilan lapangan — nama")}${inp("penerima_jabatan", "Jabatan")}${inp("penerima_pt", "Perusahaan")}</div>`}
       <div class="row" style="margin-top:8px;flex-wrap:wrap"><button id="eaS">Simpan</button><button class="sec" id="eaV">👁 Lihat surat</button><button class="sec" id="eaP">🖨 Simpan & cetak</button>${r.status !== "FINAL" ? `<button class="sec" id="eaF">Tandai FINAL</button>` : ""}${r.status !== "FINAL" || me?.role === "admin" ? `<button class="danger" id="eaH" style="flex:0">Hapus</button>` : ""}<button class="sec" id="eaX" style="flex:0">Tutup</button></div><div id="eaE" class="err"></div></div>`;
-    const E = $("#baEd"); E.scrollIntoView({ behavior: "smooth" }); if (nBaru > 0) toast(`➕ ${nBaru} titik selesai ditambahkan otomatis dari database — tekan Simpan`); else if (nBaru < 0) toast(`${-nBaru} isian kosong (koordinat dll.) diisi otomatis dari database — tekan Simpan`); if (kunci) E.querySelectorAll("input,textarea").forEach((x) => (x.disabled = true));
+    const E = $("#baEd"); E.scrollIntoView({ behavior: "smooth" }); if (nBaru > 0) toast(`➕ ${nBaru} titik selesai ditambahkan otomatis dari database — tekan Simpan`); else if (nBaru < 0) toast(`${-nBaru} isian diperbarui otomatis dari database (kedalaman, recovery, koordinat, dll.) — tekan Simpan`); if (kunci) E.querySelectorAll("input,textarea").forEach((x) => (x.disabled = true));
     // v.58: kolom Titik / Hole ID = pilihan titik terdaftar; begitu dipilih, kolom lain terisi otomatis dari database (DDR, lubang, logging)
     if (!document.getElementById("dlBH")) isiDlBH();
     const isiDari = (b, set) => { const r = ringkas(b); const m = { bhid: b, rig: r.rig, mulai: r.mulai, stop: r.stop, kedalaman: r.kedalaman, status: r.status, coring: r.coring, open: r.open, recovery: r.recovery, conto: r.conto, ket: r.redrill, redrill: r.redrill,
@@ -6860,6 +6864,7 @@ async function baView(v) {
       if (r.jenis === "BASTP") o.serah = [...E.querySelectorAll("[data-sr]")].map((x) => { const [a, b, c] = x.querySelectorAll("select,input"); return { ya: a.value, t: b.value.trim(), ket: c.value.trim() }; }).filter((x) => x.t);
       if (r.jenis === "BASTP") o.cek = [...E.querySelectorAll("[data-cekt]")].map((x) => ({ t: x.value.trim(), ya: E.querySelector(`[data-cek="${x.dataset.cekt}"]`).value }));
       if (r.jenis === "BASTP") o.titik = [...E.querySelectorAll("#eaT tr")].slice(1).map((tr) => Object.fromEntries([...tr.querySelectorAll("[data-t]")].map((x) => [x.dataset.t, x.value.trim()]))).filter((t) => t.bhid);
+      if (r.jenis === "BA_STOP" && rkBA) o.manual = KUNCI_BA.filter((k) => String(o[k] ?? "") !== "" && String(o[k] ?? "") !== String(rkBA[k] ?? ""));
       if (r.jenis === "BASTP") { const sisa = new Set(o.titik.map((t) => t.bhid)); o.titik_dihapus = [...new Set([...(I.titik_dihapus ?? []), ...awalBH.filter((b) => !sisa.has(b))])].filter((b) => !sisa.has(b)); } return o; };
     const simpan = async (extra = {}) => { const { error } = await sb.from("berita_acara").update({ nomor: E.querySelector("#eaN").value.trim(), isi: kumpul(), updated_at: new Date().toISOString(), ...extra }).eq("id", id);
       if (error) { E.querySelector("#eaE").textContent = error.message; return false; } toast("Tersimpan"); daftar(); return true; };
