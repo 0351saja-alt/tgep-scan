@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.45";
+const APP_VERSION = "2026-11-27.46";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2063,7 +2063,7 @@ async function simpanView(v) {
       else { const { data } = await Q(sb.from("ddr").select("id,report_date,shift,rig,bhid,status,coring,open_hole,consumables,crew_count,driller_name,created_at"), "report_date", null); rows = (data ?? []).filter((d) => !f.bh || d.bhid === f.bh || [...(d.coring ?? []), ...(d.open_hole ?? [])].some((x) => x.bhid === f.bh)); }
       for (const d of rows) { const bs = [...(d.coring ?? []), ...(d.open_hole ?? [])].filter((x) => +x.to > +x.from), m = bs.reduce((s, x) => s + (+x.to - +x.from), 0);
         const lb = [...new Set(bs.map((x) => x.bhid || d.bhid).filter(Boolean))], bbm = staf ? (d.consumables ?? []).filter((c) => c.kategori === "BBM").reduce((s, c) => s + (+c.qty || 0), 0) : null;
-        B.push({ bh: d.bhid, t: `${d.report_date}T${d.shift === "MALAM" ? "18" : "06"}:00:00+07:00`, jenis: "ddr", judul: `${d.report_date} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${d.rig} · ${lb.join(", ") || d.bhid || "-"}`,
+        B.push({ bh: d.bhid, rig: d.rig, tgl: d.report_date, t: `${d.report_date}T${d.shift === "MALAM" ? "18" : "06"}:00:00+07:00`, jenis: "ddr", judul: `${d.report_date} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${d.rig} · ${lb.join(", ") || d.bhid || "-"}`,
           ket: `Meter DDR ${fmtD(m)} m (coring ${fmtD((d.coring ?? []).filter((x) => +x.to > +x.from).reduce((s, x) => s + (+x.to - +x.from), 0))} m)${staf ? ` · crew ${d.crew_count ?? "-"} · BBM ${bbm} L` : ""}`,
           status: d.status === "SIGNED" ? "LENGKAP TTD" : "DRAF", kelas: d.status === "SIGNED" ? "APPROVED" : "NEEDS_REVIEW", aksi: [{ l: "Lihat DDR", fn: () => (staf ? printDDR(d.id) : ddrClientModal(d)) }, ...(!klien && isStaff() ? [d.status !== "SIGNED" ? { l: "✏️ Edit DDR (Hole ID, meter, jam, BBM, crew…)", fn: () => editDDR(d.id) } : { l: "✏️ Edit DDR (buka TTD dulu)", fn: () => menuEditData({ tanggal: d.report_date, rig: d.rig, konteks: "Data tersimpan" }) }] : []), ...del("ddr", d.id, `DDR ${d.rig} ${d.report_date} ${d.shift === "MALAM" ? "Night" : "Day"}${d.status === "SIGNED" ? " (sudah ditandatangani)" : ""}`)] }); }
     })());
@@ -2110,7 +2110,16 @@ async function simpanView(v) {
   const subFolder = (k, ix) => SUB.map(([id, nama]) => { const iy = ix.filter((i) => subDari(B[i].jenis) === id); if (!iy.length && (id === "lain" || k.startsWith("~"))) return ""; const kk = `${k}|${id}`, nM = iy.filter((i) => masalah(B[i])).length;
     return `<details data-fd="${esc(kk)}" ${bukaF.includes(kk) ? "open" : ""} style="border-left:3px solid #CFE3D8;margin:4px 0 4px 4px;padding-left:6px"><summary style="cursor:pointer;padding:5px 4px;font-weight:600;font-size:14px">${nama} <span class="muted" style="font-weight:400">· ${iy.length}</span>${nM ? ` <span style="color:#B3261E;font-weight:400">· ${nM} perlu dicek</span>` : ""}</summary><ul class="list" style="margin:0">${iy.map(baris).join("") || `<li class="muted" style="font-size:12.5px">Belum ada data pada periode ini.</li>`}</ul></details>`; }).join("");
   const keys = Object.keys(G).sort((x, y) => (x.startsWith("~") - y.startsWith("~")) || urutBH(x, y));
-  $("#sdL").innerHTML = keys.map((k) => { const ix = G[k], nM = ix.filter((i) => masalah(B[i])).length, nama = k.replace(/^~/, "");
+  // v.46: DDR juga dikelompokkan per RIG → per tanggal (tiap tanggal berisi DDR Day/Night rig itu)
+  const ddrIx = B.map((b, i) => i).filter((i) => B[i].jenis === "ddr" && B[i].rig);
+  const rigs = [...new Set(ddrIx.map((i) => B[i].rig))].sort(urutBH);
+  const tglPj = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch { return d; } };
+  const ddrRig = rigs.length ? `<li style="display:block;padding:0;border:none"><details data-fd="~DDR" ${bukaF.includes("~DDR") ? "open" : ""} style="border:1px solid #CFD8EA;border-radius:10px;margin:6px 0;background:#F6F8FC"><summary style="cursor:pointer;padding:8px 10px;font-weight:600">📋 DDR per rig <span class="muted" style="font-weight:400">· ${ddrIx.length} DDR · ${rigs.length} rig</span>${ddrIx.some((i) => B[i].status !== "LENGKAP TTD") ? ` <span style="color:#B3261E;font-weight:400">· ${ddrIx.filter((i) => B[i].status !== "LENGKAP TTD").length} belum lengkap TTD</span>` : ""}</summary><div style="margin:0 8px 8px">` +
+    rigs.map((r) => { const ir = ddrIx.filter((i) => B[i].rig === r), tg = [...new Set(ir.map((i) => B[i].tgl))].sort().reverse(), kr = `~DDR|${r}`;
+      return `<details data-fd="${esc(kr)}" ${bukaF.includes(kr) ? "open" : ""} style="border-left:3px solid #CFD8EA;margin:4px 0 4px 4px;padding-left:6px"><summary style="cursor:pointer;padding:6px 4px;font-weight:600">🚜 ${esc(r)} <span class="muted" style="font-weight:400">· ${ir.length} DDR · ${tg.length} hari</span></summary>` +
+        tg.map((t) => { const it = ir.filter((i) => B[i].tgl === t), kt = `${kr}|${t}`, nB = it.filter((i) => B[i].status !== "LENGKAP TTD").length;
+          return `<details data-fd="${esc(kt)}" ${bukaF.includes(kt) ? "open" : ""} style="border-left:3px solid #E3E8F2;margin:3px 0 3px 6px;padding-left:6px"><summary style="cursor:pointer;padding:4px;font-size:14px">📅 ${esc(tglPj(t))} <span class="muted">· ${it.length} DDR</span>${nB ? ` <span style="color:#B3261E">· ${nB} DRAF</span>` : ""}</summary><ul class="list" style="margin:0">${it.map(baris).join("")}</ul></details>`; }).join("") + `</details>`; }).join("") + `</div></details></li>` : "";
+  $("#sdL").innerHTML = ddrRig + keys.map((k) => { const ix = G[k], nM = ix.filter((i) => masalah(B[i])).length, nama = k.replace(/^~/, "");
     return `<li style="display:block;padding:0;border:none"><details data-fd="${esc(k)}" ${bukaF.includes(k) || f.bh || keys.length === 1 ? "open" : ""} style="border:1px solid #DDE5E0;border-radius:10px;margin:6px 0;background:#FAFCFB">
       <summary style="cursor:pointer;padding:8px 10px;font-weight:600">📁 ${esc(nama)} <span class="muted" style="font-weight:400">· ${ix.length} data</span>${nM ? ` <span style="color:#B3261E">· ${nM} perlu dicek</span>` : ""}${k.startsWith("~") ? "" : `<div data-kr="${esc(k)}" style="color:#B3261E;font-size:11.5px;font-weight:400;margin-top:2px"></div>`}</summary>
       <div style="margin:0 8px 8px">${subFolder(k, ix)}</div></details></li>`; }).join("") || `<li class="muted">Tidak ada data untuk filter ini.</li>`;
