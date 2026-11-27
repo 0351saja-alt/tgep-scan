@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.44";
+const APP_VERSION = "2026-11-27.45";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -4836,7 +4836,7 @@ const ago = (t) => { if (!t) return "-"; const m = Math.round((Date.now() - Date
 async function rekapView(v) {
   const tgl = sessionStorage.getItem("rekapTgl") || todayWIB();
   v.innerHTML = `<div class="card"><h2>Rekap & pelacakan operator</h2>
-    <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div>${proyekSelect()}<button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button><div style="flex:1 1 200px"><label>📂 Folder operator / wellsite</label><select id="rop"><option value="">— pilih nama —</option></select></div></div>
+    <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div>${proyekSelect()}<button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button><div style="flex:1 1 200px"><label>📂 Folder wellsite / driller</label><select id="rop"><option value="">— pilih nama —</option></select></div></div>
     <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. Form Logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.${me?.role === "admin" ? " <b>Mengeluarkan operator</b> (mis. akun uji coba atau bukan petugas): tekan <b>✕ Keluarkan</b> di bawah namanya. <b>Menghapus kiriman:</b> tekan <b>Folder</b> pada operator, lalu <b>Hapus</b> per kiriman (atau centang beberapa lalu <b>Hapus terpilih</b>). Data masuk arsip dan bisa dipulihkan." : ""}</p></div>
     <div id="rs" class="card">Memuat…</div><div id="rdm" class="card"><p class="muted">Memuat data masuk…</p></div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rab" class="card"></div><div id="rmp" class="card"></div><div id="rp" class="card"></div><div id="rpj" class="card"></div>` : ""}`;
   $("#rgo").onclick = () => { sessionStorage.setItem("rekapTgl", $("#rt").value); sessionStorage.setItem("filterProyek", $("#fproj").value); rekapView(v); };
@@ -4850,16 +4850,16 @@ async function rekapView(v) {
   const cnt = (s) => day.filter((r) => r.status === s).length, hp = day.filter((r) => r.antrean > 0);
   $("#rs").innerHTML = `<h3>${tgl}</h3><div class="row" style="flex-wrap:wrap;gap:6px">${["LENGKAP", "SEBAGIAN", "BELUM", "TANPA PENUGASAN"].map((s) => `<span class="pill" style="background:${ST_COL[s]};color:#12251E">${s}: ${cnt(s)}</span>`).join("")}<span class="pill" style="background:${hp.length ? "#F6C9C3" : "#C8EBD4"};color:#12251E">Data tertahan di HP: ${hp.length} orang</span></div>
     <div class="tw" style="margin-top:8px"><table><tr><th>Operator</th><th>Peran / rig</th><th>Status</th><th>Belum dikirim</th><th>P2H</th><th>Progres</th><th>DDR/TTD</th><th>Form Logging</th><th>Core</th><th>Arsip</th><th>Logging terlambat (rig)</th><th>Kirim terakhir</th><th>HP</th><th></th></tr>
-    ${day.map((r) => `<tr><td><b>${esc(r.nama ?? "-")}</b><br><span class="muted">${esc(r.perusahaan ?? "")}</span>${me?.role === "admin" && r.user_id !== session?.user?.id ? `<br><button class="sec" data-kl="${r.user_id}" data-nm="${esc(r.nama ?? "")}" style="padding:2px 8px;margin-top:4px;color:#B3261E;border-color:#B3261E;width:auto" title="Hapus / nonaktifkan akun ini">✕ Keluarkan</button>` : ""}</td><td>${esc(r.peran)}<br>${esc(r.rig ?? "—")}</td>
+    ${day.map((r) => `<tr><td><b>${esc(r.nama ?? "-")}</b><br><span class="muted">${esc(r.perusahaan ?? "")}</span>${me?.role === "admin" && r.user_id !== session?.user?.id ? `<br><button class="sec" data-kl="${r.user_id}" data-nm="${esc(r.nama ?? "")}" style="padding:2px 8px;margin-top:4px;color:#B3261E;border-color:#B3261E;width:auto" title="Hapus / nonaktifkan akun ini">✕ Keluarkan</button>` : ""}</td><td>${esc(r.peran === "geologist" ? "wellsite" : r.peran)}<br>${esc(r.rig ?? "—")}</td>
       <td style="background:${ST_COL[r.status] ?? "#fff"}">${esc(r.status)}</td><td>${esc((r.kurang ?? []).join(", "))}</td>
       <td>${r.p2h}</td><td>${r.progres}</td><td>${r.ddr_ttd}</td><td>${r.fbor}</td><td>${r.foto_core}</td><td>${r.arsip}</td><td style="${r.peran === "geologist" && r.lubang_logging_terlambat ? "background:#F6C9C3" : ""}">${r.peran === "geologist" ? (r.lubang_logging_terlambat ? r.lubang_logging_terlambat + " lubang" : "0") : "-"}</td><td>${r.terakhir ? fmtT(r.terakhir).slice(-8) : "-"}</td>
       <td style="${r.antrean > 0 ? "background:#F6C9C3" : ""}">${r.antrean ? `<b>${r.antrean} antre</b> sejak ${ago(r.antrean_tertua)}<br>` : ""}online ${ago(r.last_seen)}${r.app_version && r.app_version !== APP_VERSION ? `<br><span class="err">versi lama ${esc(r.app_version)}</span>` : ""}</td>
       <td style="white-space:nowrap"><button class="sec" data-fd="${r.user_id}" data-nm="${esc(r.nama ?? "")}" style="flex:0">Folder</button></td></tr>`).join("") || `<tr><td colspan="14" class="muted">Belum ada operator (driller/geologist) yang disetujui.</td></tr>`}</table></div>`;
   logLubang($("#rl"));
   dataMasuk($("#rdm"), from14, tgl, all ?? [], fp ? PJ : null, fp);
-  { const { data: AU } = await sb.from("app_user").select("user_id,full_name,role").in("role", ["driller", "geologist", "verifier", "admin", "admin_lapangan"]).order("full_name");
-    const peran = { driller: "driller", geologist: "wellsite", verifier: "verifier", admin: "admin", admin_lapangan: "admin lapangan" };
-    $("#rop").innerHTML = `<option value="">— pilih nama —</option>` + (AU ?? []).filter((u) => u.full_name).map((u) => `<option value="${u.user_id}">${esc(u.full_name)} · ${peran[u.role] ?? u.role}</option>`).join("");
+  { // v.45: pilihan folder hanya petugas lapangan yang ada di rekap (wellsite / driller), tanpa akun kantor
+    const OP = [...new Map((all ?? []).map((r) => [r.user_id, r])).values()].sort((x, y) => (x.nama ?? "").localeCompare(y.nama ?? ""));
+    $("#rop").innerHTML = `<option value="">— pilih wellsite / driller —</option>` + OP.map((r) => `<option value="${r.user_id}">${esc(r.nama ?? "-")} · ${r.peran === "driller" ? "driller" : "wellsite"}</option>`).join("");
     $("#rop").onchange = () => { const o = $("#rop").selectedOptions[0]; if (o?.value) folderView(v, o.value, o.textContent.split(" · ")[0]); }; }
   const dates = [...Array(14)].map((_, i) => new Date(Date.parse(tgl) - (13 - i) * 864e5).toISOString().slice(0, 10)), ops = [...new Map((all ?? []).map((r) => [r.user_id, r])).values()];
   const sym = { LENGKAP: "✓", SEBAGIAN: "½", BELUM: "✗", "RIG TIDAK BEROPERASI": "–", "TANPA PENUGASAN": "?", "ADA KIRIMAN (TANPA PENUGASAN)": "+", "TIDAK WAJIB": "–" };

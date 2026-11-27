@@ -1,0 +1,2 @@
+-- v51 (27/11/2026, apply_migration): v_kepatuhan_harian — akun admin/verifier hanya ikut bila pernah tanda tangan DDR sebagai WELLSITE
+-- (petugas lapangan), bukan semua akun berpenugasan. Hasil: Imam gazali & Muhammad Iqbal Alfaraby (Syarah tidak lagi).
