@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.51";
+const APP_VERSION = "2026-11-27.52";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1411,7 +1411,7 @@ async function progView(v) {
     if (tok !== progView.tok || !$("#today")) return; // layar sudah berganti
     isiSusulan(tok, mulaiSusulan);
     $("#today").innerHTML = `${akhirKurang.map(([b, k]) => `<p class="err" style="font-weight:600">⚠ ${esc(b)} sudah selesai bor tetapi belum ada ${k.map((x) => (x === "FOTO_PATOK" ? "foto patok" : "foto drill pad")).join(" & ")} — tekan 📸 Drill pad & patok.</p>`).join("")}${(() => { // v.50: folder per tanggal sejak awal kegiatan rig ini (terbaru di atas)
-      const sumT = (s) => `<p><b>${esc(s.bhid)}</b>: ${s.meter_bor} m · ${s.jumlah_run} run · recovery ${s.recovery_pct ?? "-"}% · standby ${s.standby_menit} mnt · P2H ${s.jam_p2h ? fmtT(s.jam_p2h).slice(-8) : "BELUM"}${s.chk_harian ? `<br><span class="err">${esc(s.chk_harian)}</span>` : ""}</p>`, evT = (x) => `<li><span style="flex:1">${fmtT(x.captured_at).slice(-8)} · <b>${esc(EV[x.event_type])}</b>${x.event_type === "RUN" ? ` ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m (core ${fmtD(x.core_length)})` : ""}${x.reason ? " · " + esc(x.reason) : ""}${x.note ? ` <span class="pill ANTRE">${/SUSULAN/.test(x.note) ? "susulan" : "galeri"}</span>` : ""}${x.flags ? `<br><span class="err">${esc(x.flags)}</span>` : ""}${x.konfirmasi_at ? `<br><span style="color:#1b7a3a;font-size:12.5px">✅ Dikonfirmasi${x.konfirmasi_ket ? ": " + esc(x.konfirmasi_ket) : ""}</span>` : ""}</span>${x.flags && isStaff() ? `<button data-kfm="${x.id}" style="flex:0;white-space:nowrap">✅ Konfirmasi</button>` : ""}${x.photo_path ? `<button class="sec" data-ph="${esc(x.photo_path)}" style="flex:0">Foto</button>` : ""}</li>`;
+      const sumT = (s) => `<p><b>${esc(s.bhid)}</b>: ${s.meter_bor} m · ${s.jumlah_run} run · recovery ${s.recovery_pct ?? "-"}% · standby ${s.standby_menit} mnt · P2H ${s.jam_p2h ? fmtT(s.jam_p2h).slice(-8) : "BELUM"}${s.chk_harian ? `<br><span class="err">${esc(s.chk_harian)}</span>` : ""}</p>`, evT = (x) => `<li><span style="flex:1">${fmtT(x.captured_at).slice(-8)} · <b>${esc(EV[x.event_type])}</b>${x.event_type === "RUN" ? ` ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m (core ${fmtD(x.core_length)})` : ""}${x.reason ? " · " + esc(x.reason) : ""}${x.note ? ` <span class="pill ANTRE">${/SUSULAN/.test(x.note) ? "susulan" : "galeri"}</span>` : ""}${x.flags ? `<br><span class="err">${esc(x.flags)}</span>` : ""}${x.konfirmasi_at ? `<br><span style="color:#1b7a3a;font-size:12.5px">✅ Dikonfirmasi${x.konfirmasi_ket ? ": " + esc(x.konfirmasi_ket) : ""}</span>` : ""}</span>${x.flags && isStaff() ? `<button data-kfm="${x.id}" style="flex:0;white-space:nowrap">✅ Konfirmasi</button>` : ""}${x.photo_path ? `<button class="sec" data-ph="${esc(x.photo_path)}" style="flex:0">Foto</button>` : ""}${isStaff() ? `<button class="sec" data-edf="${x.id}" style="flex:0;white-space:nowrap" title="Ubah keterangan, kedalaman, koordinat, Hole ID atau foto">✏️ Edit</button>` : ""}</li>`;
       const bk = JSON.parse(sessionStorage.getItem("progFolder") || "[]"), ada = (evs ?? []).map((x) => x.tanggal).filter(Boolean).sort(), tg = [];
       if (!ada.length) return `<p class="muted">Belum ada aktivitas terkirim untuk ${esc(localStorage.getItem("rig") || "rig ini")}.</p>`;
       for (let d = new Date(ada[0] + "T12:00:00"); d.toISOString().slice(0, 10) <= day && tg.length < 1000; d.setDate(d.getDate() + 1)) tg.push(d.toISOString().slice(0, 10)); tg.reverse();
@@ -1421,6 +1421,10 @@ async function progView(v) {
     // v.36: ✅ Konfirmasi tanda masalah (JAUH DARI TITIK BOR, FOTO LAMA/GALERI, …) — foto dianggap benar, tidak lagi dihitung bermasalah
     $("#today").querySelectorAll("details[data-pf]").forEach((d) => d.addEventListener("toggle", () => { const S = new Set(JSON.parse(sessionStorage.getItem("progFolder") || "[]")); d.open ? S.add(d.dataset.pf) : S.delete(d.dataset.pf); sessionStorage.setItem("progFolder", JSON.stringify([...S])); }));
     $("#today").querySelectorAll("[data-kfm]").forEach((b) => (b.onclick = () => konfirmasiAktivitas(b.dataset.kfm, (evs ?? []).find((x) => x.id === b.dataset.kfm), () => progView(v))));
+    // v.52: ✏️ Edit di Progres terkirim — keterangan/kedalaman/koordinat foto (editBaris) atau ganti foto/Hole ID/jenis (editFotoAktivitas); alasan wajib, tercatat
+    $("#today").querySelectorAll("[data-edf]").forEach((b) => (b.onclick = (ev) => { ev.stopPropagation(); const r = b.getBoundingClientRect(), id = b.dataset.edf;
+      menuAksi([{ l: "✏️ Edit keterangan, kedalaman & koordinat", fn: () => editBaris("drill_event", id, () => progView(v)) },
+        { l: "📷 Ganti foto / Hole ID / jenis foto", fn: () => editFotoAktivitas(id, () => progView(v)) }], r.left - 180, r.bottom + 4); }));
     $("#today").querySelectorAll("[data-ph]").forEach((b) => (b.onclick = async () => { const { data } = await sb.storage.from("progress-photos").createSignedUrl(b.dataset.ph, 600);
       if (data?.signedUrl) return ($("#phv").innerHTML = `<img src="${data.signedUrl}" alt="Foto aktivitas bor" style="width:100%;border-radius:8px">`);
       const dv = await linkDrive("progress-photos", b.dataset.ph); $("#phv").innerHTML = dv ? `<p>Foto sudah dipindah ke Google Drive. <a href="${esc(dv)}" target="_blank" rel="noopener">Buka di Drive</a></p>` : `<p class="err">Foto tidak ditemukan.</p>`; }));
@@ -2163,7 +2167,7 @@ const HAPUS_OK = new Set(["ddr", "scan_job", "form_photo", "p2h_check", "drill_e
 const keWIB = (iso) => { if (!iso) return ""; const d = new Date(new Date(iso).getTime() + 7 * 3600e3); return d.toISOString().slice(0, 16); };
 async function editBaris(tabel, id, selesai) {
   const S = EDIT_SPEC[tabel]; if (!S) return alert("Data ini belum bisa diedit.");
-  if (!["verifier", "admin"].includes(me?.role)) return alert("Hanya verifier/admin yang boleh mengedit data ini.");
+  if (!["verifier", "admin"].includes(me?.role) && !(tabel === "drill_event" && me?.role === "geologist")) return alert("Hanya wellsite (aktivitas bor), verifier atau admin yang boleh mengedit data ini.");
   if (!online()) return alert("Perlu sinyal untuk mengubah data yang sudah terkirim.");
   const [{ data: r, error }, { data: lg }] = await Promise.all([sb.from(tabel).select("*").eq(S.pk, id).maybeSingle(),
     sb.from("data_edit_log").select("kolom,nilai_lama,nilai_baru,alasan,nama,diubah_at").eq("tabel", tabel).eq("ref", String(id)).order("diubah_at", { ascending: false }).limit(50)]);
