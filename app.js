@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.64";
+const APP_VERSION = "2026-11-27.65";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6762,6 +6762,7 @@ async function baView(v) {
   const [{ data: H }, { data: LG }, { data: EV }] = await Promise.all([sb.from("v_dash_hole").select("*"), sb.from("v_logging_lubang").select("bhid,rig,kedalaman_bor,mulai,terakhir_bor"), sb.from("drill_event").select("bhid,status_akhir,depth_to,reason,captured_at").eq("event_type", "SELESAI_BOR").not("status_akhir", "is", null)]);
   const ddrB = (await sb.from("v_ddr_baris").select("tanggal,rig,bhid,jenis,dari_m,sampai_m,meter,core_m").limit(5000)).data ?? [];
   const CL = (await sb.from("v_dh_collar").select("holeid,east,north,rl,coord_source,coord_akurasi_m")).data ?? []; // v.63: koordinat terbaru + akurasi untuk BA
+  const RDR = await petaRedrill().catch(() => ({})); // v.65: lubang lama → lubang redrill; BASTP & dokumentasi memakai lubang redrill
   const bhs = [...new Set([...(H ?? []).map((h) => h.bhid), ...(LG ?? []).map((g) => g.bhid), ...ddrB.map((x) => x.bhid)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
   const akhir = (b) => (EV ?? []).filter((e) => e.bhid === b).sort((x, y) => String(y.captured_at).localeCompare(String(x.captured_at)))[0];
   // v.57: titik juga dianggap selesai bila rig yang sama sudah pindah ke titik lain di DDR berikutnya (mis. 08R selesai 22/11, RIG 2 lanjut 08 pada 23/11)
@@ -6780,7 +6781,8 @@ async function baView(v) {
       coring: +mC.toFixed(2), open: +mO.toFixed(2), recovery: cc.length ? +((100 * cc.reduce((s, x) => s + +x.core_m, 0)) / cc.reduce((s, x) => s + +x.meter, 0)).toFixed(1) : (h.recovery_pct ?? ""),
       conto: h.jumlah_conto ?? "", limonit: h.tebal_limonit ?? "", saprolit: h.tebal_saprolit ?? "", redrill: [asalRedrill(b) ? `Redrill dari ${asalRedrill(b)}` : "", !e && !h.stop_date && pd ? `selesai (rig pindah ke ${pd.ke} sesudah ${pd.stop})` : ""].filter(Boolean).join("; ") }; };
   // titik selesai dalam periode → baris tabel BASTP
-  const titikPeriode = (f, t) => bhs.filter((b) => { const r = ringkas(b); return selesai(b) && r.stop >= f && r.stop <= t; }).map((b) => { const r = ringkas(b); return { bhid: b, rig: r.rig, mulai: r.mulai, stop: r.stop, kedalaman: r.kedalaman, status: r.status, coring: r.coring, open: r.open, recovery: r.recovery, conto: r.conto, ket: r.redrill }; });
+  const barisT = (b) => { const r = ringkas(b); return { bhid: b, rig: r.rig, mulai: r.mulai, stop: r.stop, kedalaman: r.kedalaman, status: r.status, coring: r.coring, open: r.open, recovery: r.recovery, conto: r.conto, ket: r.redrill }; };
+  const titikPeriode = (f, t) => bhs.filter((b) => !RDR[b]).filter((b) => { const r = ringkas(b); return selesai(b) && r.stop >= f && r.stop <= t; }).map(barisT);
   const nomor = (jenis, b) => { const d = new Date(); return `${jenis === "BASTP" ? "BASTP" : "BA-STOP"}/TGEP/${b ? b.replace(/\s+/g, "") + "/" : ""}${BULAN_ROMAWI[d.getMonth()]}/${d.getFullYear()}`; };
   const daftar = async () => { const { data } = await sb.from("berita_acara").select("id,jenis,nomor,bhid,dari,sampai,status,created_at,created_by").order("created_at", { ascending: false }).limit(100);
     $("#baL").innerHTML = (data ?? []).map((r) => `<li style="flex-wrap:wrap"><span class="pill ${r.status === "FINAL" ? "APPROVED" : "ANTRE"}">${esc(r.status)}</span><span style="flex:1;min-width:170px"><b>${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"}</b> · ${esc(r.bhid ?? `${r.dari} s/d ${r.sampai}`)}<br><span class="muted">${esc(r.nomor ?? "")}</span></span>
@@ -6816,7 +6818,10 @@ async function baView(v) {
     let nBaru = 0;
     if (r.jenis === "BASTP" && r.status !== "FINAL" && r.dari && r.sampai) { const ada = new Set([...(I.titik ?? []).map((x) => x.bhid), ...(I.titik_dihapus ?? [])]);
       const baru = titikPeriode(r.dari, r.sampai).filter((x) => !ada.has(x.bhid)); nBaru = baru.length;
-      if (nBaru) I.titik = [...(I.titik ?? []), ...baru].sort((x, y) => String(x.stop).localeCompare(String(y.stop)) || urutBH(x.bhid, y.bhid)); }
+      if (nBaru) I.titik = [...(I.titik ?? []), ...baru].sort((x, y) => String(x.stop).localeCompare(String(y.stop)) || urutBH(x.bhid, y.bhid));
+      // lubang lama yang sudah di-redrill → diganti baris lubang redrill-nya (dokumentasi & data memakai redrill)
+      const ganti = (I.titik ?? []).filter((x) => RDR[x.bhid]); if (ganti.length) { const ada2 = new Set((I.titik ?? []).map((x) => x.bhid));
+        I.titik = (I.titik ?? []).flatMap((x) => (RDR[x.bhid] ? (ada2.has(RDR[x.bhid]) ? [] : [barisT(RDR[x.bhid])]) : [x])); nBaru += ganti.length; } }
     const awalBH = (I.titik ?? []).map((x) => x.bhid);
     // v.63: BA stop bor belum FINAL → isian yang masih kosong (koordinat, akurasi, dll.) diisi otomatis dari database terbaru
     if (r.jenis === "BA_STOP" && r.status !== "FINAL" && (I.bhid || r.bhid)) { const rk = ringkas(I.bhid || r.bhid); let n = 0;
@@ -6911,7 +6916,8 @@ async function cetakBA(id, opsi = {}) {
     return `<div class="lamp"><h2>LAMPIRAN${no ? " " + no : ""} — DOKUMENTASI TITIK ${esc(bh)}</h2><div class="no">Nomor BA: ${esc(r.nomor ?? "")}</div>
       ${bag("A. Foto patok", patok, fe, "Foto patok belum ada di aplikasi.")}${bag("B. Foto selesai bor / drill pad", selesai, fe, "Foto selesai bor / drill pad belum ada di aplikasi.")}
       ${bag("C. Foto pengerjaan", kerja, fe, "Foto pengerjaan belum ada di aplikasi.")}${bag(`D. Foto core box (${C.length})`, C, fc, "Foto core box belum ada di aplikasi.")}</div>`; };
-  const daftarLamp = bast ? [...new Set((I.titik ?? []).map((t) => t.bhid).filter(Boolean))] : [r.bhid].filter(Boolean);
+  const RDRc = bast ? await petaRedrill().catch(() => ({})) : {}; // BASTP: dokumentasi lubang lama yang sudah di-redrill = dokumentasi lubang redrill-nya
+  const daftarLamp = bast ? [...new Set((I.titik ?? []).map((t) => RDRc[t.bhid] ?? t.bhid).filter(Boolean))] : [r.bhid].filter(Boolean);
   const foto = (await Promise.all(daftarLamp.map((b, i) => lampiranTitik(b, bast && daftarLamp.length > 1 ? i + 1 : "")))).join("");
   const tglPanjang = (t) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch { return t; } };
   const baris = (l, v) => `<tr><td style="width:38%">${l}</td><td>${esc(v ?? "") || "-"}</td></tr>`;
