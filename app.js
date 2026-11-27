@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.42";
+const APP_VERSION = "2026-11-27.43";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -4838,7 +4838,7 @@ async function rekapView(v) {
   v.innerHTML = `<div class="card"><h2>Rekap & pelacakan operator</h2>
     <div class="row" style="align-items:flex-end;flex-wrap:wrap"><div><label>Tanggal</label><input id="rt" type="date" value="${tgl}"></div>${proyekSelect()}<button id="rgo" style="flex:0">Tampilkan</button><button class="sec" id="rcsv" style="flex:0;white-space:nowrap">Unduh CSV</button></div>
     <p class="muted">Kewajiban harian — driller: P2H, foto progres, DDR/TTD DDR; geologist: foto core, pada hari rig yang ditugaskan beroperasi. Form Logging dinilai per lubang dengan tenggat (boleh dikirim besoknya). Penugasan rig diatur admin di bagian bawah.${me?.role === "admin" ? " <b>Mengeluarkan operator</b> (mis. akun uji coba atau bukan petugas): tekan <b>✕ Keluarkan</b> di bawah namanya. <b>Menghapus kiriman:</b> tekan <b>Folder</b> pada operator, lalu <b>Hapus</b> per kiriman (atau centang beberapa lalu <b>Hapus terpilih</b>). Data masuk arsip dan bisa dipulihkan." : ""}</p></div>
-    <div id="rs" class="card">Memuat…</div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rab" class="card"></div><div id="rmp" class="card"></div><div id="rp" class="card"></div><div id="rpj" class="card"></div>` : ""}`;
+    <div id="rs" class="card">Memuat…</div><div id="rdm" class="card"><p class="muted">Memuat data masuk…</p></div><div id="rl" class="card"></div><div id="rm" class="card"></div>${me?.role === "admin" ? `<div id="rab" class="card"></div><div id="rmp" class="card"></div><div id="rp" class="card"></div><div id="rpj" class="card"></div>` : ""}`;
   $("#rgo").onclick = () => { sessionStorage.setItem("rekapTgl", $("#rt").value); sessionStorage.setItem("filterProyek", $("#fproj").value); rekapView(v); };
   if (!online()) return ($("#rs").textContent = "Rekap perlu sinyal internet.");
   const from14 = new Date(Date.parse(tgl) - 13 * 864e5).toISOString().slice(0, 10);
@@ -4856,6 +4856,7 @@ async function rekapView(v) {
       <td style="${r.antrean > 0 ? "background:#F6C9C3" : ""}">${r.antrean ? `<b>${r.antrean} antre</b> sejak ${ago(r.antrean_tertua)}<br>` : ""}online ${ago(r.last_seen)}${r.app_version && r.app_version !== APP_VERSION ? `<br><span class="err">versi lama ${esc(r.app_version)}</span>` : ""}</td>
       <td style="white-space:nowrap"><button class="sec" data-fd="${r.user_id}" data-nm="${esc(r.nama ?? "")}" style="flex:0">Folder</button></td></tr>`).join("") || `<tr><td colspan="14" class="muted">Belum ada operator (driller/geologist) yang disetujui.</td></tr>`}</table></div>`;
   logLubang($("#rl"));
+  dataMasuk($("#rdm"), from14, tgl, all ?? [], fp ? PJ : null, fp);
   const dates = [...Array(14)].map((_, i) => new Date(Date.parse(tgl) - (13 - i) * 864e5).toISOString().slice(0, 10)), ops = [...new Map((all ?? []).map((r) => [r.user_id, r])).values()];
   const sym = { LENGKAP: "✓", SEBAGIAN: "½", BELUM: "✗", "RIG TIDAK BEROPERASI": "–", "TANPA PENUGASAN": "?", "ADA KIRIMAN (TANPA PENUGASAN)": "+", "TIDAK WAJIB": "–" };
   $("#rm").innerHTML = `<h3>14 hari terakhir</h3><p class="muted">✓ lengkap · ½ sebagian · ✗ belum · – rig tidak beroperasi / tidak wajib · ? tanpa penugasan</p><div class="tw"><table><tr><th>Operator</th>${dates.map((d) => `<th>${d.slice(8)}/${d.slice(5, 7)}</th>`).join("")}<th>% lengkap</th></tr>
@@ -5029,6 +5030,28 @@ function hapusKiriman(items) {
       tutup(true);
     };
   });
+}
+// v.43: Rekap operator → 📂 Data masuk: folder per tanggal, sub folder per aktivitas (semua operator)
+const SUB_MASUK = [["p2h", "🛠 P2H", (j) => j === "P2H"], ["progres", "📷 Foto aktivitas / progres bor", (j) => j === "PROGRES"], ["ddr", "📋 DDR & TTD", (j) => /^(DDR|TTD DDR|ARSIP DDR)$/.test(j)],
+  ["logging", "📝 Form Logging", (j) => j === "FORM LOGGING"], ["core", "🪨 Foto core", (j) => j === "FOTO CORE"], ["arsip", "🗂 Arsip formulir lain", (j) => j.startsWith("ARSIP")], ["lain", "📦 Lainnya", () => true]];
+async function dataMasuk(box, dari, sampai, ops, PJ, fp) {
+  const { data, error } = await sb.from("v_upload_item").select("*").gte("waktu", `${dari}T00:00:00+07:00`).lte("waktu", `${sampai}T23:59:59+07:00`).order("waktu", { ascending: false }).limit(3000);
+  if (error) return (box.innerHTML = `<p class="err">${esc(error.message)}</p>`);
+  const { data: AU } = await sb.from("app_user").select("user_id,full_name").limit(1000);
+  const NM = { ...Object.fromEntries((AU ?? []).map((u) => [u.user_id, u.full_name])), ...Object.fromEntries(ops.filter((o) => o.nama).map((o) => [o.user_id, o.nama])) }, D = (data ?? []).filter((r) => !PJ || PJ[r.user_id] === fp);
+  const tglWIB = (w) => new Date(w).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" }), byDay = {};
+  for (const r of D) (byDay[tglWIB(r.waktu)] ??= []).push(r);
+  const buka = JSON.parse(sessionStorage.getItem("dmFolder") || "[]"), sub = (j) => SUB_MASUK.find(([, , f]) => f(String(j ?? "")))[0];
+  const item = (r) => `<li style="flex-wrap:wrap"><span style="flex:1;min-width:200px">${esc(fmtT(r.waktu).slice(-8))} · <b>${esc(NM[r.user_id] ?? "-")}</b> · ${esc(r.jenis)} ${esc(r.rig ?? "")} ${esc(r.bhid ?? "")}${r.status ? ` <span class="pill ${esc(r.status)}">${esc(r.status)}</span>` : ""}${r.ket ? `<br><span class="muted">${esc(r.ket)}</span>` : ""}</span>${r.photo_path && r.bucket ? `<button class="sec" data-b="${esc(r.bucket)}" data-p="${esc(r.photo_path)}" style="flex:0">Lihat</button>` : /^(DDR|TTD DDR)$/.test(r.jenis) && r.ref_id ? `<button class="sec" data-ddr="${esc(r.ref_id)}" style="flex:0">DDR</button>` : ""}</li>`;
+  const hari = Object.keys(byDay).sort().reverse();
+  box.innerHTML = `<h3>📂 Data masuk (${esc(dari)} s/d ${esc(sampai)}) <span class="muted" style="font-weight:400">· ${D.length} kiriman</span></h3><p class="muted" style="margin-top:0">Folder per tanggal, di dalamnya per aktivitas. Tombol Folder di tabel atas = data per operator.</p>` +
+    (hari.map((d, i) => { const rs = byDay[d], nOp = new Set(rs.map((r) => r.user_id)).size, k = `d|${d}`;
+      return `<details data-dm="${k}" ${buka.includes(k) || (i === 0 && !buka.length) ? "open" : ""} style="border:1px solid #DDE5E0;border-radius:10px;margin:6px 0;background:#FAFCFB"><summary style="cursor:pointer;padding:8px 10px;font-weight:600">📁 ${esc(new Date(d + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }))} <span class="muted" style="font-weight:400">· ${rs.length} data · ${nOp} operator</span></summary><div style="margin:0 8px 8px">` +
+        SUB_MASUK.map(([id, nama]) => { const xs = rs.filter((r) => sub(r.jenis) === id); if (!xs.length) return ""; const kk = `${k}|${id}`;
+          return `<details data-dm="${kk}" ${buka.includes(kk) ? "open" : ""} style="border-left:3px solid #CFE3D8;margin:4px 0 4px 4px;padding-left:6px"><summary style="cursor:pointer;padding:5px 4px;font-weight:600;font-size:14px">${nama} <span class="muted" style="font-weight:400">· ${xs.length}</span></summary><ul class="list" style="margin:0">${xs.map(item).join("")}</ul></details>`; }).join("") + `</div></details>`; }).join("") || `<p class="muted">Belum ada data masuk pada periode ini.</p>`);
+  box.querySelectorAll("details[data-dm]").forEach((d) => d.addEventListener("toggle", () => { const S = new Set(JSON.parse(sessionStorage.getItem("dmFolder") || "[]")); d.open ? S.add(d.dataset.dm) : S.delete(d.dataset.dm); sessionStorage.setItem("dmFolder", JSON.stringify([...S])); }));
+  box.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => bukaFile(b.dataset.b, b.dataset.p)));
+  box.querySelectorAll("[data-ddr]").forEach((b) => (b.onclick = () => printDDR(b.dataset.ddr)));
 }
 async function folderView(v, uid, nama) {
   const admin = me?.role === "admin";
