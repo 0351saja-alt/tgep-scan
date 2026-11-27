@@ -9,17 +9,17 @@ const app = $("#app");
 let session = null, me = null, tab = localStorage.getItem("tab") || "prog";
 
 // ---------- kolom formulir (harus sama dengan fungsi process-scan) ----------
-const LOG = [["seq","No"],["depth_from","From"],["depth_to","To"],["core_length","Core L"],["lose_from","Lose F"],["lose_to","Lose T"],["geozone_id","Zona"],
+const LOG = [["seq","No sample"],["depth_from","From"],["depth_to","To"],["core_length","Core L"],["lose_from","Lose F"],["lose_to","Lose T"],["geozone_id","Zona"],
  ["geolithcode_id_1","Lito1"],["geolithcode_prc_1","%1"],["geolithcode_gs_1","GS1"],["geolithcode_id_2","Lito2"],["geolithcode_prc_2","%2"],["geolithcode_gs_2","GS2"],
  ["colour","Warna"],["rock_prc","Rock%"],["geosrp_id","Serp"],["geohrdns_id","Hard"],["geowthrg_id","Wth"],["geofrctr_id","Frc"],["total_silica","Sil%"],["total_garnierit","Gar%"],
  ["geomnrlcode_id_1","Min1"],["min_1_prc","%"],["geomnrlcode_id_2","Min2"],["min_2_prc","%"],["geomnrlcode_id_3","Min3"],["min_3_prc","%"],["comment","Komentar"]];
-const DEN = [["seq","No"],["len1","P1"],["len2","P2"],["len3","P3"],["dia1","D1"],["dia2","D2"],["dia3","D3"],["d_weight_gr","Berat basah g"],["d_wtr_volume_ml","Vol1 ml"],
+const DEN = [["seq","No sample"],["len1","P1"],["len2","P2"],["len3","P3"],["dia1","D1"],["dia2","D2"],["dia3","D3"],["d_weight_gr","Berat basah g"],["d_wtr_volume_ml","Vol1 ml"],
  ["d_volume_measure_ml","Arch Vol2 ml"],["d_dry_weight_gr","Berat kering g"],["d_wet_weight","Berat conto kg"],["recheck_weight_kg","Timbang ulang kg"],["comment","Komentar"]];
 const HDR = [["bhid","Hole ID"],["area","Area"],["prospect","Prospek"],["grid","Grid"],["start_date","Mulai"],["stop_date","Selesai"],["xgps","X GPS"],["ygps","Y GPS"],["zgps","Z GPS"],
  ["rigmc_id","Rig"],["teamleader","Ketua tim"],["operator","Operator"],["logger","Logger"],["field_geos","Field geos"],["depth_tp","Akhir TP"],["depth_l","Akhir L"],["depth_s","Akhir S"],
  ["total_depth","EOH"],["total_sample","Total sample"],["water_table","Air tanah"],["core_size","Core size"],["core_barrel_type","Barrel"],["samptype_id","Tipe conto"],
  ["drilprpose_id","Tujuan"],["spacing_id","Spasi"],["morphology_id","Morfologi"],["weather_id","Cuaca"],["vgtation_id","Vegetasi"],["brtype_id","Batuan dasar"],["comment","Komentar"]];
-const SHEET = [["seq","No"],["depth_from","From"],["depth_to","To"],["core_length","Core L"],["lose_from","Loss dari"],["lose_to","Loss sampai"],["geozone_id","Zona"],
+const SHEET = [["seq","No sample"],["depth_from","From"],["depth_to","To"],["core_length","Core L"],["lose_from","Loss dari"],["lose_to","Loss sampai"],["geozone_id","Zona"],
  ["geolithcode_id_1","Lito1"],["geolithcode_prc_1","%1"],["geolithcode_id_2","Lito2"],["geolithcode_prc_2","%2 (hitung)"],["colour","Warna"],["geohrdns_id","Hard"],["geowthrg_id","Wth"],["geosrp_id","Serp"],
  ["total_silica","Sil%"],["total_garnierit","Gar%"],["geomnrlcode_id_1","Min1"],["min_1_prc","%"],["geomnrlcode_id_2","Min2"],["min_2_prc","%"],
  ["d_length_cm","P cm"],["d_diameter_cm","D cm"],["d_weight_gr","Basah g"],["d_volume_measure_ml","Arch Vol2 ml"],["d_wet_weight","Conto kg"],["comment","Komentar"]];
@@ -34,7 +34,7 @@ const NUMERIC = new Set(["seq","depth_from","depth_to","core_length","lose_from"
 // Kolom berkode → daftar kamus SOP (lookup_code). Harus sama dengan fungsi process-scan.
 const KOLOM_KAMUS = { geozone_id: "ZONE", geolithcode_id_1: "LITHO", geolithcode_id_2: "LITHO", geolithcode_gs_1: "GS", geolithcode_gs_2: "GS", colour: "COLOUR", geosrp_id: "SERP",
   geohrdns_id: "HARDNESS", geowthrg_id: "WEATHERING", geofrctr_id: "FRACTURE", geomnrlcode_id_1: "MINERAL", geomnrlcode_id_2: "MINERAL", geomnrlcode_id_3: "MINERAL", core_size: "CORE_SIZE" };
-const KET_KOLOM = { seq: "NO conto", depth_from: "FROM (m)", depth_to: "TO (m)", core_length: "Core length (m)", lose_from: "Loss dari (m)", lose_to: "Loss sampai (m)", geozone_id: "Zona",
+const KET_KOLOM = { seq: "NO SAMPLE (mulai 1 + kode zona, mis. 1L)", depth_from: "FROM (m)", depth_to: "TO (m)", core_length: "Core length (m)", lose_from: "Loss dari (m)", lose_to: "Loss sampai (m)", geozone_id: "Zona",
   geolithcode_id_1: "Litologi 1", geolithcode_prc_1: "% Litologi 1", geolithcode_id_2: "Litologi 2", colour: "Warna", geohrdns_id: "Kekerasan", geowthrg_id: "Pelapukan", geosrp_id: "Serpentinisasi",
   total_silica: "Silika %", total_garnierit: "Garnierit %", geomnrlcode_id_1: "Mineral 1", min_1_prc: "% Mineral 1", geomnrlcode_id_2: "Mineral 2", min_2_prc: "% Mineral 2",
   d_length_cm: "Panjang density (cm)", d_diameter_cm: "Diameter density (cm)", d_weight_gr: "Berat basah (g)", d_volume_measure_ml: "Archimedes Vol 2 (ml)", d_wet_weight: "Berat conto (kg)",
@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.20";
+const APP_VERSION = "2026-11-27.21";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -460,7 +460,7 @@ async function pdfToJpegs(file, onProg) {
 // Baris kunci tersembunyi (nama kolom database) membuat pembacaan tetap benar walau label diubah.
 const LOG_XL_HDR = [["bhid", "BHID"], ["date", "TANGGAL (dd/mm/yyyy)"], ["page", "HAL. ke- / dari"], ["logger", "LOGGER"], ["rigmc_id", "RIG"], ["xgps", "X GPS (6 digit)"], ["ygps", "Y GPS (7 digit)"], ["zgps", "Z GPS"], ["total_depth", "EOH (m)"], ["core_size", "CORE SIZE (NQ/HQ)"]];
 const LOG_XL_ROW = SHEET.filter(([k]) => k !== "geolithcode_prc_2");
-const LOG_XL_LABEL = { seq: "NO", depth_from: "FROM (m)", depth_to: "TO (m)", core_length: "CORE L (m)", lose_from: "LOSS DARI", lose_to: "LOSS SAMPAI", geozone_id: "ZONA", geolithcode_id_1: "LITO 1", geolithcode_prc_1: "% LITO1",
+const LOG_XL_LABEL = { seq: "NO SAMPLE", depth_from: "FROM (m)", depth_to: "TO (m)", core_length: "CORE L (m)", lose_from: "LOSS DARI", lose_to: "LOSS SAMPAI", geozone_id: "ZONA", geolithcode_id_1: "LITO 1", geolithcode_prc_1: "% LITO1",
   geolithcode_id_2: "LITO 2", colour: "WARNA", geohrdns_id: "HARD", geowthrg_id: "WTH", geosrp_id: "SERP", total_silica: "SIL %", total_garnierit: "GAR %", geomnrlcode_id_1: "MIN 1", min_1_prc: "% MIN1",
   geomnrlcode_id_2: "MIN 2", min_2_prc: "% MIN2", d_length_cm: "DENS. P (cm)", d_diameter_cm: "DENS. D (cm)", d_weight_gr: "BERAT BASAH g", d_volume_measure_ml: "ARCHIMEDES VOL 2 (ml)", d_wet_weight: "BERAT CONTO kg", comment: "KOMENTAR" };
 async function templatLogging(bhid, hal) {
@@ -503,8 +503,10 @@ async function bacaExcelLogging(file) {
   const kH = aoa[iH].map(txt), kR = aoa[iR].map(txt), header = {}, rows = [];
   const nilaiH = aoa.slice(iH + 1).find((r) => r.some((c) => txt(c) && !LOG_XL_HDR.some(([, t]) => t === txt(c)))) ?? [];
   kH.forEach((k, i) => { if (k) header[k] = txt(nilaiH[i]); });
-  aoa.slice(iR + 1).forEach((r) => { if (Object.values(LOG_XL_LABEL).includes(txt(r[0]))) return; if (!r.some((c) => txt(c))) return;
-    const o = { row_number: String(rows.length + 1) }; kR.forEach((k, i) => { if (k) o[k] = txt(r[i]); }); rows.push(o); });
+  aoa.slice(iR + 1).forEach((r) => { if (Object.values(LOG_XL_LABEL).includes(txt(r[0])) || txt(r[0]) === "NO") return; // "NO" = label templat lama if (!r.some((c) => txt(c))) return;
+    const o = { row_number: String(rows.length + 1) }; kR.forEach((k, i) => { if (k) o[k] = txt(r[i]); });
+    if (o.seq) { const m = o.seq.replace(/\s/g, "").match(/^(\d+)([A-Za-z]{1,3})$/); if (m) { o.seq = m[1]; if (!o.geozone_id) o.geozone_id = m[2].toUpperCase(); } } // NO SAMPLE "6S" → 6 (+ zona S)
+    rows.push(o); });
   return { form_code: "F-BOR", header, rows: rows.slice(0, 15), notes: `Excel manual: ${file.name}` };
 }
 
@@ -719,14 +721,16 @@ async function reviewDetail(v, id, mode) {
   const cls = (k) => { const f = cf[k]; if (!f) return ""; return f.some((x) => x.type === "BEDA") ? "f-BEDA" : "f-ATURAN"; };
   const KF = j.konfirmasi ?? {};
   const tip = (k) => [...(cf[k] ?? []).map((x) => x.msg), ...(KF[k] ? [KF[k].tidak_tahu ? `Pengirim (${KF[k].nama}) juga tidak yakin` : `Dikonfirmasi pengirim (${KF[k].nama}): ${KF[k].nilai}`] : [])].join(" | ");
-  const cell = (val, key, idx, rowNo) => { const fk = `${rowNo ?? "h"}.${key}`; return `<td class="${bedaDraf(key, idx) ? "edited" : cls(fk)}" title="${esc(tip(fk))}"${KF[fk] && !KF[fk].tidak_tahu ? ' style="outline:2px solid #1E9E69;outline-offset:-2px"' : ""}><input data-k="${key}" data-r="${idx ?? ""}" value="${esc(val ?? "")}" inputmode="${NUMERIC.has(key) ? "decimal" : "text"}"></td>`; };
+  // v.21: kolom No sample = nomor urut (mulai 1) + kode zona dari kolom Zona, mis. 1L, 6S. Yang disimpan tetap nomornya (seq); zona dari kolom Zona.
+  const noSampel = (r) => (r?.seq === null || r?.seq === undefined || r?.seq === "" ? "" : `${r.seq}${r.geozone_id ?? ""}`);
+  const cell = (val, key, idx, rowNo) => { if (key === "seq" && idx !== null && idx !== undefined) val = noSampel(data.rows[idx]); const fk = `${rowNo ?? "h"}.${key}`; return `<td class="${bedaDraf(key, idx) ? "edited" : cls(fk)}" title="${esc(tip(fk))}"${KF[fk] && !KF[fk].tidak_tahu ? ' style="outline:2px solid #1E9E69;outline-offset:-2px"' : ""}><input data-k="${key}" data-r="${idx ?? ""}" value="${esc(val ?? "")}" inputmode="${NUMERIC.has(key) ? "decimal" : "text"}"></td>`; };
   v.innerHTML = `<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">${esc(FORMS[j.form_type])} · ${esc(j.bhid_hint)}</h2><button class="sec" id="bk" style="flex:0">← Kembali</button></div>
    <p class="muted">Kuning = dua pembacaan berbeda · Merah = melanggar aturan validasi · Hijau = sudah Anda ubah · Bingkai hijau = sudah dikonfirmasi pengirim (${Object.keys(j.konfirmasi ?? {}).length}). Bandingkan dengan foto sebelum menyetujui.</p>
    ${j.status === "ERROR" ? `<p class="err">Gagal diproses: ${esc(j.error)}</p>` : ""}${j.status === "MANUAL" ? `<p class="err">${esc(j.error)}</p>` : ""}
    ${j.sumber === "EXCEL" ? `<p><b>Form Logging manual dari Excel</b> (tanpa pembacaan AI) · <a href="#" id="dlx">⬇ Unduh Excel asli${j.file_name ? " (" + esc(j.file_name) + ")" : ""}</a> — cocokkan setiap baris dengan foto lembar.</p>` : ""}
    ${(j.ai_kali ?? 0) > 0 ? `<p class="muted">Dibaca otomatis ${j.ai_kali}× untuk foto ini · batas 2× per halaman.</p>` : ""}
    ${adaDraf ? `<p style="background:#E3F4EA;padding:8px 10px;border-radius:8px">💾 <b>Melanjutkan editan tersimpan</b> — disimpan ${esc(fmtT(new Date(j.draft_at)))}${j.draft_note ? ` · catatan: ${esc(j.draft_note)}` : ""}. Isian hijau = berbeda dari hasil baca asli. Editan belum masuk database conto sampai <b>✅ Terima & simpan</b>.</p>` : ""}
-   ${isiManual ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px">✍️ <b>Belum ada hasil baca otomatis</b> — tabel kosong sudah disiapkan. Isi langsung dari foto di samping, lalu <b>✅ Terima & simpan</b>. Kolom <b>No</b> wajib diisi pada setiap baris yang berisi data; baris yang dibiarkan kosong tidak disimpan. Bisa juga tekan <b>Proses ulang</b> bila kunci baca otomatis sudah diperbaiki.</p>` : ""}</div>
+   ${isiManual ? `<p style="background:#FFF4D6;padding:8px 10px;border-radius:8px">✍️ <b>Belum ada hasil baca otomatis</b> — tabel kosong sudah disiapkan. Isi langsung dari foto di samping, lalu <b>✅ Terima & simpan</b>. Kolom <b>No sample</b> (nomor mulai 1 + kode zona, mis. 1L, 6S) wajib ada pada setiap baris yang berisi data — tekan <b>🔢 Isi No sample otomatis</b>; baris yang dibiarkan kosong tidak disimpan. Bisa juga tekan <b>Proses ulang</b> bila kunci baca otomatis sudah diperbaiki.</p>` : ""}</div>
    <div class="rv"><div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Foto</h3><input id="zm" type="range" min="1" max="4" step="0.25" value="1" style="flex:2"></div>
      <div class="photo" id="ph"><img id="im" src="${url?.signedUrl ?? ""}" alt="Foto formulir" style="width:100%"></div></div>
    <div class="card"><h3>Hasil scan (bisa diedit)</h3>
@@ -734,7 +738,7 @@ async function reviewDetail(v, id, mode) {
      ${rowCols.length ? `<div class="tw" style="margin-top:10px"><table><tr><th>Baris</th>${rowCols.map(([, t]) => `<th>${t}</th>`).join("")}</tr>
        ${(data.rows ?? []).map((r, i) => `<tr${r._lama ? ' class="lama" style="opacity:.45;background:#eee" title="Sudah tersimpan dari lembar hari sebelumnya — dilewati"' : ""}><td style="padding:4px 6px">${r._row ?? i + 1}${r._lama ? "<br><small>lama</small>" : ""}</td>${rowCols.map(([k]) => cell(r[k], k, i, r._row)).join("")}</tr>`).join("")}</table></div>
        ${lamaN ? `<p style="background:#E8F1FB;padding:3px 8px;border-radius:6px;margin:4px 0;font-size:11.5px">📄 <b>Lembar lanjutan:</b> ${lamaN} baris pertama sudah tersimpan dari logging hari sebelumnya (abu-abu) dan <b>dilewati</b>. Yang disimpan hanya ${(data.rows ?? []).length - lamaN} baris baru. <label style="display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:0"><input type="checkbox" id="ikutLama" style="width:auto"> sertakan juga baris lama (menimpa data tersimpan)</label></p>` : ""}
-       <button class="sec" id="addRow" style="width:auto;margin-top:6px">+ Tambah baris</button>` : ""}
+       <button class="sec" id="addRow" style="width:auto;margin-top:6px">+ Tambah baris</button>${rowCols.some(([k]) => k === "seq") ? ` <button class="sec" id="autoNo" style="width:auto;margin-top:6px" title="Nomor urut mulai 1 + kode zona (mis. 1L, 2L … 6S)">🔢 Isi No sample otomatis</button>` : ""}` : ""}
    </div></div>
    <div class="card"><h3>Temuan (${flags.length})</h3><ul class="list flags">${flags.map((f) => `<li><span><b>${f.row ? "Baris " + f.row : "Kepala"}</b> · ${esc(f.field)} · ${esc(f.type)} — ${esc(f.msg)}
      ${f.saran !== undefined && f.saran !== null ? `<span class="ab"><button class="sec" data-sar="${esc(f.saran)}" data-f="${esc(f.field)}" data-row="${f.row ?? ""}">Pakai saran: ${esc(f.saran)}</button></span>` : ""}
@@ -763,10 +767,29 @@ async function reviewDetail(v, id, mode) {
   const rowIdx = (r) => (data.rows ?? []).findIndex((x) => String(x._row) === String(r));
   const pasangInput = (inp) => (inp.oninput = () => {
     const k = inp.dataset.k, r = inp.dataset.r, raw = inp.value.trim();
+    if (k === "seq" && r !== "") { // No sample: "6S" → No 6, zona S (zona diisi bila kolom Zona masih kosong)
+      const m = raw.replace(/\s/g, "").match(/^(\d*)([A-Za-z]{0,3})$/), row = data.rows[Number(r)];
+      row.seq = m && m[1] ? Number(m[1]) : raw === "" ? null : NaN;
+      if (m && m[2] && !row.geozone_id) { row.geozone_id = m[2].toUpperCase(); const zi = v.querySelector(`td input[data-k="geozone_id"][data-r="${r}"]`); if (zi) { zi.value = row.geozone_id; zi.parentElement.className = "edited"; } }
+      inp.parentElement.className = "edited"; return;
+    }
     const val = raw === "" ? null : NUMERIC.has(k) ? Number(raw.replace(",", ".")) : raw;
     if (r === "") data.header[k] = val; else data.rows[Number(r)][k] = val;
     inp.parentElement.className = "edited";
+    if (k === "geozone_id" && r !== "") { const si = v.querySelector(`td input[data-k="seq"][data-r="${r}"]`); if (si && document.activeElement !== si) si.value = noSampel(data.rows[Number(r)]); }
   });
+  v.querySelectorAll('td input[data-k="seq"]').forEach((si) => si.addEventListener("blur", () => { const r = si.dataset.r; if (r !== "" && Number.isFinite(data.rows[Number(r)]?.seq)) si.value = noSampel(data.rows[Number(r)]); }));
+  // 🔢 Isi No sample otomatis: nomor urut mulai 1 (lembar lanjutan: melanjutkan nomor terakhir lubang ini) + kode zona
+  if ($("#autoNo")) $("#autoNo").onclick = async () => {
+    const adaIsi = (r) => Object.entries(r).some(([k, x]) => !["_row", "seq", "_lama"].includes(k) && x !== null && x !== undefined && x !== "");
+    let no = 0; const hal = Number(String(data.header?.page ?? j.page_no ?? "1").match(/\d+/)?.[0] ?? 1);
+    const pertama = (data.rows ?? []).find((r) => adaIsi(r));
+    if (hal > 1 && data.header?.bhid && !(pertama && Number.isFinite(pertama.seq))) { const { data: mx } = await sb.from("sample").select("seq").eq("bhid", bakuBH(data.header.bhid)).order("seq", { ascending: false }).limit(1); no = mx?.[0]?.seq ?? 0; }
+    let n = 0;
+    (data.rows ?? []).forEach((r, i) => { if (!adaIsi(r)) return; if (Number.isFinite(r.seq) && r.seq > 0) { no = r.seq; return; } r.seq = ++no; n++;
+      const si = v.querySelector(`td input[data-k="seq"][data-r="${i}"]`); if (si) { si.value = noSampel(r); si.parentElement.className = "edited"; } });
+    toast(n ? `${n} No sample diisi otomatis` : "Semua baris berisi sudah punya No sample");
+  };
   v.querySelectorAll("td input").forEach(pasangInput);
   if ($("#addRow")) $("#addRow").onclick = () => {
     const i = data.rows.length, no = Math.max(0, ...data.rows.map((x) => Number(x._row) || 0)) + 1; data.rows.push({ _row: no });
@@ -788,7 +811,9 @@ async function reviewDetail(v, id, mode) {
   const validasi = () => {
     const adaIsi = (r) => Object.entries(r).some(([k, x]) => k !== "_row" && x !== null && x !== undefined && x !== "");
     const kurangNo = (data.rows ?? []).filter((r) => adaIsi(r) && (r.seq === null || r.seq === undefined));
-    if (kurangNo.length) return ($("#e").textContent = `Baris ${kurangNo.map((r) => r._row).join(", ")}: kolom No belum diisi.`);
+    if (kurangNo.length) return ($("#e").textContent = `Baris ${kurangNo.map((r) => r._row).join(", ")}: kolom No sample belum diisi — tekan 🔢 Isi No sample otomatis atau ketik nomornya (mis. 1L).`);
+    const salahNo = (data.rows ?? []).filter((r) => adaIsi(r) && !(Number.isInteger(r.seq) && r.seq >= 1));
+    if (salahNo.length) return ($("#e").textContent = `Baris ${salahNo.map((r) => r._row).join(", ")}: No sample harus nomor mulai 1 diikuti kode zona (mis. 1L, 6S).`);
     if (!String(data.header?.bhid ?? "").trim()) return ($("#e").textContent = "Isi Hole ID di kepala tabel.");
     for (const r of data.rows ?? []) {
       if (j.form_type === "DENSITY") {

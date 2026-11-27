@@ -27,7 +27,7 @@ const json = (b: unknown, s = 200) =>
 type Kind = "num" | "int" | "code" | "text" | "date";
 interface Field { key: string; label: string; kind: Kind; list?: string }
 const LOG: Field[] = [
-  { key: "seq", label: "NO CONTO", kind: "int" }, { key: "depth_from", label: "FROM (m)", kind: "num" },
+  { key: "seq", label: "NO SAMPLE (nomor urut mulai 1 + kode zona, mis. 1L, 6S)", kind: "int" }, { key: "depth_from", label: "FROM (m)", kind: "num" },
   { key: "depth_to", label: "TO (m)", kind: "num" }, { key: "core_length", label: "CORE LENGTH (m)", kind: "num" },
   { key: "lose_from", label: "LOSE FROM", kind: "num" }, { key: "lose_to", label: "LOSE TO", kind: "num" },
   { key: "geozone_id", label: "ZONA", kind: "code", list: "ZONE" },
@@ -45,7 +45,7 @@ const LOG: Field[] = [
   { key: "comment", label: "KOMENTAR", kind: "text" },
 ];
 const DEN: Field[] = [
-  { key: "seq", label: "NO CONTO", kind: "int" },
+  { key: "seq", label: "NO SAMPLE (nomor urut mulai 1 + kode zona, mis. 1L, 6S)", kind: "int" },
   { key: "len1", label: "PANJANG 1 (cm)", kind: "num" }, { key: "len2", label: "PANJANG 2 (cm)", kind: "num" }, { key: "len3", label: "PANJANG 3 (cm)", kind: "num" },
   { key: "dia1", label: "DIAMETER 1 (cm)", kind: "num" }, { key: "dia2", label: "DIAMETER 2 (cm)", kind: "num" }, { key: "dia3", label: "DIAMETER 3 (cm)", kind: "num" },
   { key: "d_weight_gr", label: "BERAT BASAH conto density (g)", kind: "num" },
@@ -86,7 +86,7 @@ const SHEET_HDR: Field[] = [
   { key: "core_size", label: "CORE SIZE (kotak yang dicentang: HQ/NQ/PQ/HQ3/NQ3/PQ3)", kind: "code", list: "CORE_SIZE" },
 ];
 const SHEET: Field[] = [
-  { key: "seq", label: "NO", kind: "int" }, { key: "depth_from", label: "FROM (m)", kind: "num" },
+  { key: "seq", label: "NO SAMPLE (nomor urut mulai 1 + kode zona, mis. 1L, 6S)", kind: "int" }, { key: "depth_from", label: "FROM (m)", kind: "num" },
   { key: "depth_to", label: "TO (m)", kind: "num" }, { key: "core_length", label: "CORE L (m)", kind: "num" },
   { key: "lose_from", label: "LOSS DARI", kind: "num" }, { key: "lose_to", label: "LOSS SAMPAI", kind: "num" },
   { key: "geozone_id", label: "ZONA", kind: "code", list: "ZONE" },
@@ -145,7 +145,7 @@ function promptA(form: string) {
 function promptB(form: string) {
   return COMMON + (form === "HEADER"
     ? `\nBaca formulir header dimulai dari bagian pilihan centang di bawah, lalu kotak isian dari kanan bawah ke kiri atas. Untuk pilihan centang isi teks pilihan yang dicentang.`
-    : `\nBaca tabel KOLOM DEMI KOLOM: baca seluruh kolom NO CONTO dari atas ke bawah, lalu kolom berikutnya, dst. Setelah selesai, susun hasilnya per baris sesuai nomor baris tercetak.`) + WAJIB_ALAT;
+    : `\nBaca tabel KOLOM DEMI KOLOM: baca seluruh kolom NO SAMPLE dari atas ke bawah, lalu kolom berikutnya, dst. Setelah selesai, susun hasilnya per baris sesuai nomor baris tercetak.`) + WAJIB_ALAT;
 }
 // Cadangan: bila model menjawab dengan teks, ambil objek JSON pertama dari teks itu.
 function jsonDariTeks(j: { content?: { type: string; text?: string }[] }) {
@@ -186,6 +186,8 @@ function norm(raw: unknown, f: Field, lk: Lookup): { v: string | number | null; 
   let s = (raw ?? "").toString().trim();
   if (s === "" || s === "-" || s === "—") return { v: null };
   if (s.includes("?")) return { v: null, issue: "TIDAK TERBACA" };
+  // NO SAMPLE ditulis nomor + kode zona (mis. "1L", "6S", "12 BR") → yang disimpan nomornya; zona tetap dari kolom ZONA
+  if (f.key === "seq") { const m = s.replace(/\s/g, "").match(/^(\d+)[A-Za-z]{0,3}$/); if (m) return { v: Number(m[1]) }; }
   if (f.kind === "num" || f.kind === "int") {
     s = s.replace(/\s/g, "").replace(",", ".");
     const n = Number(s);
@@ -249,6 +251,9 @@ function mergeRows(form: string, A: any, B: any, lk: Lookup) {
       if (typeof out.d_volume_measure_ml === "number") out.d_wtr_volume_ml = 1400;
       if (out.geolithcode_id_1 && !out.geolithcode_id_2 && out.geolithcode_prc_1 == null) out.geolithcode_prc_1 = 100;
     }
+    { const raw = String(ra?.seq ?? rb?.seq ?? "").replace(/\s/g, "").toUpperCase(), zk = raw.match(/^\d+([A-Z]{1,3})$/)?.[1];
+      if (zk && out.geozone_id && zk !== String(out.geozone_id).toUpperCase()) flags.push({ row: out._row, field: "seq", type: "ATURAN", msg: `Kode zona di NO SAMPLE (${raw}) tidak sama dengan kolom ZONA (${out.geozone_id})` });
+      if (zk && !out.geozone_id) { const z = lk.ZONE?.get(zk); if (z) out.geozone_id = z; } }
     if (form === "DENSITY") {
       out.d_length_cm = avg([out.len1, out.len2, out.len3]);
       out.d_diameter_cm = avg([out.dia1, out.dia2, out.dia3]);
@@ -277,8 +282,8 @@ function validate(form: string, header: any, rows: any[], ctx: { prevTo: number 
   let prevTo = ctx.prevTo, prevZone = ctx.prevZone, prevSeq: number | null = null;
   rows.forEach((r, i) => {
     const row = r._row;
-    if (typeof r.seq !== "number") { add(row, "seq", "NO CONTO kosong"); return; }
-    if (prevSeq !== null && r.seq !== prevSeq + 1) add(row, "seq", `NO CONTO tidak berurutan (${prevSeq} → ${r.seq})`, prevSeq + 1);
+    if (typeof r.seq !== "number") { add(row, "seq", "NO SAMPLE kosong"); return; }
+    if (prevSeq !== null && r.seq !== prevSeq + 1) add(row, "seq", `NO SAMPLE tidak berurutan (${prevSeq} → ${r.seq})`, prevSeq + 1);
     prevSeq = r.seq;
     if (form === "LOG" || form === "SHEET") {
       const run = (r.depth_to ?? NaN) - (r.depth_from ?? NaN);
