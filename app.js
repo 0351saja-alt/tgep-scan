@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.59";
+const APP_VERSION = "2026-11-27.60";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6846,10 +6846,26 @@ async function cetakBA(id, opsi = {}) {
   const r0 = opsi.r ?? (await sb.from("berita_acara").select("*").eq("id", id).single()).data; if (!r0) return alert("Berita acara tidak ditemukan");
   const r = opsi.lihat ? r0 : await tanyaPenandatangan(r0); if (!r) return; const I = r.isi ?? {}, bast = r.jenis === "BASTP";
   const w = jendelaDok(bast ? "BASTP" : `BA stop bor ${r.bhid}`, "A4");
-  let foto = "";
-  if (!bast) { const { data: ev } = await sb.from("drill_event").select("event_type,photo_path,captured_at,reason").eq("bhid", r.bhid).in("event_type", ["FOTO_DRILL_PAD", "FOTO_PATOK"]).order("captured_at");
-    const u = await signedUrls("progress-photos", (ev ?? []).map((e) => e.photo_path).filter(Boolean));
-    foto = (ev ?? []).length ? `<h3>Lampiran foto</h3><div class="fg">${ev.map((e) => `<figure><img src="${u[e.photo_path] ?? ""}"><figcaption>${e.event_type === "FOTO_PATOK" ? "Foto patok" : "Foto drill pad"} · ${esc(fmtT(new Date(e.captured_at)))}${e.reason ? " · " + esc(e.reason) : ""}</figcaption></figure>`).join("")}</div>` : `<p class="m">Foto drill pad & patok belum ada di aplikasi.</p>`; }
+  // v.60: LAMPIRAN foto — halaman baru (mulai dari atas kertas) setelah tanda tangan: foto patok, foto selesai bor, foto pengerjaan, foto core box.
+  // BA stop bor: titik itu; BASTP: tiap titik dalam tabel, masing-masing mulai di halaman baru.
+  const lampiranTitik = async (bh, no) => {
+    const [{ data: ev }, { data: cp }] = await Promise.all([
+      sb.from("drill_event").select("event_type,photo_path,captured_at,reason,depth_from,depth_to,core_length").eq("bhid", bh).not("photo_path", "is", null).order("captured_at").limit(500),
+      sb.from("core_photo").select("box_no,photo_type,depth_from,depth_to,photo_path,preview_path,ditolak,reviewer_override").eq("bhid", bh).order("box_no").order("photo_type").limit(300)]);
+    const E = ev ?? [], C = (cp ?? []).filter((c) => !coreDitolak(c));
+    const pilih = (xs, n) => (xs.length <= n ? xs : Array.from({ length: n }, (_, i) => xs[Math.round((i * (xs.length - 1)) / (n - 1))])); // sebar merata
+    const patok = E.filter((e) => e.event_type === "FOTO_PATOK"), selesai = E.filter((e) => ["SELESAI_BOR", "FOTO_DRILL_PAD", "FOTO_AKHIR"].includes(e.event_type));
+    const kerja = pilih(E.filter((e) => !["FOTO_PATOK", "FOTO_DRILL_PAD", "FOTO_AKHIR", "SELESAI_BOR", "MASUK", "KELUAR"].includes(e.event_type)), 8);
+    const [u, uc] = await Promise.all([signedUrls("progress-photos", [...patok, ...selesai, ...kerja].map((e) => e.photo_path)), signedUrls("core-photos", C.flatMap((c) => [c.preview_path, c.photo_path]))]);
+    const d2 = (x) => (x == null ? "" : fmtD(x));
+    const fe = (e) => `<figure><img src="${u[e.photo_path] ?? ""}" alt=""><figcaption>${esc(EV[e.event_type] ?? e.event_type)} · ${esc(fmtT(new Date(e.captured_at)))}${e.depth_to != null ? ` · ${d2(e.depth_from)}–${d2(e.depth_to)} m` : ""}${e.reason ? " · " + esc(e.reason) : ""}${u[e.photo_path] ? "" : " · <i>(foto sudah dipindah ke Google Drive)</i>"}</figcaption></figure>`;
+    const fc = (c) => { const x = uc[c.preview_path] ?? uc[c.photo_path]; return `<figure><img src="${x ?? ""}" alt="" style="object-fit:contain;background:#f2f2f2"><figcaption>Kotak ${esc(c.box_no ?? "")} · ${esc(c.photo_type ?? "")} · ${d2(c.depth_from)}–${d2(c.depth_to)} m${x ? "" : " · <i>(di Google Drive)</i>"}</figcaption></figure>`; };
+    const bag = (judul, xs, f, kosong) => `<h3>${judul}</h3>${xs.length ? `<div class="fg">${xs.map(f).join("")}</div>` : `<p class="m">${kosong}</p>`}`;
+    return `<div class="lamp"><h2>LAMPIRAN${no ? " " + no : ""} — DOKUMENTASI TITIK ${esc(bh)}</h2><div class="no">Nomor BA: ${esc(r.nomor ?? "")}</div>
+      ${bag("A. Foto patok", patok, fe, "Foto patok belum ada di aplikasi.")}${bag("B. Foto selesai bor / drill pad", selesai, fe, "Foto selesai bor / drill pad belum ada di aplikasi.")}
+      ${bag("C. Foto pengerjaan", kerja, fe, "Foto pengerjaan belum ada di aplikasi.")}${bag(`D. Foto core box (${C.length})`, C, fc, "Foto core box belum ada di aplikasi.")}</div>`; };
+  const daftarLamp = bast ? [...new Set((I.titik ?? []).map((t) => t.bhid).filter(Boolean))] : [r.bhid].filter(Boolean);
+  const foto = (await Promise.all(daftarLamp.map((b, i) => lampiranTitik(b, bast && daftarLamp.length > 1 ? i + 1 : "")))).join("");
   const tglPanjang = (t) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch { return t; } };
   const baris = (l, v) => `<tr><td style="width:38%">${l}</td><td>${esc(v ?? "") || "-"}</td></tr>`;
   const isi = bast ? `<table>${baris("Pekerjaan", I.pekerjaan)}${baris("Periode", `${r.dari} s/d ${r.sampai}`)}${baris("Jumlah titik diserahkan", `${(I.titik ?? []).length}${I.rencana ? ` dari ${I.rencana} titik rencana` : ""}`)}${baris("Total kedalaman (m)", (I.titik ?? []).reduce((s, t) => s + (+String(t.kedalaman).replace(",", ".") || 0), 0).toFixed(2))}</table>
@@ -6862,7 +6878,7 @@ async function cetakBA(id, opsi = {}) {
   <style>@page{size:A4 portrait;margin:0} html{background:#eee} body{font-family:Cambria,Caladea,"Times New Roman",serif;font-size:12.5px;color:#111;box-sizing:border-box;width:210mm;max-width:100%;margin:12px auto;padding:0;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25)} @media print{html{background:#fff} body{width:210mm;margin:0;box-shadow:none}}
   table.lay,table.lay>*>tr>td{border:0;padding:0;margin:0;width:100%} .kopA{display:block;width:210mm;max-width:100%} table.lay>tbody>tr>td.isi{padding:2mm 20mm 4mm} .kakiSp{height:28mm} .kaki{width:210mm;max-width:100%} .kaki img{display:block;width:100%}
   h1{text-align:center;font-size:15px;margin:14px 0 2px;text-decoration:underline} .no{text-align:center;margin-bottom:12px} table{border-collapse:collapse;width:100%;margin:6px 0} td,th{border:1px solid #999;padding:4px 6px;text-align:left;vertical-align:top} th{background:#e6efe9} table.d td,table.d th{font-size:10px;padding:3px}
-  .blok{break-inside:avoid;page-break-inside:avoid} .ttd{break-inside:avoid;display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px;text-align:center} .ttd div{min-height:120px} .sp{height:70px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666} table.p td{border:0;padding:1px 4px} .fg{display:grid;grid-template-columns:1fr 1fr;gap:8px} .fg img{width:100%;border:1px solid #ccc} figure{margin:0} figcaption{font-size:9.5px;color:#444}
+  .blok{break-inside:avoid;page-break-inside:avoid} .ttd{break-inside:avoid;display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px;text-align:center} .ttd div{min-height:120px} .sp{height:70px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666} table.p td{border:0;padding:1px 4px} .fg{display:grid;grid-template-columns:1fr 1fr;gap:8px} .fg img{width:100%;border:1px solid #ccc} figure{margin:0} figcaption{font-size:9.5px;color:#444} .lamp{break-before:page;page-break-before:always} .lamp h2{text-align:center;font-size:14px;margin:6px 0 2px;text-decoration:underline} .lamp h3{margin:10px 0 4px;font-size:12.5px} .lamp figure{break-inside:avoid;page-break-inside:avoid} .lamp .fg img{height:62mm;object-fit:cover}
 
   @media print{button{display:none} .kaki{position:fixed;bottom:0;left:0}}</style></head><body>
   <button onclick="print()">Cetak / simpan PDF</button>
