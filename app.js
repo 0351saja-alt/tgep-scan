@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-27.34";
+const APP_VERSION = "2026-11-27.36";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1271,7 +1271,9 @@ async function progView(v) {
     const ex = gal ? await bacaExif(file) : {};
     let capturedAt = gal ? ex.time ?? new Date(file.lastModified) : new Date();
     let age = Math.round((Date.now() - (gal ? capturedAt.getTime() : file.lastModified)) / 1000);
-    const posP = gal ? Promise.resolve(ex.lat != null ? { lat: ex.lat, lon: ex.lon, acc: null, t: capturedAt.toISOString() } : null) : getPos();
+    // v.35: foto dari GALERI → koordinat foto = koordinat lubang (Hole ID yang dipilih): collar, lalu titik rencana; GPS data foto hanya cadangan
+    const bhGal = gal ? ((pending === "FOTO_AKHIR" ? JSON.parse(sessionStorage.getItem("susulanBH") || "null")?.bhid : null) || localStorage.getItem("bhid")) : null;
+    const posP = gal ? posLubang(bhGal).then((h) => (h ? { ...h, t: capturedAt.toISOString() } : ex.lat != null ? { lat: ex.lat, lon: ex.lon, acc: null, t: capturedAt.toISOString(), sumber: "data foto" } : null)).catch(() => null) : getPos();
     const sus = pending === "FOTO_AKHIR" ? JSON.parse(sessionStorage.getItem("susulanBH") || "null") : null;
     const r = { rig: sus?.rig || localStorage.getItem("rig"), bhid: sus?.bhid || localStorage.getItem("bhid") || null }; r.jenis_bor = r.bhid ? jenisDariBH(r.bhid) : "UTAMA";
     let lastTo = lastRunTo(r.bhid);
@@ -1312,7 +1314,7 @@ async function progView(v) {
         m.querySelector("#psnTip").textContent = t === "MASUK" ? "Tulis semua yang ada di foto. Terisi dari shift terakhir rig ini — hapus yang tidak hadir, tambah yang baru." : "Hapus nama yang sudah pulang lebih dulu."; } };
     m.querySelectorAll('input[name="et"]').forEach((x) => (x.onchange = upd)); upd();
     m.querySelector("#tjb").onchange = () => { const rd = m.querySelector("#tjb").value === "REDRILL"; m.querySelector("#rdaBox").style.display = rd ? "" : "none"; if (rd && !m.querySelector("#rda").value) m.querySelector("#rda").value = asalRedrill(r.bhid) ?? ""; };
-    let pos = null; posP.then((p) => { pos = p; m.querySelector("#gps").textContent = p ? `GPS${gal ? " (data foto)" : ""}: ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}${p.acc != null ? ` (±${p.acc} m)` : ""}` : gal ? "Tanpa GPS (tidak ada di data foto galeri)." : "GPS tidak didapat — aktifkan Lokasi di HP. Foto tetap disimpan dan ditandai.";
+    let pos = null; posP.then((p) => { pos = p; m.querySelector("#gps").textContent = p ? `GPS${gal ? ` (${p?.sumber ?? "data foto"})` : ""}: ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}${p.acc != null ? ` (±${p.acc} m)` : ""}` : gal ? "Tanpa GPS (tidak ada di data foto galeri)." : "GPS tidak didapat — aktifkan Lokasi di HP. Foto tetap disimpan dan ditandai.";
       const k = p && cekIUP(p.lon, p.lat); if (k && !k.dalam) m.querySelector("#gps").insertAdjacentHTML("afterend", `<p class="err" style="font-weight:600">⚠ Titik GPS ini berada DI LUAR batas IUP (${esc(k.nama)}). Pastikan lokasi bor benar sebelum mengebor; hubungi WSG/admin.</p>`); });
     m.querySelector("#cx").onclick = () => m.remove();
     m.querySelector("#ok").onclick = async () => {
@@ -1323,7 +1325,7 @@ async function progView(v) {
         if (j.getTime() > Date.now() + 60e3) return (m.querySelector("#me").textContent = "Jam foto tidak boleh di masa depan.");
         capturedAt = j; age = Math.round((Date.now() - j.getTime()) / 1000); }
       const row = { ...r, event_type: t, reason: m.querySelector("#rn").value || null, captured_at: capturedAt.toISOString(), photo_age_s: age,
-        ...(gal || sus ? { note: [sus ? "FOTO SUSULAN lubang lama" : null, gal ? `FOTO GALERI · jam ${ex.time && Math.abs(ex.time - capturedAt) < 60e3 ? "dari data foto" : "diisi manual"} · GPS ${ex.lat != null ? "dari data foto" : "tidak ada"}` : null].filter(Boolean).join(" · ") } : {}) };
+        ...(gal || sus ? { note: [sus ? "FOTO SUSULAN lubang lama" : null, gal ? `FOTO GALERI · jam ${ex.time && Math.abs(ex.time - capturedAt) < 60e3 ? "dari data foto" : "diisi manual"} · koordinat ${pos?.sumber ?? (ex.lat != null ? "data foto" : "tidak ada")}${ex.lat != null && pos?.sumber && pos.sumber !== "data foto" ? ` (GPS data foto ${(+ex.lat).toFixed(6)}, ${(+ex.lon).toFixed(6)})` : ""}` : null].filter(Boolean).join(" · ") } : {}) };
       if (t === "RUN") {
         Object.assign(row, { depth_from: num(m.querySelector("#rf").value), depth_to: num(m.querySelector("#rt").value), core_length: num(m.querySelector("#rc").value) });
         if (!(row.depth_to > row.depth_from)) return (m.querySelector("#me").textContent = "Isi FROM dan TO run (TO > FROM).");
@@ -1379,7 +1381,7 @@ async function progView(v) {
       if (!pos) pos = await Promise.race([posP, new Promise((r2) => setTimeout(() => r2(null), 4000))]);
       if (pos) Object.assign(row, { lat: pos.lat, lon: pos.lon, gps_accuracy_m: pos.acc, gps_time: pos.t });
       // Lokasi foto jauh dari titik rencana → tanya: titik bor bergeser atau tidak (sekali per lubang; "tidak" diingat sampai besok)
-      if (pos && r.bhid && !["MASUK", "KELUAR"].includes(t)) { const g = await cekGeser(r.bhid, pos); if (g === null) { m.querySelector("#ok").disabled = false; return; } if (g) Object.assign(row, g); }
+      if (pos && r.bhid && !["MASUK", "KELUAR"].includes(t) && !(gal && pos.sumber && pos.sumber !== "data foto")) { const g = await cekGeser(r.bhid, pos); if (g === null) { m.querySelector("#ok").disabled = false; return; } if (g) Object.assign(row, g); }
       const line2 = t === "RUN" ? `RUN ${fmtD(row.depth_from)}–${fmtD(row.depth_to)} m · core ${fmtD(row.core_length)} m` : EV[t] + (row.status_akhir ? ` ${row.status_akhir}` : "") + (t === "MULAI_BOR" ? ` · dip ${row.dip}° az ${row.azimuth}°` : "") + (row.personil ? ` · ${row.personil.length} personil` : "") + (row.reason ? ` · ${row.reason}` : "");
       const blob = await stampPhoto(file, [`TGEP · ${r.rig} · ${r.bhid ?? "-"} · ${me?.full_name ?? ""}`, line2,
         `${fmtT(capturedAt)} WIB · ${pos ? `${pos.lat.toFixed(6)}, ${pos.lon.toFixed(6)}${pos.acc != null ? ` ±${pos.acc} m` : ""}` : "TANPA GPS"}${gal ? " · FOTO GALERI" : ""}${sus ? " · FOTO SUSULAN" : ""}${row.titik_bergeser ? ` · TITIK BERGESER ±${row.geser_m} m` : ""}`]);
@@ -1402,14 +1404,16 @@ async function progView(v) {
   if (navigator.onLine && !session.offline) {
     const day = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
     const [{ data: evs }, { data: sum }] = await Promise.all([
-      sb.from("v_drill_event_qc").select("event_type,bhid,depth_from,depth_to,core_length,captured_at,flags,photo_path,reason,note").eq("rig", localStorage.getItem("rig") || "-").eq("tanggal", day).order("captured_at"),
+      sb.from("v_drill_event_qc").select("id,event_type,bhid,depth_from,depth_to,core_length,captured_at,flags,photo_path,reason,note,konfirmasi_at,konfirmasi_ket").eq("rig", localStorage.getItem("rig") || "-").eq("tanggal", day).order("captured_at"),
       sb.from("v_drill_progress_daily").select("bhid,meter_bor,jumlah_run,recovery_pct,standby_menit,jam_p2h,chk_harian").eq("rig", localStorage.getItem("rig") || "-").eq("tanggal", day),
     ]);
     const akhirKurang = [...new Set((evs ?? []).filter((x) => x.event_type === "SELESAI_BOR").map((x) => x.bhid))].map((b) => [b, ["FOTO_DRILL_PAD", "FOTO_PATOK"].filter((k) => !(evs ?? []).some((x) => x.bhid === b && x.event_type === k))]).filter(([, k]) => k.length);
     if (tok !== progView.tok || !$("#today")) return; // layar sudah berganti
     isiSusulan(tok, mulaiSusulan);
     $("#today").innerHTML = `${akhirKurang.map(([b, k]) => `<p class="err" style="font-weight:600">⚠ ${esc(b)} sudah selesai bor tetapi belum ada ${k.map((x) => (x === "FOTO_PATOK" ? "foto patok" : "foto drill pad")).join(" & ")} — tekan 📸 Drill pad & patok.</p>`).join("")}${(sum ?? []).map((s) => `<p><b>${esc(s.bhid)}</b>: ${s.meter_bor} m · ${s.jumlah_run} run · recovery ${s.recovery_pct ?? "-"}% · standby ${s.standby_menit} mnt · P2H ${s.jam_p2h ? fmtT(s.jam_p2h).slice(-8) : "BELUM"}${s.chk_harian ? `<br><span class="err">${esc(s.chk_harian)}</span>` : ""}</p>`).join("")}
-      <ul class="list">${(evs ?? []).map((x) => `<li><span style="flex:1">${fmtT(x.captured_at).slice(-8)} · <b>${esc(EV[x.event_type])}</b>${x.event_type === "RUN" ? ` ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m (core ${fmtD(x.core_length)})` : ""}${x.reason ? " · " + esc(x.reason) : ""}${x.note ? ` <span class="pill ANTRE">${/SUSULAN/.test(x.note) ? "susulan" : "galeri"}</span>` : ""}${x.flags ? `<br><span class="err">${esc(x.flags)}</span>` : ""}</span>${x.photo_path ? `<button class="sec" data-ph="${esc(x.photo_path)}" style="flex:0">Foto</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada aktivitas terkirim hari ini untuk rig ini.</li>`}</ul><div id="phv"></div>`;
+      <ul class="list">${(evs ?? []).map((x) => `<li><span style="flex:1">${fmtT(x.captured_at).slice(-8)} · <b>${esc(EV[x.event_type])}</b>${x.event_type === "RUN" ? ` ${fmtD(x.depth_from)}–${fmtD(x.depth_to)} m (core ${fmtD(x.core_length)})` : ""}${x.reason ? " · " + esc(x.reason) : ""}${x.note ? ` <span class="pill ANTRE">${/SUSULAN/.test(x.note) ? "susulan" : "galeri"}</span>` : ""}${x.flags ? `<br><span class="err">${esc(x.flags)}</span>` : ""}${x.konfirmasi_at ? `<br><span style="color:#1b7a3a;font-size:12.5px">✅ Dikonfirmasi${x.konfirmasi_ket ? ": " + esc(x.konfirmasi_ket) : ""}</span>` : ""}</span>${x.flags && isStaff() ? `<button data-kfm="${x.id}" style="flex:0;white-space:nowrap">✅ Konfirmasi</button>` : ""}${x.photo_path ? `<button class="sec" data-ph="${esc(x.photo_path)}" style="flex:0">Foto</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada aktivitas terkirim hari ini untuk rig ini.</li>`}</ul><div id="phv"></div>`;
+    // v.36: ✅ Konfirmasi tanda masalah (JAUH DARI TITIK BOR, FOTO LAMA/GALERI, …) — foto dianggap benar, tidak lagi dihitung bermasalah
+    $("#today").querySelectorAll("[data-kfm]").forEach((b) => (b.onclick = () => konfirmasiAktivitas(b.dataset.kfm, (evs ?? []).find((x) => x.id === b.dataset.kfm), () => progView(v))));
     $("#today").querySelectorAll("[data-ph]").forEach((b) => (b.onclick = async () => { const { data } = await sb.storage.from("progress-photos").createSignedUrl(b.dataset.ph, 600);
       if (data?.signedUrl) return ($("#phv").innerHTML = `<img src="${data.signedUrl}" alt="Foto aktivitas bor" style="width:100%;border-radius:8px">`);
       const dv = await linkDrive("progress-photos", b.dataset.ph); $("#phv").innerHTML = dv ? `<p>Foto sudah dipindah ke Google Drive. <a href="${esc(dv)}" target="_blank" rel="noopener">Buka di Drive</a></p>` : `<p class="err">Foto tidak ditemukan.</p>`; }));
@@ -2128,7 +2132,7 @@ async function hapusTersimpan(tbl, id, label, ulang) {
 // Tipe isian: t teks · n angka · d tanggal · w tanggal+jam WIB · b ya/tidak · o:<pilihan> daftar pilihan
 const EDIT_SPEC = {
   drill_event: { pk: "id", judul: "Aktivitas bor / foto run", f: [["rig", "Rig", "t"], ["bhid", "Hole ID", "t"], ["event_type", "Jenis aktivitas", "ev"], ["depth_from", "Dari (m)", "n"], ["depth_to", "Sampai (m)", "n"], ["core_length", "Panjang core (m)", "n"],
-    ["captured_at", "Waktu (WIB)", "w"], ["reason", "Alasan / kejadian", "t"], ["note", "Catatan", "t"], ["jenis_bor", "Jenis bor", "o:UTAMA,REDRILL"], ["lubang_asal", "Lubang asal (bila redrill)", "t"], ["status_akhir", "Status akhir", "t"], ["dip", "Dip", "n"], ["azimuth", "Azimuth", "n"]] },
+    ["captured_at", "Waktu (WIB)", "w"], ["reason", "Alasan / kejadian", "t"], ["note", "Catatan", "t"], ["jenis_bor", "Jenis bor", "o:UTAMA,REDRILL"], ["lubang_asal", "Lubang asal (bila redrill)", "t"], ["status_akhir", "Status akhir", "t"], ["dip", "Dip", "n"], ["azimuth", "Azimuth", "n"], ["lat", "Lintang foto (lat)", "n"], ["lon", "Bujur foto (lon)", "n"]] },
   p2h_check: { pk: "id", judul: "P2H rig", f: [["rig", "Rig", "t"], ["shift", "Shift", "o:PAGI,MALAM"], ["unit", "Unit", "t"], ["hour_meter", "Hour meter", "n"], ["n_not_ok", "Jumlah item tidak OK", "n"], ["layak_operasi", "Layak operasi", "b"], ["captured_at", "Waktu (WIB)", "w"]] },
   marking: { pk: "id", judul: "Marking titik", f: [["bhid", "Hole ID", "t"], ["rig", "Rig", "t"], ["x_utm", "X / Easting UTM 51S", "n"], ["y_utm", "Y / Northing UTM 51S", "n"], ["lat", "Lintang (lat)", "n"], ["lon", "Bujur (lon)", "n"], ["z_gps", "Elevasi GPS (m)", "n"],
     ["akurasi_m", "Akurasi (m)", "n"], ["instrument", "Alat", "t"], ["catatan", "Catatan", "t"], ["captured_at", "Waktu (WIB)", "w"]] },
@@ -2156,7 +2160,7 @@ async function editBaris(tabel, id, selesai) {
       return `<label>${esc(l)}<select id="${id2}"><option value="">—</option>${ops.map((o) => `<option value="${esc(o)}"${o === v ? " selected" : ""}>${esc(t === "ev" ? EV[o] ?? o : o)}</option>`).join("")}</select></label>`; }
     return `<label>${esc(l)}<input id="${id2}" value="${esc(v)}" type="${t === "d" ? "date" : t === "w" ? "datetime-local" : "text"}"${t === "n" ? ' inputmode="decimal"' : ""}${k === "bhid" || k === "rig" || k === "lubang_asal" || k === "rigmc_id" ? ' autocapitalize="characters"' : ""}></label>`; };
   const judul = tabel === "borehole" ? `${S.judul} ${esc(id)}` : `${S.judul}${r.bhid ? " · " + esc(r.bhid) : ""}${r.rig ? " · " + esc(r.rig) : ""}`;
-  const ekstra = tabel === "drill_event" ? `<button class="sec" id="ebFoto" style="flex:1">📷 Ubah / ganti foto</button>` : tabel === "borehole" ? `<button class="sec" id="ebKo" style="flex:1">🧭 Koordinat lubang</button>` : "";
+  const ekstra = tabel === "drill_event" ? `<button class="sec" id="ebFoto" style="flex:1">📷 Ubah / ganti foto</button><button class="sec" id="ebLub" style="flex:1">📍 Koordinat foto = koordinat lubang</button>` : tabel === "borehole" ? `<button class="sec" id="ebKo" style="flex:1">🧭 Koordinat lubang</button>` : "";
   const m = modal(`<h3 style="margin-top:0">✏️ Edit ${judul}</h3>
     <p class="muted" style="margin-top:0">Ubah isian yang salah lalu tulis alasannya. Hanya isian yang berubah yang disimpan dan semuanya tercatat (siapa, kapan, nilai lama → baru).${tabel === "marking" ? " Bila X/Y diubah, lat/lon dihitung ulang otomatis (dan sebaliknya)." : ""}</p>
     ${ekstra ? `<div class="row">${ekstra}</div>` : ""}
@@ -2168,6 +2172,8 @@ async function editBaris(tabel, id, selesai) {
   q("#ebX").onclick = () => m.remove();
   q("#ebFoto")?.addEventListener("click", () => { m.remove(); editFotoAktivitas(id, selesai); });
   q("#ebKo")?.addEventListener("click", () => { m.remove(); koordinatLubang(id, selesai); });
+  q("#ebLub")?.addEventListener("click", async () => { const h = await posLubang(q("#eb_bhid").value); if (!h) return E("Koordinat lubang / titik rencana untuk Hole ID ini belum ada.");
+    q("#eb_lat").value = h.lat.toFixed(7); q("#eb_lon").value = h.lon.toFixed(7); if (!q("#ebR").value) q("#ebR").value = `koordinat foto disamakan dengan ${h.sumber} (foto galeri / GPS salah)`; E(""); });
   q("#ebDel")?.addEventListener("click", () => { m.remove(); hapusTersimpan(tabel, id, `${S.judul}${r.bhid ? " " + r.bhid : ""}`, selesai); });
   q("#ebOk").onclick = async () => {
     const alasan = q("#ebR").value.trim(); if (!alasan) { q("#ebR").focus(); return E("Tulis alasan perubahan."); }
@@ -2219,7 +2225,7 @@ function aksiBarisDb(ds, r, ulang) {
     case "jam": case "bbm": hariRig(r.tanggal ?? r.report_date, r.rig); break;
     case "ddr": if (staf) { if (r.status !== "SIGNED") A.push({ l: "✏️ Edit DDR", fn: () => editDDR(r.id) }); A.push({ l: r.status === "SIGNED" ? "✏️ Edit DDR (buka TTD dulu)" : "Lihat DDR & foto run hari itu", fn: () => menuEditData({ tanggal: r.report_date, rig: r.rig, konteks: "DDR" }) }); A.push({ l: "Lihat / cetak", fn: () => printDDR(r.id) }); } hapus("ddr", r.id, `DDR ${r.rig} ${r.report_date}`); break;
     case "rekapddr": case "ddrlubang": { const id = r.ddr_id, st = r.ddr_status, t = r.report_date ?? r.tanggal; if (staf) { if (st !== "SIGNED" && id) A.push({ l: "✏️ Edit DDR", fn: () => editDDR(id) }); A.push({ l: st === "SIGNED" ? "✏️ Edit DDR (buka TTD dulu)" : "Lihat DDR & foto run hari itu", fn: () => menuEditData({ tanggal: t, rig: r.rig, konteks: "Rekap DDR" }) }); if (id) A.push({ l: "Lihat / cetak", fn: () => printDDR(id) }); } hapus("ddr", id, `DDR ${r.rig} ${t}`); break; }
-    case "aktivitas": if (ver) A.push({ l: "✏️ Edit data aktivitas", fn: () => editBaris("drill_event", r.id, ulang) }); if (staf) A.push({ l: "📷 Ubah / ganti foto", fn: () => editFotoAktivitas(r.id, ulang) }); hapus("drill_event", r.id, `aktivitas ${r.rig ?? ""} ${r.bhid ?? ""}`); break;
+    case "aktivitas": if (staf && r.flags) A.push({ l: "✅ Konfirmasi (tanda merah benar)", fn: () => konfirmasiAktivitas(r.id, r, ulang) }); if (ver) A.push({ l: "✏️ Edit data aktivitas", fn: () => editBaris("drill_event", r.id, ulang) }); if (staf) A.push({ l: "📷 Ubah / ganti foto", fn: () => editFotoAktivitas(r.id, ulang) }); hapus("drill_event", r.id, `aktivitas ${r.rig ?? ""} ${r.bhid ?? ""}`); break;
     case "p2h": if (ver) A.push({ l: "✏️ Edit P2H", fn: () => editBaris("p2h_check", r.id, ulang) }); hapus("p2h_check", r.id, `P2H ${r.rig ?? ""}`); break;
     case "lubang": case "logging": case "profil": lubang(r.bhid); break;
     case "arsipfoto": if (staf) A.push({ l: "🛠 Perbaiki data kiriman", fn: () => editKirimanModal("form_photo", r, ulang) }); hapus("form_photo", r.id, "foto formulir"); break;
@@ -2232,6 +2238,30 @@ function aksiBarisDb(ds, r, ulang) {
     case "arsip": if (adm && !r.restored_at) A.push({ l: "♻️ Pulihkan", fn: async () => { const { error } = await sb.rpc("admin_restore", { p_id: Number(r.id) }); if (error) alert(error.message); else ulang(); } }); break;
   }
   return A;
+}
+// v.36: konfirmasi foto aktivitas bertanda masalah (wellsite/verifier/admin); opsi menyamakan koordinat foto dengan koordinat lubang
+async function konfirmasiAktivitas(id, x, selesai) {
+  const jauh = /JAUH DARI TITIK|TANPA GPS/.test(x?.flags ?? "");
+  const m = modal(`<h3 style="margin-top:0">✅ Konfirmasi foto aktivitas</h3><p style="margin:0 0 6px">${esc(EV[x?.event_type] ?? "")} · ${esc(x?.bhid ?? "")}</p><p class="err" style="margin:0 0 8px">${esc(x?.flags ?? "")}</p>
+    <p class="muted" style="margin-top:0">Konfirmasi = foto ini sudah diperiksa dan benar. Tanda merah hilang dan tidak dihitung sebagai kejadian bermasalah. Tercatat siapa dan kapan.</p>
+    ${jauh ? `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="kfL" checked style="width:auto"> Samakan koordinat foto dengan koordinat lubang ${esc(x?.bhid ?? "")} (mis. foto dari galeri)</label>` : ""}
+    <label>Keterangan</label><input id="kfT" value="${/GALERI/.test(x?.flags ?? "") ? "foto galeri, lokasi benar di titik bor" : "sudah dicek, sesuai"}">
+    <div class="row" style="margin-top:10px"><button id="kfOk">✅ Konfirmasi</button><button class="sec" id="kfX">Batal</button></div><div id="kfE" class="err"></div>`);
+  const q = (s) => m.querySelector(s); q("#kfX").onclick = () => m.remove();
+  q("#kfOk").onclick = async () => { q("#kfOk").disabled = true; const ket = q("#kfT").value.trim();
+    if (q("#kfL")?.checked && x?.bhid && ["verifier", "admin"].includes(me?.role)) { const h = await posLubang(x.bhid);
+      if (h) { const { error: e1 } = await sb.rpc("admin_ubah_data", { p_tabel: "drill_event", p_id: id, p_data: { lat: +h.lat.toFixed(7), lon: +h.lon.toFixed(7) }, p_alasan: `koordinat foto = ${h.sumber} (${ket || "konfirmasi"})` }); if (e1) { q("#kfOk").disabled = false; return (q("#kfE").textContent = e1.message); } } }
+    const { error } = await sb.rpc("konfirmasi_aktivitas", { p_id: id, p_ket: ket || null, p_batal: false }); q("#kfOk").disabled = false;
+    if (error) return (q("#kfE").textContent = /konfirmasi_aktivitas/.test(error.message) ? "Fungsi database belum dipasang (v44)." : error.message);
+    m.remove(); toast("✓ Dikonfirmasi"); selesai?.(); };
+}
+// v.35: koordinat lubang (lat/lon) dari Hole ID: collar (koordinat lubang) → titik rencana (redrill: titik lubang asal)
+async function posLubang(bh0) {
+  const b = bakuBH(bh0 ?? ""); if (!b) return null;
+  if (online()) { const { data: c } = await sb.from("v_dh_collar").select("east,north").eq("holeid", b).maybeSingle();
+    if (c && +c.east >= 100000 && +c.east <= 900000 && +c.north > 0) { const [lo, la] = UTM.dari(+c.east, +c.north); return { lat: la, lon: lo, acc: null, sumber: `koordinat lubang ${b}` }; } }
+  const R = rencanaLokal().find((z) => z.bhid === b) ?? (asalRedrill(b) ? rencanaLokal().find((z) => z.bhid === asalRedrill(b)) : null);
+  return R && R.lat != null ? { lat: +R.lat, lon: +R.lon, acc: null, sumber: `titik rencana ${R.bhid}` } : null;
 }
 // v.34: daftar pembacaan marking satu lubang — edit / hapus pembacaan yang salah (mis. GPS di luar lokasi)
 async function daftarMarking(bh) {
