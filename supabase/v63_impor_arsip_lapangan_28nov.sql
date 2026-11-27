@@ -1,0 +1,11 @@
+-- v63 (28/11/2026): impor arsip lapangan (5 RAR: DH-NPG 08R, 09, 12, 13, 14R) — catatan data, bukan migrasi skema.
+-- 1) Form Logging Excel → private.stg_logging_excel (71 baris) → upsert public.sample (on conflict sample_no),
+--    setiap beda dicatat di sample_edit_log (reason 'Form Logging Excel arsip lapangan (dikirim user 28/11/2026)', edited_by Samsul).
+--    Hasil: 09 +13 baris baru, 13 +12 baris baru, 14R 7→9 baris (6,00–6,76 S / 6,76–7,00 BR / 7,00–8,00 BR loss 7,40–7,65),
+--    12 direvisi (core_length 18 baris terisi 1,00; colour KHJ→KC 5; geosrp LS→US 11; lith 1; min2% 3; comment 18), 08R tidak ada beda.
+-- 2) Koordinat: DH-NPG 09 kembali ke marking 26/11 (363857,47 / 9812336,63 / 113) — DDR 27/11 salah ketik Y 9872335 / Z 774;
+--    total_depth 09 = 11. DH-NPG 14R Y 9819606 → 9814606 (salah ketik, sesuai Form Logging). Tercatat di koordinat_log.
+-- 3) kirim_preparasi PREP-20261127-01: + conto 08R (19), 09 (13), 13 (12), 14R (9) → 71 conto; jumlah_karung 15
+--    (12 = 4, 08R = 4, 09 = 3, 13 = 2, 14R = 2) di catatan.
+-- 4) Foto core box 08R (8) & 09 (4) dari arsip BELUM masuk (sandbox tidak bisa unggah ke Storage) → unggah lewat aplikasi.
+-- Sisa: private.stg_logging_excel boleh di-drop: drop table private.stg_logging_excel;
