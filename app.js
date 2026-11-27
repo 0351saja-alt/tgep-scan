@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.70";
+const APP_VERSION = "2026-11-28.71";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3896,13 +3896,15 @@ function pencarSVG(P, o) {
 async function recoveryData(LB, HR = [], prof = []) {
   let G = []; try { const bh = LB.map((x) => x.bhid); if (typeof sb !== "undefined" && bh.length && online()) G = (await sb.from("v_dh_geology").select("holeid,from,to,zone,core_length,recovery_pct").in("holeid", bh)).data ?? []; } catch {}
   const ZW = {}; for (const r of prof ?? []) ZW[r.zona] ??= { nama: r.nama_zona, warna: r.warna };
-  const agg = (xs) => { let L = 0, C = 0, n = 0, low = 0; for (const g of xs) { const len = +g.to - +g.from; if (!(len > 0)) continue;
-      const c = g.core_length != null && g.core_length !== "" ? +g.core_length : g.recovery_pct != null && g.recovery_pct !== "" ? (len * +g.recovery_pct) / 100 : null; if (c == null || !Number.isFinite(c)) continue;
-      L += len; C += c; n++; if (c / len < 0.9) low++; } return { v: L ? (100 * C) / L : null, m: L, n, low }; };
+  const agg = (xs) => { let L = 0, C = 0, n = 0, low = 0, sw = 0; for (const g of xs) { const len = +g.to - +g.from; if (!(len > 0)) continue;
+      let c = g.core_length != null && g.core_length !== "" ? +g.core_length : g.recovery_pct != null && g.recovery_pct !== "" ? (len * +g.recovery_pct) / 100 : null; if (c == null || !Number.isFinite(c)) continue;
+      if (c > len) { c = len; sw++; } // v.71: core > interval = swelling → recovery interval maks. 100 % (sama dengan Dashboard/v_dash_hole)
+      L += len; C += c; n++; if (c / len < 0.9) low++; } return { v: L ? (100 * C) / L : null, m: L, n, low, sw }; };
   const warnaR = (v) => (v == null ? "#9CA3AF" : v >= 90 ? "#1E9E69" : v >= 80 ? "#E0A100" : "#D62828");
-  const bhs = [...new Set([...G.map((g) => g.holeid), ...HR.filter((h) => h.rec != null).map((h) => h.b)])].sort();
+  const RDR = await petaRedrill().catch(() => ({})); // v.71: lubang lama yang sudah di-redrill tidak ditampilkan (mis. DH-NPG 08 → 08R)
+  const bhs = [...new Set([...G.map((g) => g.holeid), ...HR.filter((h) => h.rec != null).map((h) => h.b)])].filter((b) => !RDR[b]).sort();
   const lubang = bhs.map((b) => { const a = agg(G.filter((g) => g.holeid === b)), hr = HR.find((h) => h.b === b)?.rec; const v = a.v ?? (hr != null ? +hr : null);
-    return { label: b, v: v ?? 0, nilai: v, t: v != null ? `${v.toFixed(1)}%` : "–", sub: a.n ? `${a.n} int · ${a.m.toFixed(1)} m${a.low ? ` · ${a.low} <90%` : ""}` : "dari laporan harian", c: warnaR(v), sumber: a.n ? "logging" : "harian" }; });
+    return { label: b, v: v ?? 0, nilai: v, t: v != null ? `${v.toFixed(1)}%` : "–", sub: a.n ? `${a.n} int · ${a.m.toFixed(1)} m${a.low ? ` · ${a.low} <90%` : ""}${a.sw ? ` · ${a.sw} swelling` : ""}` : "dari laporan harian", c: warnaR(v), sumber: a.n ? "logging" : "harian" }; });
   const zk = [...new Set(G.map((g) => g.zone).filter(Boolean))];
   const layer = zk.map((k) => { const a = agg(G.filter((g) => g.zone === k)); return { k, nama: ZW[k]?.nama ?? k, warnaZ: ZW[k]?.warna ?? "#94a3b8", ...a, label: ZW[k]?.nama ?? k, nilai: a.v, t: a.v != null ? `${a.v.toFixed(1)}%` : "–", sub: `${a.n} int · ${a.m.toFixed(1)} m${a.low ? ` · ${a.low} <90%` : ""}`, c: warnaR(a.v) }; })
     .filter((z) => z.n).sort((a, b) => (ZW[a.k] ? 0 : 1) - (ZW[b.k] ? 0 : 1));
