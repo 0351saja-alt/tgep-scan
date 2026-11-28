@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.91";
+const APP_VERSION = "2026-11-28.92";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -342,7 +342,7 @@ async function render() {
     $("#out").onclick = () => { localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); sb.auth.signOut(); }; return; }
   if (!["client", "admin", "verifier", "admin_lapangan"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig"], ["simpan", "Data tersimpan"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
+  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["ba", "Berita acara"], ["klien", "Laporan rig"], ["simpan", "Data tersimpan"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
     ...(ver ? [["review", "Periksa scan"]] : []), ...(staff ? [["data", "Data & cek"], ["db", "Database"]] : []), ...(ver ? [["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["simpan", "Data tersimpan"], ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
@@ -366,7 +366,7 @@ async function render() {
   if (tab === "review") return reviewList($("#v"));
   if (tab === "data") return dataView($("#v"));
   if (tab === "sampel") return sampelView($("#v"));
-  if (tab === "ba") return baView($("#v"));
+  if (tab === "ba") return isClient() ? baKlienView($("#v")) : baView($("#v"));
   if (tab === "core") return coreView($("#v"));
   if (tab === "db") return dbView($("#v"));
   if (tab === "prog") return progView($("#v"));
@@ -2532,7 +2532,7 @@ const HOUR_CAT = [["DRILLING SYSTEM", ["CORING DRILLING", "OPEN HOLE DRILLING"]]
   ["WORKING", ["RIG SET UP/DOWN/PREPARATION", "HOLE CONDITION/CEMENTING", "REAMING, CASING, INSTALLING", "RUNNING/PULL UP/STUCK ROD", "HANDLING HOLE"]],
   ["ACTIVE/STANDBY", ["TRAVELLING CREW", "P2H+P5M", "DRILL SITE PREPARATION", "WEATHER/UNSAVE CONDITION", "WAITING WATER", "WAITING ACCESS", "SERVICE/MAINTENANCE", "GEOSERVICES/LOGGING"]],
   ["ISTIRAHAT", ["ISTIRAHAT SIANG"]]]; // bukan standby/perbaikan, bukan jam bor efektif
-const SLOT_LABEL = { DRILLER: "Driller", WELLSITE: "Well site", CLIENT: "Client representative", PENGIRIM: "pengirim sample" };
+const SLOT_LABEL = { DRILLER: "Driller", WELLSITE: "Well site", CLIENT: "Client representative", PENGIRIM: "pengirim sample", DIREKTUR: "Direktur (BASTP)" };
 // "12,30" "12.30" "12:30" "1230" "12" "7.5" → "12:30" / "07:00"; teks tak terbaca dikembalikan apa adanya (server juga merapikan, v21a)
 const bakuJam = (s) => { const t = String(s ?? "").trim().replace(/\s+/g, ""); if (!t) return "";
   let m = /^(\d{1,2})[:.,;](\d{1,2})$/.exec(t), h, mi;
@@ -7053,7 +7053,11 @@ const terbilang = (n) => { const a = ["", "satu", "dua", "tiga", "empat", "lima"
   if (n < 2000) return ("seribu " + terbilang(n - 1000)).trim(); return (terbilang(Math.floor(n / 1000)) + " ribu " + terbilang(n % 1000)).trim(); };
 const tglTerbilang = (t) => { try { const d = new Date(t + "T12:00:00"); return `hari ${d.toLocaleDateString("id-ID", { weekday: "long" })} tanggal ${terbilang(d.getDate())} bulan ${d.toLocaleDateString("id-ID", { month: "long" })} tahun ${terbilang(d.getFullYear())} (${d.toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" })})`; } catch { return t; } };
 const BASTP_CEK = ["Seluruh titik dalam daftar telah dikerjakan (atau perubahan disetujui tertulis)", "Kedalaman aktual telah diverifikasi", "Seluruh core dan sampel telah diserahkan", "Data pemboran dan dokumentasi (DDR, drilling log, foto core) telah lengkap"];
-const SITE_REP = { nama: "Haryo Purnomo", jabatan: "Site Representative" }; // v.90: penanda tangan pihak PT Nusa Prima Gemilang di BA
+const SITE_REP = { nama: "Haryo Purnomo", jabatan: "Site Representative" };
+// v.92: template alasan stop bor
+const ALASAN_STOP = ["Selesai — pemboran telah menembus batuan dasar (bedrock), End of Hole (EOH).", "Selesai — telah mencapai kedalaman rencana.", "Dihentikan (STB) — kondisi lubang tidak stabil (runtuh / pipa terjepit).",
+  "Dihentikan (STB) — kendala teknis peralatan bor.", "Dihentikan (STB) — atas instruksi pemberi kerja.", "Dihentikan (STB) — lubang dipindah / di-redrill."];
+const alasanStop = (st) => (st === "STB" ? ALASAN_STOP[2] : st ? ALASAN_STOP[0] : ""); // v.90: penanda tangan pihak PT Nusa Prima Gemilang di BA
 const BULAN_ROMAWI = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
 async function baView(v) {
   if (!online()) { v.innerHTML = `<div class="card"><h2>Berita Acara</h2><p class="muted">Perlu sinyal internet.</p></div>`; return; }
@@ -7088,7 +7092,7 @@ async function baView(v) {
     const dalam = Math.max(0, ...xs.map((x) => +x.sampai_m), +(e?.depth_to ?? 0), +(h.eoh ?? 0));
     const pd = pindah(b), cl = CL.find((y) => y.holeid === b) ?? {};
     return { bhid: b, rig: [...new Set(xs.map((x) => x.rig))].join("/") || g.rig || "", mulai: (h.start_date ?? g.mulai ?? xs[0]?.tanggal ?? "").slice(0, 10), stop: (h.stop_date ?? e?.captured_at ?? pd?.stop ?? xs.at(-1)?.tanggal ?? "").slice(0, 10),
-      kedalaman: dalam, status: e?.status_akhir ?? (h.stop_date ? "STB" : ""), alasan: e?.reason ?? "", east: cl.east ?? h.east ?? "", north: cl.north ?? h.north ?? "", rl: cl.rl ?? h.rl ?? "", sistem: "UTM WGS84 Zona 51S", akurasi: cl.coord_akurasi_m ?? "", sumber_koord: cl.coord_source ?? h.coord_source ?? "",
+      kedalaman: dalam, status: e?.status_akhir ?? (h.stop_date ? "EOH" : ""), alasan: e?.reason || alasanStop(e?.status_akhir ?? (h.stop_date ? "EOH" : "")), east: cl.east ?? h.east ?? "", north: cl.north ?? h.north ?? "", rl: cl.rl ?? h.rl ?? "", sistem: "UTM WGS84 Zona 51S", akurasi: cl.coord_akurasi_m ?? "", sumber_koord: cl.coord_source ?? h.coord_source ?? "",
       coring: +mC.toFixed(2), open: +mO.toFixed(2), recovery: (h.jumlah_conto > 0 && h.recovery_pct != null) ? +h.recovery_pct : cc.length ? +((100 * cc.reduce((s, x) => s + +x.core_m, 0)) / cc.reduce((s, x) => s + +x.meter, 0)).toFixed(1) : (h.recovery_pct ?? ""), sumber_recovery: h.jumlah_conto > 0 ? "logging" : "DDR",
       conto: h.jumlah_conto ?? "", limonit: h.tebal_limonit ?? "", saprolit: h.tebal_saprolit ?? "", redrill: [asalRedrill(b) ? `Redrill dari ${asalRedrill(b)}` : "", !e && !h.stop_date && pd ? `selesai (rig pindah ke ${pd.ke} sesudah ${pd.stop})` : ""].filter(Boolean).join("; ") }; };
   // titik selesai dalam periode → baris tabel BASTP
@@ -7100,16 +7104,24 @@ async function baView(v) {
     if (r.jenis === "BA_STOP") segarIsiBA(I, ringkas(I.bhid || r.bhid));
     kunciTTD(I, r); return { ...r, isi: I }; };
   // v.91: penanda tangan TERKUNCI — wellsite = penanda tangan WELL SITE di DDR titik itu; pihak NPG = Haryo Purnomo, Site Representative
+  // simpan data terbaru (penanda tangan terkunci, data lubang) ke BA DRAFT sebelum dilihat/dicetak, supaya TTD otomatis memakai nama yang benar
+  const simpanSegar = async (r) => { const r2 = segarBA(r); if (r.status !== "FINAL" && JSON.stringify(r2.isi) !== JSON.stringify(r.isi)) await sb.from("berita_acara").update({ isi: r2.isi, updated_at: new Date().toISOString() }).eq("id", r.id); return r2; };
   const kunciTTD = (I, r) => { if (r.jenis === "BA_STOP") { const w = WSG[I.bhid || r.bhid]; if (w) I.geologist = w; I.geologist_jabatan = "Wellsite Geologist"; }
     I.penerima = SITE_REP.nama; I.penerima_jabatan = SITE_REP.jabatan; I.penerima_pt = KOP.pemberi; return I; };
   const titikPeriode = (f, t) => bhs.filter((b) => !RDR[b]).filter((b) => { const r = ringkas(b); return selesai(b) && r.stop >= f && r.stop <= t; }).map(barisT);
   const nomor = (jenis, b) => { const d = new Date(); return `${jenis === "BASTP" ? "BASTP" : "BA-STOP"}/TGEP/${b ? b.replace(/\s+/g, "") + "/" : ""}${BULAN_ROMAWI[d.getMonth()]}/${d.getFullYear()}`; };
-  const daftar = async () => { const { data } = await sb.from("berita_acara").select("id,jenis,nomor,bhid,dari,sampai,status,created_at,created_by").order("created_at", { ascending: false }).limit(100);
-    $("#baL").innerHTML = (data ?? []).map((r) => `<li style="flex-wrap:wrap"><span class="pill ${r.status === "FINAL" ? "APPROVED" : "ANTRE"}">${esc(r.status)}</span><span style="flex:1;min-width:170px"><b>${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"}</b> · ${esc(r.bhid ?? `${r.dari} s/d ${r.sampai}`)}<br><span class="muted">${esc(r.nomor ?? "")}</span></span>
+  const daftar = async () => { const { data } = await sb.from("berita_acara").select("id,jenis,nomor,bhid,dari,sampai,status,created_at,created_by,ba_signature(slot,signer_name)").order("created_at", { ascending: false }).limit(100);
+    const ttdK = (r) => { const S = Object.fromEntries((r.ba_signature ?? []).map((g) => [g.slot, g.signer_name])), sl = r.jenis === "BASTP" ? [["DIREKTUR", "Direktur"], ["SITE_REP", "Site Rep."]] : [["WELLSITE", "Wellsite"], ["SITE_REP", "Site Rep."]];
+      return sl.map(([k, l]) => `${S[k] ? "✅" : "⬜"} ${l}${S[k] ? ` (${esc(S[k])})` : ""}`).join(" · "); };
+    $("#baL").innerHTML = (data ?? []).map((r) => `<li style="flex-wrap:wrap"><span class="pill ${r.status === "FINAL" ? "APPROVED" : "ANTRE"}">${esc(r.status)}</span><span style="flex:1;min-width:170px"><b>${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"}</b> · ${esc(r.bhid ?? `${r.dari} s/d ${r.sampai}`)}<br><span class="muted">${esc(r.nomor ?? "")}<br>TTD: ${ttdK(r)}</span></span>
+      ${r.jenis === "BASTP" && !(r.ba_signature ?? []).some((g) => g.slot === "DIREKTUR") && me?.role === "admin" ? `<button data-td="${r.id}" style="flex:0;white-space:nowrap">✍️ TTD Direktur</button>` : ""}
       <button class="sec" data-v="${r.id}" style="flex:0">👁 Lihat</button><button class="sec" data-e="${r.id}" style="flex:0">✏️ Edit</button><button class="sec" data-p="${r.id}" style="flex:0">🖨 Cetak</button>${me?.role === "admin" || (r.status !== "FINAL" && r.created_by === session?.user?.id) ? `<button class="danger" data-hb="${r.id}" data-nm="${esc(`${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"} ${r.bhid ?? `${r.dari} s/d ${r.sampai}`}`)}" style="flex:0" title="Hapus berita acara yang salah">🗑 Hapus</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada.</li>`;
-    $("#baL").querySelectorAll("[data-v]").forEach((b) => (b.onclick = async () => { const { data: r } = await sb.from("berita_acara").select("*").eq("id", b.dataset.v).single(); cetakBA(b.dataset.v, { lihat: true, r: r ? segarBA(r) : undefined }); }));
+    $("#baL").querySelectorAll("[data-v]").forEach((b) => (b.onclick = async () => { const { data: r } = await sb.from("berita_acara").select("*").eq("id", b.dataset.v).single(); cetakBA(b.dataset.v, { lihat: true, r: r ? await simpanSegar(r) : undefined }); }));
     $("#baL").querySelectorAll("[data-e]").forEach((b) => (b.onclick = () => edit(b.dataset.e)));
-    $("#baL").querySelectorAll("[data-p]").forEach((b) => (b.onclick = async () => { const { data: r } = await sb.from("berita_acara").select("*").eq("id", b.dataset.p).single(); cetakBA(b.dataset.p, { r: r ? segarBA(r) : undefined }); }));
+    $("#baL").querySelectorAll("[data-p]").forEach((b) => (b.onclick = async () => { const { data: r } = await sb.from("berita_acara").select("*").eq("id", b.dataset.p).single(); cetakBA(b.dataset.p, { r: r ? await simpanSegar(r) : undefined }); }));
+    // v.92: BASTP — TTD Direktur dengan PIN / kartu QR
+    $("#baL").querySelectorAll("[data-td]").forEach((b) => (b.onclick = async () => { const t = await signDialog0("DIREKTUR", KOP.direktur); if (!t?.signer_id) return;
+      const { error } = await sb.rpc("ttd_ba_direktur", { p_ba: b.dataset.td, p_signer: t.signer_id, p_method: t.method, p_proof: t.proof }); if (error) return alert("Gagal: " + error.message); toast("✓ Ditandatangani Direktur"); daftar(); }));
     // v.59: 🗑 Hapus BA yang salah — admin (semua) atau pembuat selama masih DRAFT (aturan server "hapus BA")
     $("#baL").querySelectorAll("[data-hb]").forEach((b) => (b.onclick = () => hapusBA(b.dataset.hb, b.dataset.nm))); };
   const hapusBA = async (id, nm) => { if (!confirm(`Hapus ${nm}?\nBerita acara ini akan dihapus permanen. Bila hanya isinya yang salah, lebih baik pakai ✏️ Edit.`)) return;
@@ -7152,7 +7164,7 @@ async function baView(v) {
     $("#baEd").innerHTML = `<div class="card"><h3>✏️ Edit ${r.jenis === "BASTP" ? "BASTP" : "BA stop bor " + esc(r.bhid)}</h3>${kunci ? `<p class="err">Sudah FINAL — hanya admin yang bisa mengubah.</p>` : ""}
       <div class="row" style="flex-wrap:wrap"><div style="flex:2 1 220px"><label>Nomor</label><input id="eaN" value="${esc(r.nomor ?? "")}"></div>${inp("tempat", "Tempat")}${inp("tanggal", "Tanggal")}</div>
       ${r.jenis === "BA_STOP" ? `<div class="row" style="flex-wrap:wrap">${inp("bhid", "Hole ID")}${inp("rig", "Rig")}${inp("mulai", "Tgl mulai")}${inp("stop", "Tgl stop")}${inp("status", "Status (EOH/STB)")}${inp("kedalaman", "Kedalaman akhir (m)")}</div>
-        <div class="row" style="flex-wrap:wrap">${inp("alasan", "Alasan stop", "2 1 240px")}${inp("redrill", "Redrill")}</div>
+        <div class="row" style="flex-wrap:wrap">${inp("alasan", "Alasan stop (pilih template atau ketik)", "2 1 240px").replace('data-k="alasan"', 'data-k="alasan" list="dlAlasan"')}<datalist id="dlAlasan">${ALASAN_STOP.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>${inp("redrill", "Redrill")}</div>
         <div class="row" style="flex-wrap:wrap">${inp("east", "East / X")}${inp("north", "North / Y")}${inp("rl", "Elevasi / Z")}${inp("akurasi", "Akurasi GPS (± m)")}${inp("sistem", "Sistem koordinat")}</div>
         <div class="row" style="flex-wrap:wrap">${inp("coring", "Coring (m)")}${inp("open", "Open hole (m)")}${inp("recovery", "Recovery (%)")}${inp("conto", "Jumlah sample")}${inp("limonit", "Tebal limonit (m)")}${inp("saprolit", "Tebal saprolit (m)")}</div>`
       : `<div class="row">${inp("pekerjaan", "Pekerjaan", "1 1 100%")}</div><div class="tw"><table id="eaT"><tr>${kolomT.map(([, l]) => `<th>${l}</th>`).join("")}<th></th></tr>${(I.titik ?? []).map((t) => `<tr>${kolomT.map(([k]) => `<td><input data-t="${k}" value="${esc(t[k] ?? "")}" style="min-width:${k === "bhid" ? 120 : 70}px"></td>`).join("")}<td><button class="sec" data-x style="flex:0">✕</button></td></tr>`).join("")}</table></div><button class="sec" id="eaAdd" style="flex:0;margin-top:4px">+ baris titik</button>`}
@@ -7216,9 +7228,47 @@ async function tanyaPenandatangan(r) {
   });
 }
 // opsi.lihat = tampilkan isi surat saja (tanpa tanya penanda tangan); opsi.r = isian dari form edit yang belum disimpan
+// v.92: Berita acara untuk akun client (Site Representative): lihat BA lalu tanda tangan sendiri di layar
+async function baKlienView(v) {
+  if (!online()) { v.innerHTML = `<div class="card"><h2>Berita acara</h2><p class="muted">Perlu sinyal internet.</p></div>`; return; }
+  v.innerHTML = `<div class="card"><h2>Berita acara</h2><p class="muted" style="margin-top:0">BA stop bor dan BASTP dari ${KOP.pt}. Periksa isinya (👁 Lihat), lalu tanda tangani sebagai <b>Site Representative</b>. Tanda tangan wellsite / direktur TGEP sudah terpasang otomatis.</p><ul class="list" id="bkL"><li class="muted">Memuat…</li></ul></div>`;
+  const muat = async () => { const { data, error } = await sb.from("berita_acara").select("id,jenis,nomor,bhid,dari,sampai,status,created_at,ba_signature(slot,signer_name,signed_at)").order("created_at", { ascending: false }).limit(100);
+    if (error) return ($("#bkL").innerHTML = `<li class="err">${esc(error.message)}</li>`);
+    $("#bkL").innerHTML = (data ?? []).map((r) => { const S = Object.fromEntries((r.ba_signature ?? []).map((g) => [g.slot, g])), sudah = S.SITE_REP;
+      return `<li style="flex-wrap:wrap"><span class="pill ${r.status === "FINAL" ? "APPROVED" : "ANTRE"}">${esc(r.status)}</span><span style="flex:1;min-width:170px"><b>${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"}</b> · ${esc(r.bhid ?? `${r.dari} s/d ${r.sampai}`)}<br><span class="muted">${esc(r.nomor ?? "")}<br>${sudah ? `✅ Ditandatangani ${esc(sudah.signer_name)} · ${esc(fmtT(new Date(sudah.signed_at)))}` : "⬜ Menunggu tanda tangan Anda"}</span></span>
+        <button class="sec" data-v="${r.id}" style="flex:0">👁 Lihat</button>${sudah ? "" : `<button data-s="${r.id}" data-nm="${esc(r.nomor ?? "")}" style="flex:0;white-space:nowrap">✍️ Tanda tangan</button>`}</li>`; }).join("") || `<li class="muted">Belum ada berita acara.</li>`;
+    $("#bkL").querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => cetakBA(b.dataset.v, { lihat: true })));
+    $("#bkL").querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => tandaTanganKlien(b.dataset.s, b.dataset.nm, muat))); };
+  await muat();
+}
+async function tandaTanganKlien(id, nomor, selesai) {
+  const m = modal(`<h3 style="margin-top:0">✍️ Tanda tangan Site Representative</h3><p class="muted" style="margin-top:0">${esc(nomor)} · ${esc(me?.full_name ?? "")}. Pastikan isi BA sudah diperiksa (👁 Lihat). Tanda tangan di kotak putih.</p>
+    <canvas id="tkP" width="600" height="220" style="width:100%;max-width:600px;height:auto;background:#fff;border:2px dashed #9aa59f;border-radius:8px;touch-action:none"></canvas>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="tkS" style="width:auto"> Saya telah memeriksa dan menyetujui isi berita acara ini.</label>
+    <div class="row" style="margin-top:8px"><button id="tkOk">Simpan tanda tangan</button><button class="sec" id="tkC" style="flex:0">Hapus</button><button class="sec" id="tkX" style="flex:0">Batal</button></div><div id="tkE" class="err"></div>`);
+  const cv = m.querySelector("#tkP"), x = cv.getContext("2d"); let gambar = false, ada = false; x.lineWidth = 3; x.lineCap = "round"; x.strokeStyle = "#0b2a6b";
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return [((e.clientX - r.left) * cv.width) / r.width, ((e.clientY - r.top) * cv.height) / r.height]; };
+  cv.onpointerdown = (e) => { gambar = true; cv.setPointerCapture(e.pointerId); x.beginPath(); x.moveTo(...pos(e)); };
+  cv.onpointermove = (e) => { if (!gambar) return; x.lineTo(...pos(e)); x.stroke(); ada = true; };
+  cv.onpointerup = () => (gambar = false);
+  m.querySelector("#tkC").onclick = () => { x.clearRect(0, 0, cv.width, cv.height); ada = false; };
+  m.querySelector("#tkX").onclick = () => m.remove();
+  m.querySelector("#tkOk").onclick = async () => { const E = (t) => (m.querySelector("#tkE").textContent = t);
+    if (!ada) return E("Tanda tangan dulu di kotak putih."); if (!m.querySelector("#tkS").checked) return E("Centang pernyataan persetujuan.");
+    m.querySelector("#tkOk").disabled = true; E("Menyimpan…");
+    const blob = await new Promise((r) => cv.toBlob(r, "image/png")), path = `${session.user.id}/ba-${id}-${Date.now()}.png`;
+    const up = await sb.storage.from("signatures").upload(path, blob, { contentType: "image/png" }); if (up.error) { m.querySelector("#tkOk").disabled = false; return E(up.error.message); }
+    const { error } = await sb.rpc("ttd_ba_site_rep", { p_ba: id, p_path: path }); if (error) { m.querySelector("#tkOk").disabled = false; return E(error.message); }
+    m.remove(); toast("✓ Berita acara ditandatangani"); selesai?.(); };
+}
 async function cetakBA(id, opsi = {}) {
   const r0 = opsi.r ?? (await sb.from("berita_acara").select("*").eq("id", id).single()).data; if (!r0) return alert("Berita acara tidak ditemukan");
   const r = r0; const I = { ...(r.isi ?? {}) }, bast = r.jenis === "BASTP"; // v.91: penanda tangan sudah terkunci, tidak ditanya lagi saat cetak
+  if (!bast && r.status !== "FINAL" && isStaff()) { try { await sb.rpc("ttd_ba_wellsite", { p_ba: r.id }); } catch {} } // v.92: TTD wellsite otomatis dari TTD terdaftar
+  const { data: SG } = await sb.from("ba_signature").select("slot,signer_name,signer_title,signature_path,method,signed_at").eq("ba_id", r.id);
+  const SU = await signedUrls("signatures", (SG ?? []).map((g) => g.signature_path)).catch(() => ({}));
+  const ttdImg = (slot) => { const g = (SG ?? []).find((x) => x.slot === slot), u = g && SU[g.signature_path];
+    return g ? `<div class="sp" style="height:70px;display:flex;align-items:center;justify-content:center">${u ? `<img src="${esc(u)}" alt="" style="max-height:66px;max-width:90%;object-fit:contain">` : ""}</div><div style="font-size:8.5px;color:#666">TTD elektronik ${esc(fmtT(new Date(g.signed_at)))}</div>` : `<div class="sp"></div>`; };
   if (r.status !== "FINAL") { I.penerima = SITE_REP.nama; I.penerima_jabatan = SITE_REP.jabatan; I.penerima_pt = KOP.pemberi; }
   const w = jendelaDok(bast ? "BASTP" : `BA stop bor ${r.bhid}`, "A4P");
   // v.60: LAMPIRAN foto — halaman baru (mulai dari atas kertas) setelah tanda tangan: foto patok, foto selesai bor, foto pengerjaan, foto core box.
@@ -7273,10 +7323,10 @@ async function cetakBA(id, opsi = {}) {
   ${bast ? `<h3>3. Data, dokumen dan database yang diserahkan</h3><table class="d"><tr><th style="width:24px">No</th><th>Item</th><th style="width:70px">Diserahkan</th><th>Keterangan</th></tr>${(I.serah ?? []).map((c, i) => `<tr><td>${i + 1}</td><td>${esc(c.t)}</td><td style="text-align:center"><b>${esc(c.ya)}</b></td><td>${esc(c.ket ?? "")}</td></tr>`).join("")}</table>` : ""}
   ${I.catatan ? `<p><b>Catatan:</b> ${esc(I.catatan)}</p>` : ""}${bast && I.penutup ? `<p>${esc(I.penutup)}</p>` : ""}
   <div class="blok"><p>${esc(I.tempat ?? "")}, ${esc(tglPanjang(I.tanggal ?? ""))}</p>
-  ${bast ? `<div class="ttd"><div>PIHAK PERTAMA<br>Yang menyerahkan,<br><b>${KOP.pt}</b><div class="sp"></div><span class="nm">${esc(I.direktur || KOP.direktur)}</span><br>${esc(I.direktur_jabatan || KOP.jabatanDir)}</div>
-    <div>PIHAK KEDUA<br>Yang menerima,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b><div class="sp"></div><span class="nm">${esc(I.penerima || "(......................)")}</span><br>${esc(I.penerima_jabatan ?? "")}</div></div>`
-  : `<div class="ttd"><div>Dibuat oleh,<br><b>${KOP.pt}</b><br>${esc(I.geologist_jabatan ?? "Wellsite Geologist")}<div class="sp"></div><span class="nm">${esc(I.geologist || "(......................)")}</span></div>
-    <div>Disaksikan oleh,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b><br>${esc(I.penerima_jabatan || SITE_REP.jabatan)}<div class="sp"></div><span class="nm">${esc(I.penerima || "(......................)")}</span></div></div>`}</div>
+  ${bast ? `<div class="ttd"><div>PIHAK PERTAMA<br>Yang menyerahkan,<br><b>${KOP.pt}</b>${ttdImg("DIREKTUR")}<span class="nm">${esc(I.direktur || KOP.direktur)}</span><br>${esc(I.direktur_jabatan || KOP.jabatanDir)}</div>
+    <div>PIHAK KEDUA<br>Yang menerima,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b>${ttdImg("SITE_REP")}<span class="nm">${esc(I.penerima || "(......................)")}</span><br>${esc(I.penerima_jabatan ?? "")}</div></div>`
+  : `<div class="ttd"><div>Dibuat oleh,<br><b>${KOP.pt}</b><br>${esc(I.geologist_jabatan ?? "Wellsite Geologist")}${ttdImg("WELLSITE")}<span class="nm">${esc(I.geologist || "(......................)")}</span></div>
+    <div>Disaksikan oleh,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b><br>${esc(I.penerima_jabatan || SITE_REP.jabatan)}${ttdImg("SITE_REP")}<span class="nm">${esc(I.penerima || "(......................)")}</span></div></div>`}</div>
   </section>${foto}</div>
   </body></html>`); w.document.close();
 }

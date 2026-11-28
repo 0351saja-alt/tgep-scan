@@ -1,0 +1,8 @@
+-- v73 (28/11/2026): tanda tangan elektronik di Berita Acara.
+--  ba_signature(ba_id, slot WELLSITE|SITE_REP|DIREKTUR, signer…, signature_path, method, signed_at); baca: staf & client.
+--  ttd_ba_wellsite(p_ba): staf; TTD terdaftar (signature_profile) wellsite yang tertulis di BA dipasang otomatis (BA_STOP, belum FINAL).
+--  ttd_ba_site_rep(p_ba, p_path): akun client (Haryo) tanda tangan di layar → gambar di signatures/<uid>/…; lengkap → FINAL.
+--  ttd_ba_direktur(p_ba, p_signer, p_method, p_proof): BASTP, PIN/QR seperti DDR.
+--  Kebijakan: client baca berita_acara; file TTD BA bisa dibaca; client unggah TTD ke folder sendiri.
+--  v73b: ttd_ba_wellsite → FINAL bila Site Rep sudah tanda tangan.
+--  App v.92: menu "Berita acara" untuk client; ✍️ TTD Direktur di BASTP; status TTD di daftar BA; template alasan stop bor; status default EOH.
