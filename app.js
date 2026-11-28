@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.95";
+const APP_VERSION = "2026-11-28.96";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3131,10 +3131,14 @@ async function dashView(v) {
     const sel = L.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)), prog = L.filter((x) => x.status === "PROGRES"), ren = L.filter((x) => x.status === "RENCANA");
     const total = Math.max(+pj?.target_lubang || 0, L.length), pct = total ? (100 * sel.length) / total : 0, mtr = sel.reduce((a, x) => a + (+x.kedalaman || 0), 0);
     const d = document.createElement("div"); d.style.cssText = "background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px;border-left:6px solid #1E9E69;box-shadow:0 1px 4px rgba(0,0,0,.06)";
-    d.innerHTML = `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><b style="font-size:15px">Progres titik bor</b><span style="font:800 26px Arial;color:#1E9E69">${pct.toLocaleString("id-ID", { maximumFractionDigits: 1 })} %</span>
-      <span class="muted">${sel.length} dari ${total} titik selesai (EOH/STB) · ${prog.length} sedang dibor · ${ren.length} rencana · ${mtr.toLocaleString("id-ID", { maximumFractionDigits: 1 })} m di titik selesai</span></div>
-      <div style="height:14px;background:#E6EEE9;border-radius:7px;overflow:hidden;margin-top:6px;display:flex"><div style="width:${pct}%;background:#1E9E69"></div><div style="width:${total ? (100 * prog.length) / total : 0}%;background:#E0A100"></div></div>
-      <div style="font-size:11.5px;margin-top:5px;color:#4b5a52">Selesai: ${sel.map((x) => esc(x.bhid)).join(", ") || "–"}${prog.length ? ` · Sedang dibor: ${prog.map((x) => esc(x.bhid)).join(", ")}` : ""}. Lubang redrill menggantikan lubang lamanya (tidak dihitung dua kali).</div>`;
+    const kotak = (n, l, w, sub = "") => `<div style="flex:1 1 120px;background:${w}14;border:1px solid ${w}55;border-radius:10px;padding:6px 10px"><div style="font-size:11.5px;color:#4b5a52">${l}</div><div style="font:800 24px Arial;color:${w}">${n}</div>${sub ? `<div style="font-size:11px;color:#4b5a52">${sub}</div>` : ""}</div>`;
+    const pp = (n) => (total ? `${((100 * n) / total).toLocaleString("id-ID", { maximumFractionDigits: 1 })} % dari target` : "");
+    d.innerHTML = `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px"><b style="font-size:15px">Progres titik bor</b><span class="muted" style="font-size:12px">target ${total} titik${pj?.target_lubang ? " (SOW)" : ""} · lubang redrill menggantikan lubang lamanya</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${kotak(`${pct.toLocaleString("id-ID", { maximumFractionDigits: 1 })} %`, "Titik selesai dari target", "#1E9E69", `${sel.length} / ${total} titik`)}
+        ${kotak(sel.length, "Selesai (EOH / STB)", "#1E9E69", `${pp(sel.length)} · ${mtr.toLocaleString("id-ID", { maximumFractionDigits: 1 })} m`)}${kotak(prog.length, "On progress (sedang dibor)", "#E0A100", pp(prog.length))}
+        ${kotak(Math.max(0, total - sel.length - prog.length), "Belum dibor", "#7A8B83", pp(Math.max(0, total - sel.length - prog.length)))}</div>
+      <div style="height:14px;background:#E6EEE9;border-radius:7px;overflow:hidden;margin-top:8px;display:flex" title="hijau = selesai · kuning = on progress · abu = belum dibor"><div style="width:${pct}%;background:#1E9E69"></div><div style="width:${total ? (100 * prog.length) / total : 0}%;background:#E0A100"></div></div>
+      <div style="font-size:11.5px;margin-top:5px;color:#4b5a52">Selesai: ${sel.map((x) => `${esc(x.bhid)} (${x.status}${x.kedalaman ? `, ${fmtD(+x.kedalaman)} m` : ""})`).join(", ") || "–"}${prog.length ? ` · On progress: ${prog.map((x) => `${esc(x.bhid)}${x.kedalaman ? ` (${fmtD(+x.kedalaman)} m)` : ""}`).join(", ")}` : ""}${ren.length ? ` · Belum dibor: ${ren.map((x) => esc(x.bhid)).join(", ")}` : ""}</div>`;
     $("#kpi")?.prepend(d); })().catch(() => {});
   const klien = isClient() && !clientGeo();
   const { data: kp } = isClient() ? { data: [] } : await sb.from("v_kepatuhan_harian").select("nama,rig,status,kurang,antrean").eq("tanggal", st.to);
