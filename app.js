@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.74";
+const APP_VERSION = "2026-11-28.75";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6644,7 +6644,15 @@ async function abslView(v) {
 
 // ---------- Pengiriman sample (dari data logging bor) ----------
 // v.68: tujuan baku PT Nusa Prima Gemilang u.p. Haryo Purnomo (bisa diubah di form)
-const TUJUAN_KIRIM = "PT NUSA PRIMA GEMILANG", UP_KIRIM = "Haryo Purnomo";
+const TUJUAN_KIRIM = "PT NUSA PRIMA GEMILANG", UP_KIRIM = "Haryo Purnomo", PENGIRIM_KIRIM = "Imam Gazali";
+// v.75: pilihan nama pengirim = wellsite geologist / geologist / admin terdaftar (personil WSG + pengguna staf); bawaan Imam Gazali
+async function isiPengirim(sel, pilih) {
+  const [{ data: P }, { data: U }] = await Promise.all([sb.from("personil").select("nama,jabatan,aktif").limit(500), sb.from("app_user").select("full_name,role").in("role", ["geologist", "verifier", "admin"]).limit(200)]);
+  const rapi = (x) => String(x ?? "").trim().replace(/\s+/g, " ").replace(/\b\p{L}/gu, (c) => c.toUpperCase()), M = new Map();
+  for (const n of [PENGIRIM_KIRIM, ...(P ?? []).filter((p) => p.aktif !== false && /WSG|GEOLOG|WELLSITE/i.test(p.jabatan ?? "")).map((p) => p.nama), ...(U ?? []).map((u) => u.full_name), me?.full_name]) { const r = rapi(n); if (r && !M.has(r.toLowerCase())) M.set(r.toLowerCase(), r); }
+  const v = rapi(pilih) || PENGIRIM_KIRIM; if (!M.has(v.toLowerCase())) M.set(v.toLowerCase(), v);
+  sel.innerHTML = [...M.values()].map((n) => `<option ${n.toLowerCase() === v.toLowerCase() ? "selected" : ""}>${esc(n)}</option>`).join("");
+}
 // Daftar sample = conto hasil logging (tabel sample) yang belum pernah dikirim. Isi berat & no. kantong langsung di layar,
 // atau unduh templat Excel → isi di laptop → unggah balik. Simpan = satu form pengiriman (kirim_preparasi + item) lewat RPC simpan_kirim_preparasi.
 async function sampelView(v) {
@@ -6655,7 +6663,7 @@ async function sampelView(v) {
     <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 200px"><label>Titik bor *</label><select id="kpB"><option value="">— pilih titik —</option></select></div>
       <div style="flex:1 1 130px"><label>Tanggal kirim</label><input type="date" id="kpT" value="${hariIni}"></div>
       <div style="flex:1 1 150px"><label>Tujuan (perusahaan)</label><input id="kpJ" value="${esc(TUJUAN_KIRIM)}" placeholder="nama perusahaan / lab tujuan"></div></div>
-    <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 150px"><label>Pengirim</label><input id="kpP" value="${esc(me?.full_name ?? "")}"></div>
+    <div class="row" style="flex-wrap:wrap"><div style="flex:1 1 150px"><label>Pengirim (tanda tangan)</label><select id="kpP"><option>${esc(PENGIRIM_KIRIM)}</option></select></div>
       <div style="flex:1 1 150px"><label>Penerima (u.p.)</label><input id="kpR" value="${esc(UP_KIRIM)}"></div>
       <div style="flex:0 1 110px"><label>Jumlah karung titik ini</label><input id="kpK" inputmode="numeric"></div>
       <div style="flex:1 1 130px"><label>No. segel</label><input id="kpS"></div></div>
@@ -6733,6 +6741,7 @@ async function sampelView(v) {
   if ((tunggu ?? []).length) { const ver = ["verifier", "admin"].includes(me?.role);
     $("#kpW").innerHTML = `<div style="background:#FFF4D6;border-radius:8px;padding:8px 10px;margin:6px 0"><b>⏳ Form Logging belum disetujui</b> — sample-nya belum masuk database, jadi belum muncul di daftar ini:<ul class="list" style="margin:4px 0 0">${tunggu.map((j) => `<li><span style="flex:1"><b>${esc(j.bhid_hint ?? "")}</b> hal. ${esc(j.page_no ?? "?")} · ${(j.merged?.rows ?? []).length} baris · ${esc(j.status)}${j.draft_at ? " · 💾 editan tersimpan" : ""}</span>${ver ? `<button data-pt="${j.id}" style="flex:0;white-space:nowrap">✅ Periksa & terima</button>` : ""}</li>`).join("")}</ul>${ver ? "" : `<p class="muted" style="margin:4px 0 0">Minta verifier/admin memeriksa & menyetujui.</p>`}</div>`;
     $("#kpW").querySelectorAll("[data-pt]").forEach((b) => (b.onclick = () => { scrollTo(0, 0); reviewDetail(v, b.dataset.pt, "foto"); })); }
+  isiPengirim($("#kpP"), PENGIRIM_KIRIM).catch(() => {});
   await muat(); daftar();
 }
 
