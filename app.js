@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.96";
+const APP_VERSION = "2026-11-28.97";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -4341,7 +4341,7 @@ async function presentasiHTML(D) {
   const kecil = (s) => (s.n && s.n < 5 ? `<span class="nk">n=${s.n}</span>` : "");
   // ===== 1. Sampul =====
   S.push(`<section class="sl cover"><div class="cv-l"><div class="tag">LAPORAN PROGRES PEMBORAN</div><h1>${esc(nama)}</h1><div class="per">${per}${st.rig ? ` · ${esc(st.rig)}` : ""}</div>
-    <div class="cv-k">${card(mPer.toFixed(1) + " m", "meter bor periode", "", "#7CE0B0")}${card(`${nSelesai}/${tgtL}`, "lubang selesai", "", "#7CE0B0")}${card(mCum.toFixed(0) + " m", "kumulatif proyek", tgtM ? `${pct(mCum, tgtM)}% dari target ${tgtM} m` : "", "#7CE0B0")}${card(String(nCt), "conto di database", nCt ? `L ${nCl} · S ${nCs} · lain ${nCt - nCl - nCs}` : "belum ada conto", "#7CE0B0")}</div>
+    <div class="cv-k">${card(mPer.toFixed(1) + " m", "meter bor periode", "", "#7CE0B0")}${(() => { const LB_ = LB ?? [], sl = LB_.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)), pg = LB_.filter((x) => x.status === "PROGRES"), tt = Math.max(Number(PJ?.target_lubang) || 0, LB_.length) || tgtL; return card(`${sl.length}/${tt}`, "lubang selesai (EOH/STB)", `${tt ? Math.round((100 * sl.length) / tt) : 0}% dari target ${tt} titik`, "#7CE0B0") + card(String(pg.length), "lubang on progress", pg.length ? pg.map((x) => x.bhid).join(", ") : "tidak ada", "#FFD36B"); })()}${card(mCum.toFixed(0) + " m", "kumulatif proyek", tgtM ? `${pct(mCum, tgtM)}% dari target ${tgtM} m` : "", "#7CE0B0")}${card(String(nCt), "conto di database", nCt ? `L ${nCl} · S ${nCs} · lain ${nCt - nCl - nCs}` : "belum ada conto", "#7CE0B0")}</div>
     <div class="vonis" style="border-color:${KS.warna}"><div class="vl">KESIMPULAN</div><div class="vv" style="color:${KS.warna}">${esc(KS.vonis)}</div><div class="vs">${esc(KS.ringkas)}</div></div>
     <div class="by">PT Terra Grapindo Eco Prima · eksplorasi nikel laterit · disusun ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })} · ${esc(me?.full_name ?? "")}</div></div>
     <div class="cv-r3">${tiga}</div></section>`);
@@ -4428,7 +4428,7 @@ async function presentasiHTML(D) {
   .sl>header{display:flex;align-items:center;gap:14px;padding:16px 34px 10px;border-bottom:3px solid #1E9E69}.sl>header .no{font:700 26px Arial;color:#1E9E69}.sl>header h2{margin:0;font-size:28px;white-space:nowrap}.sl>header .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.sl>header .sub{color:#6b7a72;font-size:15px}.sl>header .br{margin-left:auto;font:700 13px Arial;color:#12251E;opacity:.55;letter-spacing:.06em}
   .isi{flex:1;padding:16px 34px;overflow:hidden}.sl>footer{display:flex;justify-content:space-between;padding:6px 34px;font-size:12px;color:#6b7a72;border-top:1px solid #e3e8e1}
   .cover{flex-direction:row;background:linear-gradient(135deg,#0d1f18,#12251E 55%,#1b4a37);color:#fff}.cv-l{flex:0 0 42%;padding:46px 40px;display:flex;flex-direction:column}.cv-r{flex:1;padding:22px 22px 22px 0;display:flex;align-items:center}.cv-r svg{width:100%;height:auto;border-radius:10px;border:0!important}.cv-r div{display:none}
-  .tag{font:700 14px Arial;letter-spacing:.18em;color:#7CE0B0}.cover h1{font-size:46px;line-height:1.08;margin:14px 0 8px}.per{font-size:19px;opacity:.85}.cv-k{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:30px 0 auto}.cover .cv-k .kpi{padding:10px 12px}.cover .cv-k .kpi .v{font-size:27px}.cover .cv-k .kpi .l{font-size:12.5px}.cover .cv-k .kpi .s{font-size:11px}.cover .kpi{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15)}.cover .kpi .l,.cover .kpi .s{color:#cfe3d9}.by{font-size:13px;opacity:.7;line-height:1.6}
+  .tag{font:700 14px Arial;letter-spacing:.18em;color:#7CE0B0}.cover h1{font-size:46px;line-height:1.08;margin:14px 0 8px}.per{font-size:19px;opacity:.85}.cv-k{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:30px 0 auto}.cover .cv-k .kpi{padding:10px 12px}.cover .cv-k .kpi .v{font-size:27px}.cover .cv-k .kpi .l{font-size:12.5px}.cover .cv-k .kpi .s{font-size:11px}.cover .kpi{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15)}.cover .kpi .l,.cover .kpi .s{color:#cfe3d9}.by{font-size:13px;opacity:.7;line-height:1.6}
   .kpi{border:1px solid #e3e8e1;border-radius:14px;padding:14px 16px;background:#f7faf8}.grid8{display:grid;grid-template-columns:repeat(8,1fr);gap:8px}.grid8 .kpi{padding:8px 10px;border-radius:10px}.grid8 .kpi .v{font-size:22px}.grid8 .kpi .l{font-size:12px}.grid8 .kpi .s{font-size:10.5px}
   .hk svg{max-height:112px}.t.rk{font-size:11.5px}.t.rk td,.t.rk th{padding:2.5px 6px}.t.kc{font-size:12px}.t.kc th,.t.kc td{padding:3px 6px}.t.kc td:first-child{white-space:nowrap}.cv-r3{flex:1;padding:18px 18px 18px 0;display:flex;flex-direction:column;justify-content:center}.cv-r3 svg{width:100%;height:auto;border-radius:12px}.cv-r3>div{color:#cfe3d9!important;font-size:10px!important}
   .vonis{margin:18px 0 auto;border:2px solid;border-radius:14px;padding:10px 16px;background:rgba(255,255,255,.06)}.vonis .vl,.vonis2 .vl{font:700 12px Arial;letter-spacing:.14em;opacity:.7}.vonis .vv{font:800 26px Arial}.vonis .vs{font-size:13px;opacity:.85}
@@ -4736,7 +4736,7 @@ async function laporanProgres(st) {
     const holeRow = (b) => { const l = LG[b] ?? {}, h = HL[b] ?? {}, t = TG[b] ?? {}, bor = n(l.kedalaman_bor) || n(h.eoh), tgt = n(t.target);
       const selesai = !!h.stop_date || (tgt > 0 && bor >= tgt - 0.05) || (n(t.td) > 0 && bor >= n(t.td) - 0.05);
       return { b, rig: l.rig ?? "", mulai: (h.start_date ?? l.mulai ?? "").toString().slice(0, 10), akhir: (l.terakhir_bor ?? h.stop_date ?? "").toString().slice(0, 10), bor, tgt, logm: n(l.kedalaman_logging), conto: n(l.jumlah_conto ?? h.jumlah_conto), lstat: l.status ?? "-", tl: h.tebal_limonit, ts: h.tebal_saprolit, rec: h.recovery_pct, selesai }; };
-    const HR = bhids.map(holeRow), nSelesai = HR.filter((h) => h.selesai).length;
+    const HR = bhids.map(holeRow), nSelesai = LB.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)).length, nProg = LB.filter((x) => x.status === "PROGRES").length;
     const petaGrafik = await petaSVG(LB.map((x) => ({ ...x, rec: HR.find((h) => h.b === x.bhid)?.rec })), { w: 960, h: 600, grafik: prof ?? [] }).catch((e) => `<p>Peta gagal dibuat: ${esc(e.message)}</p>`);
     const gbr3D = await blok3D(LB, prof, { w: 960, h: 500 }).catch((e) => `<p>Tampilan 3D gagal: ${esc(e.message)}</p>`);
     const mPer = sum(days, "meter_bor"), mCum = sum(rdAll ?? [], "meter_bor");
@@ -4768,7 +4768,7 @@ async function laporanProgres(st) {
     const kpiV = Object.fromEntries(K.map(([a, b, c]) => [a, { v: b, f: c }]));
     const notes = [];
     if (PJ?.target_meter) notes.push(`Realisasi kumulatif ${mCum.toFixed(1)} m dari target ${PJ.target_meter} m (${pct(mCum, PJ.target_meter)}%).`);
-    if (PJ?.target_lubang) notes.push(`Lubang selesai ${nSelesai} dari target ${PJ.target_lubang} lubang (${pct(nSelesai, PJ.target_lubang)}%).`);
+    if (PJ?.target_lubang) notes.push(`Lubang selesai (EOH/STB) ${nSelesai} dari target ${PJ.target_lubang} lubang (${pct(nSelesai, PJ.target_lubang)}%); on progress ${nProg} lubang.`);
     for (const [k, x] of Object.entries(kpiV)) if (x.f === "!") notes.push(`Perlu perhatian — ${k}: ${x.v}.`);
     if (!klien && lgc("TERLAMBAT")) notes.push(`${lgc("TERLAMBAT")} lubang Form Logging terlambat: ${HR.filter((h) => h.lstat === "TERLAMBAT").map((h) => h.b).join(", ")}.`);
     const lowOp = opRows.filter((r) => r[3] && (parseInt(r[7]) || 0) < 80); if (!klien && lowOp.length) notes.push(`Operator dengan kepatuhan kirim < 80%: ${lowOp.map((r) => `${r[0]} (${r[7]})`).join(", ")}.`);
@@ -4779,7 +4779,7 @@ async function laporanProgres(st) {
     const RC = await recoveryData(LB, HR, prof);
     const T = {
       ringkasan: [["Indikator", "Nilai"], ["Periode", `${st.from} s/d ${st.to}`], ["Proyek", PJ?.nama ?? "Semua proyek"], ["Rig", st.rig || "Semua rig"], ["Meter bor periode", mPer.toFixed(1) + " m"], ["Meter bor kumulatif", mCum.toFixed(1) + " m"],
-        ["Target meter proyek", PJ?.target_meter ? `${PJ.target_meter} m (${pct(mCum, PJ.target_meter)}%)` : "belum diisi admin"], ["Lubang selesai / dikerjakan", `${nSelesai} / ${HR.length}`], ["Target lubang proyek", PJ?.target_lubang ? `${PJ.target_lubang} (${pct(nSelesai, PJ.target_lubang)}%)` : "belum diisi admin"],
+        ["Target meter proyek", PJ?.target_meter ? `${PJ.target_meter} m (${pct(mCum, PJ.target_meter)}%)` : "belum diisi admin"], ["Lubang selesai (EOH/STB) / on progress", `${nSelesai} / ${nProg}`], ["Target lubang proyek", PJ?.target_lubang ? `${PJ.target_lubang} (${pct(nSelesai, PJ.target_lubang)}%)` : "belum diisi admin"],
         ...K.filter(([a]) => a !== "Total meter bor").map(([a, b]) => [a, b])],
       rig: [["Rig", "Hari aktif", "Meter", "Run", "m/jam", "m/hari aktif", "Standby+perbaikan (jam)", "BBM (L)", "BBM (L/m)", "P2H", "DDR ber-TTD"], ...rigRows].map((r) => (klien ? r.filter((_, i) => i !== 7 && i !== 8) : r)),
       harian: [["Tanggal", "Rig aktif", "Meter", "Kumulatif proyek"], ...dayRows],

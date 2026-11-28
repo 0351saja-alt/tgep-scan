@@ -1,0 +1,5 @@
+-- v74 (28/11/2026): v_peta_lubang — titik dihitung PROGRES (on progress) bila sudah ada foto aktivitas
+-- (drill_event apa pun, mis. MASUK) atau DDR, walau belum ada event MULAI_BOR. Diterapkan via replace dinamis:
+--   'WHEN ev.mulai THEN ''PROGRES''' → 'WHEN (ev.bhid IS NOT NULL OR EXISTS (SELECT 1 FROM ddr dd WHERE dd.bhid = s.bhid)) THEN ''PROGRES'''
+-- lalu alter view public.v_peta_lubang set (security_invoker = true).
+-- Hasil: DH-NPG 11 RENCANA → PROGRES (foto MASUK 28/11). Catatan: DH-NPG 01 punya 2 foto core box (24/11) tanpa DDR/aktivitas — tidak dihitung, perlu dicek.
