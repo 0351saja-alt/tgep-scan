@@ -1,0 +1,6 @@
+-- v77 (28/11/2026): menu 📁 Database utama — file FIX per jenis data (DDR TTD, Form Logging, kirim sample, BA, foto core,
+-- foto aktivitas, arsip formulir) lalu per titik. Tabel public.drive_folder (kunci, user_id null = staf / uid client, path, url)
+-- untuk tombol "Google Drive ↗"; diisi awal dengan folder staf yang ada (Driller/TGEP/Progres bor, Wellsite (Geologi)/TGEP, dst.).
+-- v_drive_client_tambah: salinan client kini disusun Client/<nama (email)>/<NN jenis>/<BHID> (belum ada salinan, jadi aman).
+-- drive-sync v21 (kode di repo, belum di-deploy): POST {folder_catat:[{kunci,user_id,path,url}]} untuk Apps Script.
+-- Definisi lengkap: migrasi v77_drive_folder_database_utama di Supabase.

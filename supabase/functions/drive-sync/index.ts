@@ -8,6 +8,7 @@
 // POST {bucket,path,drive_id,drive_url,ukuran,...}   -> catat file sudah tersalin
 // POST {hapus:[{bucket,path}]}                       -> hapus file asli dari Storage (dicek ulang)
 // POST {client_catat:[{user_id,bucket,path,drive_id,folder}]} / {client_tarik:[{user_id,bucket,path}]}
+// POST {folder_catat:[{kunci,user_id?,path,url}]}     -> (v21) link folder Drive per jenis data (menu Database utama)
 // Otorisasi: header x-sync-key; yang disimpan di sini hanya SHA-256-nya.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { pdfDDR, pdfKirim } from "./pdf.ts";
@@ -130,6 +131,13 @@ Deno.serve(async (req) => {
     if (Array.isArray(b?.client_catat)) {
       const rows = b.client_catat.slice(0, 100).map((x: any) => ({ user_id: x.user_id, bucket: x.bucket, path: x.path, drive_id: x.drive_id, folder: x.folder ?? null }));
       const { error } = await sb.from("drive_client").upsert(rows);
+      return error ? json({ error: error.message }, 500) : json({ ok: rows.length });
+    }
+    // v21: Apps Script melaporkan link folder Drive (folder per jenis data / per client) untuk tombol "Buka di Google Drive" di menu Database utama
+    if (Array.isArray(b?.folder_catat)) {
+      const rows = b.folder_catat.slice(0, 100).filter((x: any) => x?.kunci && /^https:\/\/drive\.google\.com\//.test(String(x.url ?? "")))
+        .map((x: any) => ({ kunci: String(x.kunci), user_id: x.user_id ?? null, path: x.path ?? null, url: String(x.url), diperbarui: new Date().toISOString() }));
+      const { error } = await sb.from("drive_folder").upsert(rows, { onConflict: "kunci,user_id" });
       return error ? json({ error: error.message }, 500) : json({ ok: rows.length });
     }
     if (Array.isArray(b?.client_tarik)) {

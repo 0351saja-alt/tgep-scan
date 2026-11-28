@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.105";
+const APP_VERSION = "2026-11-28.106";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -342,8 +342,8 @@ async function render() {
     $("#out").onclick = () => { localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); sb.auth.signOut(); }; return; }
   if (!["client", "admin", "verifier", "admin_lapangan"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig & DDR"], ["ba", "Berita acara"], ["kirimk", "Pengiriman sample"], ["peta", "Peta"], ["fk", "Foto & scan"], ["db", "Database"], ["dok", "Dokumen"], ["simpan", "Data tersimpan"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
-    ...(ver ? [["review", "Periksa scan"]] : []), ...(staff ? [["data", "Data & cek"], ["db", "Database"]] : []), ...(ver ? [["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["simpan", "Data tersimpan"], ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
+  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["dbu", "📁 Database utama"], ["klien", "Laporan rig & DDR"], ["ba", "Berita acara"], ["kirimk", "Pengiriman sample"], ["peta", "Peta"], ["fk", "Foto & scan"], ["db", "Database"], ["dok", "Dokumen"], ["simpan", "Data tersimpan"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
+    ...(ver ? [["review", "Periksa scan"]] : []), ...(staff ? [["dbu", "📁 Database utama"], ["data", "Data & cek"], ["db", "Database"]] : []), ...(ver ? [["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["simpan", "Data tersimpan"], ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
   const PANDUAN = { driller: "driller", geologist: "geologist", verifier: "verifier", admin: "admin", client: "client", admin_lapangan: "admin_lapangan" };
@@ -380,6 +380,7 @@ async function render() {
   if (tab === "klien") return klienView($("#v"));
   if (tab === "fk") return fotoKlienView($("#v"));
   if (tab === "kirimk") return kirimKlienView($("#v"));
+  if (tab === "dbu") return dbUtamaView($("#v"));
   if (tab === "peta") return petaView($("#v"));
   if (tab === "keu") return isKeu() ? keuView($("#v")) : null;
   if (tab === "absl") return isKeu() ? abslView($("#v")) : null;
@@ -7269,6 +7270,56 @@ async function baKlienView(v) {
     $("#bkL").querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => cetakBA(b.dataset.v, { lihat: true })));
     $("#bkL").querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => tandaTanganKlien(b.dataset.s, b.dataset.nm, muat))); };
   await muat();
+}
+// v.106: 📁 DATABASE UTAMA — semua file yang sudah FIX dikumpulkan per jenis data (folder) lalu per titik bor.
+// DDR bertanda tangan lengkap, Form Logging disetujui, form pengiriman sample, berita acara, foto core, foto aktivitas bor, arsip formulir.
+// Client hanya melihat data proyeknya yang sudah dirilis. Tiap folder punya tombol ke folder Google Drive (tabel drive_folder).
+const DBU = [["DDR", "📄", "DDR bertanda tangan"], ["LOGGING", "🧾", "Form Logging (disetujui)"], ["KIRIM", "📦", "Pengiriman sample"], ["BA", "✍️", "Berita acara (BA stop bor & BASTP)"],
+  ["CORE", "🪨", "Foto core box"], ["AKTIVITAS", "📷", "Foto aktivitas bor"], ["ARSIP", "🗂", "Arsip formulir lapangan"]];
+async function dbUtamaView(v) {
+  if (!online()) { v.innerHTML = `<div class="card"><h2>📁 Database utama</h2><p class="muted">Perlu sinyal internet.</p></div>`; return; }
+  const klien = isClient();
+  v.innerHTML = `<div class="card"><h2 style="margin-bottom:4px">📁 Database utama</h2><p class="muted" style="margin-top:0">Semua file yang sudah <b>FIX</b> ${klien ? "untuk proyek Anda " : ""}dikumpulkan per jenis data, lalu per titik bor. Ketuk folder untuk melihat isinya; tombol <b>📂 Google Drive</b> membuka folder yang sama di Google Drive.</p>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div style="flex:1 1 160px"><label>Titik bor</label><select id="duB"><option value="">Semua titik</option></select></div><div id="duS" class="muted" style="flex:2 1 220px;font-size:12.5px"></div></div></div>
+    <div id="duG" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px"><div class="card muted">Memuat…</div></div><div id="duD"></div>`;
+  const tgl = (t) => (t ? String(t).slice(0, 10) : ""), bhKs = (no) => { const m = String(no ?? "").match(/DH-?NPG\s*-?(\d+R?)/i); return m ? `DH-NPG ${m[1].toUpperCase()}` : ""; };
+  const aman = async (p) => { try { const r = await p; return r?.error ? { galat: r.error.message, data: [] } : { data: r?.data ?? [] }; } catch (e) { return { galat: e.message, data: [] }; } };
+  const [ddr, lg, kp, ba, cp, ev, fp, df] = await Promise.all([
+    klien ? aman(sb.rpc("ddr_proyek_client", { p_dari: "2020-01-01", p_sampai: todayWIB() })) : aman(sb.from("ddr").select("id,report_date,shift,rig,bhid,status").eq("status", "SIGNED").order("report_date").limit(2000)),
+    aman(sb.from("scan_job").select("id,bhid_hint,page_no,photo_path,reviewed_at,captured_at").eq("status", "APPROVED").order("bhid_hint").order("page_no").limit(2000)),
+    aman(sb.from("kirim_preparasi").select("id,no_kirim,tanggal,status,catatan,penerima_ttd_at").order("no_kirim").limit(500)),
+    aman(sb.from("berita_acara").select("id,jenis,nomor,bhid,dari,sampai,status,created_at").order("created_at").limit(500)),
+    aman(sb.from("core_photo").select("id,bhid,box_no,depth_from,depth_to,photo_type,photo_path,preview_path,captured_at,ditolak").order("bhid").order("box_no").limit(3000)),
+    aman(sb.from("drill_event").select("id,bhid,rig,event_type,depth_to,photo_path,captured_at").not("photo_path", "is", null).order("captured_at").limit(5000)),
+    aman(sb.from("form_photo").select("id,jenis,bhid,rig,tanggal,shift,halaman,jumlah_halaman,photo_path,captured_at").order("tanggal").limit(3000)),
+    aman(sb.from("drive_folder").select("kunci,user_id,url"))]);
+  const F = { // tiap item: {bh, judul, ket, buka}
+    DDR: (ddr.data ?? []).filter((d) => !klien || d.status === "SIGNED").map((d) => ({ bh: d.bhid || "", t: d.report_date, judul: `DDR ${d.report_date} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${d.rig ?? ""}`, ket: "lengkap ditandatangani", buka: () => (klien ? ddrClientModal(d) : printDDR(d.id)) })),
+    LOGGING: (lg.data ?? []).filter((j) => j.photo_path).map((j) => ({ bh: j.bhid_hint || "", t: j.reviewed_at ?? j.captured_at, judul: `Form Logging hal. ${j.page_no ?? "-"}`, ket: `disetujui ${tgl(j.reviewed_at)}`, buka: () => bukaFile("scan-photos", j.photo_path) })),
+    KIRIM: (kp.data ?? []).map((k) => ({ bh: bhKs(k.no_kirim) || (String(k.catatan ?? "").match(/DH-NPG \d+R?/i)?.[0] ?? ""), t: k.tanggal, judul: k.no_kirim, ket: `${k.tanggal} · ${k.penerima_ttd_at ? "DITERIMA" : k.status}`, buka: () => cetakKirim(k.id) })),
+    BA: (ba.data ?? []).filter((r) => !klien || r.status !== "BATAL").map((r) => ({ bh: r.bhid || "(BASTP)", t: r.created_at, judul: `${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"} ${r.nomor ?? ""}`, ket: r.jenis === "BASTP" ? `${r.dari ?? ""} s/d ${r.sampai ?? ""} · ${r.status}` : r.status, buka: () => cetakBA(r.id, { lihat: true }) })),
+    CORE: (cp.data ?? []).filter((c) => !c.ditolak && (c.photo_path || c.preview_path)).map((c) => ({ bh: c.bhid || "", t: c.captured_at, judul: `Kotak ${c.box_no ?? "-"}${c.depth_from != null ? ` · ${fmtD(+c.depth_from)}–${fmtD(+c.depth_to)} m` : ""}`, ket: c.photo_type ?? "", buka: () => bukaFile("core-photos", c.photo_path || c.preview_path) })),
+    AKTIVITAS: (ev.data ?? []).map((e) => ({ bh: e.bhid || "", t: e.captured_at, judul: `${EV[e.event_type] ?? e.event_type}${e.depth_to != null ? ` · ${fmtD(+e.depth_to)} m` : ""}`, ket: `${fmtT(e.captured_at).slice(0, 16)} · ${e.rig ?? ""}`, buka: () => bukaFile("progress-photos", e.photo_path) })),
+    ARSIP: (fp.data ?? []).filter((a) => a.photo_path).map((a) => ({ bh: a.bhid || "", t: a.captured_at, judul: `${ARSIP?.[a.jenis] ?? a.jenis} · ${a.tanggal ?? ""}`, ket: `hal ${a.halaman ?? 1}/${a.jumlah_halaman ?? 1}${a.shift ? ` · ${a.shift}` : ""}`, buka: () => bukaFile("scan-photos", a.photo_path) })),
+  };
+  const GAL = { DDR: ddr.galat, LOGGING: lg.galat, KIRIM: kp.galat, BA: ba.galat, CORE: cp.galat, AKTIVITAS: ev.galat, ARSIP: fp.galat };
+  const DF = {}; for (const f of df.data ?? []) if (!DF[f.kunci] || f.user_id) DF[f.kunci] = f.url;
+  if (klien) for (const k of Object.keys(DF)) if (!(df.data ?? []).some((f) => f.kunci === k && f.user_id)) delete DF[k];
+  const semuaBh = [...new Set(Object.values(F).flat().map((x) => x.bh).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
+  $("#duB").innerHTML += semuaBh.map((b) => `<option>${esc(b)}</option>`).join("");
+  const tampil = () => { const fb = $("#duB").value, tot = Object.values(F).flat().filter((x) => !fb || x.bh === fb).length;
+    $("#duS").innerHTML = `${tot} file · ${semuaBh.length} titik${klien && !Object.keys(DF).length ? " · folder Google Drive Anda sedang disiapkan (menunggu sinkron Drive)" : ""}`;
+    $("#duG").innerHTML = DBU.map(([k, ik, nm]) => { const xs = F[k].filter((x) => !fb || x.bh === fb), nb = new Set(xs.map((x) => x.bh)).size;
+      return `<div class="card" style="margin:0;display:flex;flex-direction:column;gap:6px"><div style="display:flex;gap:10px;align-items:center"><span style="font-size:30px">${ik}</span><span style="flex:1"><b>${esc(nm)}</b><br><span class="muted" style="font-size:12.5px">${GAL[k] ? (klien && /column|policy|permission/i.test(GAL[k]) ? "belum tersedia untuk akun Anda" : esc(GAL[k])) : `${xs.length} file · ${nb} titik`}</span></span></div>
+        <div class="row" style="gap:6px"><button data-du="${k}" ${xs.length ? "" : "disabled"} style="flex:1">📂 Buka folder</button>${DF[k] ? `<a href="${esc(DF[k])}" target="_blank" rel="noopener" class="btn sec" style="flex:1;text-align:center;padding:9px 8px;border-radius:10px;border:1px solid #1E9E69;color:#1E9E69;text-decoration:none;font-weight:600">Google Drive ↗</a>` : ""}</div></div>`; }).join("");
+    $("#duG").querySelectorAll("[data-du]").forEach((b) => (b.onclick = () => isiFolder(b.dataset.du))); };
+  const isiFolder = (k) => { const fb = $("#duB").value, xs = F[k].filter((x) => !fb || x.bh === fb), [, ik, nm] = DBU.find((d) => d[0] === k);
+    const G = {}; for (const x of xs) (G[x.bh || "(tanpa titik)"] ??= []).push(x); const kunci = Object.keys(G).sort((a, b) => a.localeCompare(b, "id", { numeric: true })), L = [];
+    $("#duD").innerHTML = `<div class="card"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0;flex:1">${ik} ${esc(nm)} <span class="muted" style="font-weight:400;font-size:13px">· ${xs.length} file</span></h3>${DF[k] ? `<a href="${esc(DF[k])}" target="_blank" rel="noopener">📂 Buka di Google Drive ↗</a>` : ""}</div>
+      ${kunci.map((b, i) => `<details ${kunci.length <= 2 ? "open" : ""} style="border:1px solid #dde6e1;border-radius:10px;padding:6px 10px;margin-top:8px"><summary style="cursor:pointer"><b>📁 ${esc(b)}</b> <span class="muted">(${G[b].length})</span></summary><ul class="list" style="margin:6px 0 0">${G[b].sort((p, q) => String(p.t ?? "").localeCompare(String(q.t ?? ""))).map((x) => { L.push(x); return `<li><span style="flex:1">${esc(x.judul)}<br><span class="muted" style="font-size:12px">${esc(x.ket ?? "")}</span></span><button class="sec" data-dx="${L.length - 1}" style="flex:0;white-space:nowrap">Buka</button></li>`; }).join("")}</ul></details>`).join("") || `<p class="muted">Kosong.</p>`}</div>`;
+    $("#duD").querySelectorAll("[data-dx]").forEach((b) => (b.onclick = () => L[+b.dataset.dx].buka())); $("#duD").scrollIntoView({ behavior: "smooth" }); };
+  $("#duB").onchange = () => { tampil(); $("#duD").innerHTML = ""; };
+  tampil();
 }
 // v.105: menu client "Pengiriman sample" — lihat form pengiriman per titik (TTD pengirim TGEP sudah terpasang), lalu tanda tangani sebagai penerima
 async function kirimKlienView(v) {
