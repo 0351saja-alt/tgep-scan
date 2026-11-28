@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.92";
+const APP_VERSION = "2026-11-28.93";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -7055,7 +7055,7 @@ const tglTerbilang = (t) => { try { const d = new Date(t + "T12:00:00"); return 
 const BASTP_CEK = ["Seluruh titik dalam daftar telah dikerjakan (atau perubahan disetujui tertulis)", "Kedalaman aktual telah diverifikasi", "Seluruh core dan sampel telah diserahkan", "Data pemboran dan dokumentasi (DDR, drilling log, foto core) telah lengkap"];
 const SITE_REP = { nama: "Haryo Purnomo", jabatan: "Site Representative" };
 // v.92: template alasan stop bor
-const ALASAN_STOP = ["Selesai — pemboran telah menembus batuan dasar (bedrock), End of Hole (EOH).", "Selesai — telah mencapai kedalaman rencana.", "Dihentikan (STB) — kondisi lubang tidak stabil (runtuh / pipa terjepit).",
+const ALASAN_STOP = ["Selesai — pemboran telah menembus batuan dasar (bedrock) dan informasi geologi yang diinginkan telah diperoleh (EOH).", "Selesai — telah mencapai kedalaman rencana.", "Dihentikan (STB) — kondisi lubang tidak stabil (runtuh / pipa terjepit).",
   "Dihentikan (STB) — kendala teknis peralatan bor.", "Dihentikan (STB) — atas instruksi pemberi kerja.", "Dihentikan (STB) — lubang dipindah / di-redrill."];
 const alasanStop = (st) => (st === "STB" ? ALASAN_STOP[2] : st ? ALASAN_STOP[0] : ""); // v.90: penanda tangan pihak PT Nusa Prima Gemilang di BA
 const BULAN_ROMAWI = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
