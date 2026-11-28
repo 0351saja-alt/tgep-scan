@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.104";
+const APP_VERSION = "2026-11-28.105";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -342,7 +342,7 @@ async function render() {
     $("#out").onclick = () => { localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); sb.auth.signOut(); }; return; }
   if (!["client", "admin", "verifier", "admin_lapangan"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["ba", "Berita acara"], ["klien", "Laporan rig"], ["simpan", "Data tersimpan"], ["db", "Database"], ["fk", "Foto & scan"], ["peta", "Peta"], ["dok", "Dokumen"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
+  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["klien", "Laporan rig & DDR"], ["ba", "Berita acara"], ["kirimk", "Pengiriman sample"], ["peta", "Peta"], ["fk", "Foto & scan"], ["db", "Database"], ["dok", "Dokumen"], ["simpan", "Data tersimpan"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
     ...(ver ? [["review", "Periksa scan"]] : []), ...(staff ? [["data", "Data & cek"], ["db", "Database"]] : []), ...(ver ? [["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["simpan", "Data tersimpan"], ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
@@ -379,6 +379,7 @@ async function render() {
   if (tab === "dash") return dashView($("#v"));
   if (tab === "klien") return klienView($("#v"));
   if (tab === "fk") return fotoKlienView($("#v"));
+  if (tab === "kirimk") return kirimKlienView($("#v"));
   if (tab === "peta") return petaView($("#v"));
   if (tab === "keu") return isKeu() ? keuView($("#v")) : null;
   if (tab === "absl") return isKeu() ? abslView($("#v")) : null;
@@ -7034,10 +7035,11 @@ const CSS_TTDT = `table.ttdT{width:100%;border-collapse:collapse;table-layout:fi
 async function cetakKirim(id) {
   // v.104: TTD pengirim otomatis dari TTD terdaftar (menu TTD saya) sesuai nama pengirim — sama seperti wellsite di BA stop bor
   if (isStaff()) { try { await sb.rpc("ttd_kirim_otomatis", { p_kirim: id }); } catch {} }
-  const [{ data: k }, { data: it }] = await Promise.all([sb.from("kirim_preparasi").select("*").eq("id", id).single(), sb.from("v_kirim_preparasi").select("*").eq("kirim_id", id).order("urut")]);
+  const [{ data: k }, { data: it }] = await Promise.all([sb.from("kirim_preparasi").select("*").eq("id", id).single(), isClient() ? sb.rpc("kirim_sample_isi", { p_kirim: id }) : sb.from("v_kirim_preparasi").select("*").eq("kirim_id", id).order("urut")]);
   if (!k) return alert("Form pengiriman tidak ditemukan.");
   const w = jendelaDok(`Form kirim sample ${k.no_kirim}`, "A4"), I = it ?? [];
-  const ttdU = k.pengirim_ttd_at && k.pengirim_ttd_path ? (await signedUrls("signatures", [k.pengirim_ttd_path]).catch(() => ({})))[k.pengirim_ttd_path] : null;
+  const TU = await signedUrls("signatures", [k.pengirim_ttd_at && k.pengirim_ttd_path, k.penerima_ttd_at && k.penerima_ttd_path].filter(Boolean)).catch(() => ({}));
+  const ttdU = k.pengirim_ttd_at ? TU[k.pengirim_ttd_path] : null, ttdR = k.penerima_ttd_at ? TU[k.penerima_ttd_path] : null;
   const tglPanjang = (t) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch { return t ?? ""; } };
   const n2 = (x) => (x == null || x === "" ? "" : fmtD(x)), tot = I.reduce((s, r) => s + (+r.berat_kg || 0), 0);
   const perTitik = Object.entries(I.reduce((m, r) => ((m[r.bhid] ??= []).push(r), m), {})).map(([b, xs]) => `${esc(b)} (${xs.length})`).join(", ");
@@ -7057,7 +7059,8 @@ async function cetakKirim(id) {
   <tr><th colspan="8" style="text-align:right">Total ${I.length} sample</th><th style="text-align:right">${n2(tot)}</th><th colspan="2"></th></tr></table>
   <div class="blok"><p>Luwuk, ${esc(tglPanjang(k.tanggal))}</p>
   ${ttdTabel([{ hd: `Pengirim,<br><b>${KOP.pt}</b>`, img: ttdU ? `<img src="${esc(ttdU)}" alt="">` : `<div class="kosong"></div>`, nm: esc(k.pengirim || "(......................)"), ket: `${esc(k.pengirim_jabatan ?? "")}${k.pengirim_ttd_at ? `<span class="te">Ditandatangani elektronik ${esc(fmtT(new Date(k.pengirim_ttd_at)))}</span>` : ""}` },
-    { hd: `Penerima,<br><b>${esc(k.tujuan || TUJUAN_KIRIM)}</b>`, img: `<div class="kosong"></div>`, nm: esc(k.penerima || "(......................)"), ket: "" }])}</div>
+    { hd: `Penerima,<br><b>${esc(k.tujuan || TUJUAN_KIRIM)}</b>`, img: ttdR ? `<img src="${esc(ttdR)}" alt="">` : `<div class="kosong"></div>`, nm: esc(k.penerima_ttd_nama || k.penerima || "(......................)"), ket: `${k.penerima_ttd_at ? `Diterima ${esc(fmtT(new Date(k.penerima_ttd_at)))}<span class="te">TTD elektronik penerima</span>` : ""}` }])}
+  ${k.diterima_catatan ? `<p style="font-size:10.5px"><b>Catatan penerima:</b> ${esc(k.diterima_catatan)}</p>` : ""}</div>
   </td></tr></tbody></table>
   <div class="kaki"><img src="${KOP_FOOTER}"></div>
   </body></html>`); w.document.close();
@@ -7267,10 +7270,22 @@ async function baKlienView(v) {
     $("#bkL").querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => tandaTanganKlien(b.dataset.s, b.dataset.nm, muat))); };
   await muat();
 }
-async function tandaTanganKlien(id, nomor, selesai) {
-  const m = modal(`<h3 style="margin-top:0">✍️ Tanda tangan Site Representative</h3><p class="muted" style="margin-top:0">${esc(nomor)} · ${esc(me?.full_name ?? "")}. Pastikan isi BA sudah diperiksa (👁 Lihat). Tanda tangan di kotak putih.</p>
+// v.105: menu client "Pengiriman sample" — lihat form pengiriman per titik (TTD pengirim TGEP sudah terpasang), lalu tanda tangani sebagai penerima
+async function kirimKlienView(v) {
+  if (!online()) { v.innerHTML = `<div class="card"><h2>Pengiriman sample</h2><p class="muted">Perlu sinyal internet.</p></div>`; return; }
+  v.innerHTML = `<div class="card"><h2>Pengiriman sample</h2><p class="muted" style="margin-top:0">Form pengiriman sample dari ${KOP.pt} per titik bor. Periksa isinya (👁 Lihat — daftar sample, interval, berat, no. kantong), lalu tanda tangani sebagai <b>penerima</b> saat sample diterima. Tanda tangan pengirim TGEP sudah terpasang.</p><ul class="list" id="kkL"><li class="muted">Memuat…</li></ul></div>`;
+  const muat = async () => { const { data, error } = await sb.from("kirim_preparasi").select("id,no_kirim,tanggal,tujuan,status,pengirim,penerima,jumlah_karung,no_segel,catatan,pengirim_ttd_at,penerima_ttd_at,penerima_ttd_nama,kirim_preparasi_item(count)").neq("status", "BATAL").order("no_kirim");
+    if (error) return ($("#kkL").innerHTML = `<li class="err">${esc(/penerima_ttd|column/i.test(error.message) ? "Menu ini sedang disiapkan admin (pembaruan database belum dijalankan)." : error.message)}</li>`);
+    $("#kkL").innerHTML = (data ?? []).map((k) => `<li style="flex-wrap:wrap"><span class="pill ${k.penerima_ttd_at ? "APPROVED" : "ANTRE"}">${k.penerima_ttd_at ? "DITERIMA" : esc(k.status)}</span><span style="flex:1;min-width:180px"><b>${esc(k.no_kirim)}</b> · ${esc(k.tanggal)}<br><span class="muted">${k.kirim_preparasi_item?.[0]?.count ?? 0} sample${k.jumlah_karung ? ` · ${k.jumlah_karung} karung` : ""}${k.no_segel ? ` · segel ${esc(k.no_segel)}` : ""}${k.catatan ? ` · ${esc(k.catatan)}` : ""}<br>${k.pengirim_ttd_at ? `✅ Pengirim ${esc(k.pengirim ?? "")}` : "⬜ Pengirim belum TTD"} · ${k.penerima_ttd_at ? `✅ Diterima ${esc(k.penerima_ttd_nama ?? "")} ${esc(fmtT(new Date(k.penerima_ttd_at)))}` : "⬜ Menunggu tanda tangan Anda"}</span></span>
+      <button class="sec" data-v="${k.id}" style="flex:0">👁 Lihat</button>${k.penerima_ttd_at ? "" : `<button data-s="${k.id}" data-nm="${esc(k.no_kirim)}" style="flex:0;white-space:nowrap">✍️ Terima & tanda tangan</button>`}</li>`).join("") || `<li class="muted">Belum ada form pengiriman sample.</li>`;
+    $("#kkL").querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => cetakKirim(b.dataset.v)));
+    $("#kkL").querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => tandaTanganKlien(b.dataset.s, b.dataset.nm, muat, { judul: "Tanda tangan penerima sample", setuju: "Sample sudah saya terima dan sesuai daftar di form ini.", catatan: true, awalan: "kirim", rpc: "ttd_terima_sample", selesaiTeks: "✓ Penerimaan sample ditandatangani" }))); };
+  await muat();
+}
+async function tandaTanganKlien(id, nomor, selesai, o = {}) {
+  const m = modal(`<h3 style="margin-top:0">✍️ ${esc(o.judul ?? "Tanda tangan Site Representative")}</h3><p class="muted" style="margin-top:0">${esc(nomor)} · ${esc(me?.full_name ?? "")}. Pastikan isinya sudah diperiksa (👁 Lihat). Tanda tangan di kotak putih.</p>
     <canvas id="tkP" width="600" height="220" style="width:100%;max-width:600px;height:auto;background:#fff;border:2px dashed #9aa59f;border-radius:8px;touch-action:none"></canvas>
-    <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="tkS" style="width:auto"> Saya telah memeriksa dan menyetujui isi berita acara ini.</label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="tkS" style="width:auto"> ${esc(o.setuju ?? "Saya telah memeriksa dan menyetujui isi berita acara ini.")}</label>${o.catatan ? `<label>Catatan penerimaan (opsional)</label><input id="tkN" placeholder="mis. 15 karung diterima, segel utuh">` : ""}
     <div class="row" style="margin-top:8px"><button id="tkOk">Simpan tanda tangan</button><button class="sec" id="tkC" style="flex:0">Hapus</button><button class="sec" id="tkX" style="flex:0">Batal</button></div><div id="tkE" class="err"></div>`);
   const cv = m.querySelector("#tkP"), x = cv.getContext("2d"); let gambar = false, ada = false; x.lineWidth = 3; x.lineCap = "round"; x.strokeStyle = "#0b2a6b";
   const pos = (e) => { const r = cv.getBoundingClientRect(); return [((e.clientX - r.left) * cv.width) / r.width, ((e.clientY - r.top) * cv.height) / r.height]; };
@@ -7282,10 +7297,10 @@ async function tandaTanganKlien(id, nomor, selesai) {
   m.querySelector("#tkOk").onclick = async () => { const E = (t) => (m.querySelector("#tkE").textContent = t);
     if (!ada) return E("Tanda tangan dulu di kotak putih."); if (!m.querySelector("#tkS").checked) return E("Centang pernyataan persetujuan.");
     m.querySelector("#tkOk").disabled = true; E("Menyimpan…");
-    const blob = await new Promise((r) => cv.toBlob(r, "image/png")), path = `${session.user.id}/ba-${id}-${Date.now()}.png`;
+    const blob = await new Promise((r) => cv.toBlob(r, "image/png")), path = `${session.user.id}/${o.awalan ?? "ba"}-${id}-${Date.now()}.png`;
     const up = await sb.storage.from("signatures").upload(path, blob, { contentType: "image/png" }); if (up.error) { m.querySelector("#tkOk").disabled = false; return E(up.error.message); }
-    const { error } = await sb.rpc("ttd_ba_site_rep", { p_ba: id, p_path: path }); if (error) { m.querySelector("#tkOk").disabled = false; return E(error.message); }
-    m.remove(); toast("✓ Berita acara ditandatangani"); selesai?.(); };
+    const { error } = o.rpc ? await sb.rpc(o.rpc, { p_kirim: id, p_path: path, p_catatan: m.querySelector("#tkN")?.value ?? null }) : await sb.rpc("ttd_ba_site_rep", { p_ba: id, p_path: path }); if (error) { m.querySelector("#tkOk").disabled = false; return E(error.message); }
+    m.remove(); toast(o.selesaiTeks ?? "✓ Berita acara ditandatangani"); selesai?.(); };
 }
 async function cetakBA(id, opsi = {}) {
   const r0 = opsi.r ?? (await sb.from("berita_acara").select("*").eq("id", id).single()).data; if (!r0) return alert("Berita acara tidak ditemukan");
