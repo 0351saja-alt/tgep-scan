@@ -1,0 +1,3 @@
+-- v79 (28/11/2026): public.ttd_ddr_client(p_ddr, p_path) — akun client menandatangani DDR (slot CLIENT, "Client Representative")
+-- dari menu ✍️ Tanda tangan, setelah melihat dokumen DDR. Syarat: DDR SIGNED (driller & wellsite) dan lubang/rig termasuk proyek client;
+-- file TTD di signatures/<uid>/...; satu kali per DDR. Definisi lengkap: migrasi v79_ttd_ddr_client di Supabase.

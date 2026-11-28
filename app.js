@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.109";
+const APP_VERSION = "2026-11-28.110";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -342,7 +342,7 @@ async function render() {
     $("#out").onclick = () => { localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); sb.auth.signOut(); }; return; }
   if (!["client", "admin", "verifier", "admin_lapangan"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["dbu", "📁 Database utama"], ["peta", "Peta"], ["ttdk", "✍️ Tanda tangan"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
+  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["dbu", "📁 Database utama"], ["db", "Database"], ["peta", "Peta"], ["ttdk", "✍️ Tanda tangan"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
     ...(ver ? [["review", "Periksa scan"]] : []), ...(staff ? [["dbu", "📁 Database utama"], ["data", "Data & cek"], ["db", "Database"]] : []), ...(ver ? [["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["simpan", "Data tersimpan"], ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
@@ -381,7 +381,7 @@ async function render() {
   if (tab === "fk") return fotoKlienView($("#v"));
   if (tab === "kirimk") return kirimKlienView($("#v"));
   if (tab === "dbu") return dbUtamaView($("#v"));
-  if (tab === "ttdk") { $("#v").innerHTML = `<div id="ttA"></div><div id="ttB"></div>`; baKlienView($("#ttA")); return kirimKlienView($("#ttB")); }
+  if (tab === "ttdk") { $("#v").innerHTML = `<div id="ttD"></div><div id="ttA"></div><div id="ttB"></div>`; ddrKlienTtd($("#ttD")); baKlienView($("#ttA")); return kirimKlienView($("#ttB")); }
   if (tab === "peta") return petaView($("#v"));
   if (tab === "keu") return isKeu() ? keuView($("#v")) : null;
   if (tab === "absl") return isKeu() ? abslView($("#v")) : null;
@@ -7308,7 +7308,7 @@ async function dbUtamaView(v) {
   const unduhDS = async (k) => { toast(`Menyiapkan ${DATASETS[k].t}…`); try { await xlUnduh(`TGEP_${DATASETS[k].t}_${todayWIB()}`, [[DATASETS[k].t, bersih(await tambahLink(k, await fetchAll(DATASETS[k], fDB(k))))]]); } catch (e) { alert(e.message); } };
   const unduhLog = async (b) => { try { const { data, error } = await sb.from("v_dh_geology").select("*").eq("holeid", b).order("from"); if (error) throw error; await xlUnduh(`Form_Logging_${b}_database`, [[`Logging ${b}`, bersih(data ?? [])]]); } catch (e) { alert(e.message); } };
   const F = { // tiap item: {bh, judul, ket, buka}
-    DDR: (ddr.data ?? []).filter((d) => !klien || d.status === "SIGNED").map((d) => ({ bh: d.bhid || "", t: d.report_date, judul: `DDR ${d.report_date} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${d.rig ?? ""}`, ket: "lengkap ditandatangani", buka: () => (klien ? ddrClientModal(d) : printDDR(d.id)) })),
+    DDR: (ddr.data ?? []).filter((d) => !klien || d.status === "SIGNED").map((d) => ({ bh: d.bhid || "", t: d.report_date, judul: `DDR ${d.report_date} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${d.rig ?? ""}`, ket: "lengkap ditandatangani", buka: () => (d.id ? printDDR(d.id) : ddrClientModal(d)) })),
     DATA: (dsAllowed() ?? Object.keys(DATASETS).filter((k) => !DATASETS[k].admin || me?.role === "admin")).map((k, i) => ({ bh: "Semua kategori", t: String(i).padStart(3, "0"), k, tombol: "⬇️ Unduh", judul: `${DATASETS[k].t}.xlsx`, ket: "Excel dari database (data terbaru saat diunduh)", buka: () => unduhDS(k) })),
     LOGGING: [...Object.entries(nGeo).map(([b, n]) => ({ bh: b, t: "0", judul: `Data Form Logging ${b} (Excel dari database)`, ket: `${n} interval`, buka: () => unduhLog(b) })), ...(lg.data ?? []).filter((j) => j.photo_path).map((j) => ({ bh: j.bhid_hint || "", t: j.reviewed_at ?? j.captured_at, judul: `Scan Form Logging hal. ${j.page_no ?? "-"}`, ket: `disetujui ${tgl(j.reviewed_at)}`, buka: () => bukaFile("scan-photos", j.photo_path) }))],
     KIRIM: (kp.data ?? []).map((k) => ({ bh: bhKs(k.no_kirim) || (String(k.catatan ?? "").match(/DH-NPG \d+R?/i)?.[0] ?? ""), t: k.tanggal, judul: k.no_kirim, ket: `${k.tanggal} · ${k.penerima_ttd_at ? "DITERIMA" : k.status}`, buka: () => cetakKirim(k.id) })),
@@ -7336,6 +7336,21 @@ async function dbUtamaView(v) {
     const ua = $("#duAll"); if (ua) ua.onclick = async () => { ua.disabled = true; ua.textContent = "Menyiapkan…"; try { const sh = []; for (const x of F.DATA) sh.push([DATASETS[x.k].t, bersih(await tambahLink(x.k, await fetchAll(DATASETS[x.k], fDB(x.k))))]); await xlUnduh(`TGEP_Database_utama_${todayWIB()}`, sh); } catch (e) { alert(e.message); } ua.disabled = false; ua.textContent = "⬇️ Unduh semua (1 Excel, sheet per kategori)"; }; $("#duD").scrollIntoView({ behavior: "smooth" }); };
   $("#duB").onchange = () => { tampil(); $("#duD").innerHTML = ""; };
   tampil();
+}
+// v.110: client menandatangani DDR sebagai CLIENT REPRESENTATIVE (DDR yang sudah lengkap TTD driller & wellsite) — dokumen DDR dilihat dulu (👁 Lihat)
+async function ddrKlienTtd(v) {
+  if (!online()) return;
+  v.innerHTML = `<div class="card"><h2>DDR (Daily Drilling Report)</h2><p class="muted" style="margin-top:0">DDR yang sudah ditandatangani driller & wellsite. Periksa dokumennya (👁 Lihat), lalu tanda tangani sebagai <b>Client Representative</b>.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><label style="flex:0;white-space:nowrap;margin:0"><input type="checkbox" id="dkS" style="width:auto"> tampilkan juga yang sudah saya tanda tangani</label></div><ul class="list" id="dkL"><li class="muted">Memuat…</li></ul></div>`;
+  const muat = async () => { const { data, error } = await sb.from("ddr").select("id,report_date,shift,rig,bhid,status,ddr_signature(slot,signer_name,signed_at)").eq("status", "SIGNED").order("report_date", { ascending: false }).order("rig").limit(300);
+    if (error) return ($("#dkL").innerHTML = `<li class="err">${esc(error.message)}</li>`);
+    const semua = $("#dkS").checked, L = (data ?? []).filter((d) => semua || !(d.ddr_signature ?? []).some((g) => g.slot === "CLIENT")), belum = (data ?? []).filter((d) => !(d.ddr_signature ?? []).some((g) => g.slot === "CLIENT")).length;
+    $("#dkL").innerHTML = `<li class="muted" style="font-size:12.5px">${belum} DDR menunggu tanda tangan Anda dari ${(data ?? []).length} DDR</li>` + (L.map((d) => { const c = (d.ddr_signature ?? []).find((g) => g.slot === "CLIENT");
+      return `<li style="flex-wrap:wrap"><span class="pill ${c ? "APPROVED" : "ANTRE"}">${c ? "TTD CLIENT" : "MENUNGGU"}</span><span style="flex:1;min-width:170px"><b>${esc(d.report_date)} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${esc(d.rig)}</b> ${esc(d.bhid ?? "")}<br><span class="muted">${c ? `✅ ${esc(c.signer_name)} · ${esc(fmtT(new Date(c.signed_at)))}` : "⬜ Menunggu tanda tangan Anda"}</span></span>
+        <button class="sec" data-v="${d.id}" style="flex:0">👁 Lihat</button>${c ? "" : `<button data-s="${d.id}" data-nm="DDR ${esc(d.report_date)} ${d.shift === "MALAM" ? "Night" : "Day"} ${esc(d.rig)}" style="flex:0;white-space:nowrap">✍️ Tanda tangan</button>`}</li>`; }).join("") || `<li class="muted">Tidak ada DDR yang menunggu.</li>`);
+    $("#dkL").querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => printDDR(b.dataset.v)));
+    $("#dkL").querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => tandaTanganKlien(b.dataset.s, b.dataset.nm, muat, { judul: "Tanda tangan Client Representative (DDR)", setuju: "Saya telah memeriksa DDR ini dan menyetujui isinya.", awalan: "ddr", rpc: "ttd_ddr_client", args: (path) => ({ p_ddr: b.dataset.s, p_path: path }), selesaiTeks: "✓ DDR ditandatangani" }))); };
+  $("#dkS").onchange = muat; await muat();
 }
 // v.105: menu client "Pengiriman sample" — lihat form pengiriman per titik (TTD pengirim TGEP sudah terpasang), lalu tanda tangani sebagai penerima
 async function kirimKlienView(v) {
@@ -7366,7 +7381,7 @@ async function tandaTanganKlien(id, nomor, selesai, o = {}) {
     m.querySelector("#tkOk").disabled = true; E("Menyimpan…");
     const blob = await new Promise((r) => cv.toBlob(r, "image/png")), path = `${session.user.id}/${o.awalan ?? "ba"}-${id}-${Date.now()}.png`;
     const up = await sb.storage.from("signatures").upload(path, blob, { contentType: "image/png" }); if (up.error) { m.querySelector("#tkOk").disabled = false; return E(up.error.message); }
-    const { error } = o.rpc ? await sb.rpc(o.rpc, { p_kirim: id, p_path: path, p_catatan: m.querySelector("#tkN")?.value ?? null }) : await sb.rpc("ttd_ba_site_rep", { p_ba: id, p_path: path }); if (error) { m.querySelector("#tkOk").disabled = false; return E(error.message); }
+    const { error } = o.rpc ? await sb.rpc(o.rpc, o.args ? o.args(path) : { p_kirim: id, p_path: path, p_catatan: m.querySelector("#tkN")?.value ?? null }) : await sb.rpc("ttd_ba_site_rep", { p_ba: id, p_path: path }); if (error) { m.querySelector("#tkOk").disabled = false; return E(error.message); }
     m.remove(); toast(o.selesaiTeks ?? "✓ Berita acara ditandatangani"); selesai?.(); };
 }
 async function cetakBA(id, opsi = {}) {
