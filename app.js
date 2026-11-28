@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.101";
+const APP_VERSION = "2026-11-28.102";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -4345,7 +4345,7 @@ async function presentasiHTML(D) {
     <div class="vonis" style="border-color:${KS.warna}"><div class="vl">KESIMPULAN</div><div class="vv" style="color:${KS.warna}">${esc(KS.vonis)}</div><div class="vs">${esc(KS.ringkas)}</div></div>
     <div class="by">PT Terra Grapindo Eco Prima · eksplorasi nikel laterit · disusun ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })} · ${esc(me?.full_name ?? "")}</div></div>
     <div class="cv-r3">${(() => { const LB_ = LB ?? [], sl = LB_.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)).length, pg = LB_.filter((x) => x.status === "PROGRES").length, tt = Math.max(Number(PJ?.target_lubang) || 0, LB_.length) || tgtL || 0, bl = Math.max(0, tt - sl - pg);
-      const nm = (ss) => LB_.filter((x) => ss.includes(x.status)).map((x) => String(x.bhid).replace(/^DH-NPG\s*/, "")).join(", ") || "–", const P = (a) => (tt ? (100 * a) / tt : 0), F = (a) => P(a).toLocaleString("id-ID", { maximumFractionDigits: 1 }) + " %";
+      const nm = (ss) => LB_.filter((x) => ss.includes(x.status)).map((x) => String(x.bhid).replace(/^DH-NPG\s*/, "")).join(", ") || "–"; const P = (a) => (tt ? (100 * a) / tt : 0), F = (a) => P(a).toLocaleString("id-ID", { maximumFractionDigits: 1 }) + " %";
       const t = (v, l, s, c) => `<div class="pt" style="border-color:${c}55;background:${c}1f"><div class="pl">${l}</div><div class="pv" style="color:${c}">${v}</div><div class="ps">${s}</div></div>`;
       return `<div class="cvp"><div class="ph"><b>Progres titik bor</b> · target ${tt} titik · lubang redrill menggantikan lubang lamanya</div>
         <div class="pg">${t(`${sl} <small style="font-size:15px;opacity:.8">/ ${tt}</small> · ${F(sl)}`, "Selesai (EOH / STB) dari target", nm(["EOH", "STB", "SELESAI"]), "#7CE0B0")}${t(pg, "On progress (sedang dibor)", `${F(pg)} dari target${pg ? ` · ${nm(["PROGRES"])}` : ""}`, "#FFD36B")}${t(bl, "Belum dibor", `${F(bl)} dari target`, "#B8C4BE")}</div>
