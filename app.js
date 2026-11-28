@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.128";
+const APP_VERSION = "2026-11-28.129";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -7392,6 +7392,7 @@ async function dbUtamaView(v) {
   // v.128: link Google Drive per file (dari drive_file — tersedia bila file sudah tersalin ke Drive dan akun punya akses)
   const DV = {}; try { const ps = [...new Set(Object.values(F).flat().filter((x) => x.file).map((x) => x.file[1]))];
     for (let i = 0; i < ps.length; i += 150) { const { data } = await sb.from("drive_file").select("bucket,path,drive_url").in("path", ps.slice(i, i + 150)); for (const d of data ?? []) if (d.drive_url) DV[d.bucket + ":" + d.path] = d.drive_url; } } catch {}
+  if (klien) { try { const { data } = await sb.from("drive_client").select("bucket,path,drive_id").eq("user_id", session.user.id).limit(5000); for (const d of data ?? []) if (d.drive_id) DV[d.bucket + ":" + d.path] = `https://drive.google.com/file/d/${d.drive_id}/view`; } catch {} } // v.129: salinan Drive milik client
   for (const x of Object.values(F).flat()) if (x.file && DV[x.file[0] + ":" + x.file[1]]) x.drive = DV[x.file[0] + ":" + x.file[1]];
   if (klien) delete F.ARSIP; // v.119: client tidak melihat folder Arsip formulir lapangan
   const GAL = { DDR: ddr.galat, LOGGING: lg.galat, KIRIM: kp.galat, BA: ba.galat, CORE: cp.galat, AKTIVITAS: ev.galat, ARSIP: fp.galat };
@@ -7400,7 +7401,8 @@ async function dbUtamaView(v) {
   const semuaBh = [...new Set(Object.entries(F).filter(([k]) => k !== "DATA").flatMap(([, xs]) => xs).map((x) => x.bh).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
   $("#duB").innerHTML += semuaBh.map((b) => `<option>${esc(b)}</option>`).join("");
   const tampil = () => { const fb = $("#duB").value, tot = Object.values(F).flat().filter((x) => !fb || x.bh === fb).length;
-    $("#duS").innerHTML = `${tot} file · ${semuaBh.length} titik${klien && !Object.keys(DF).length ? " · folder Google Drive Anda sedang disiapkan (menunggu sinkron Drive)" : ""}`;
+    const akar = (df.data ?? []).find((f) => f.kunci === "ROOT" && (klien ? f.user_id : !f.user_id))?.url;
+    $("#duS").innerHTML = `${tot} file · ${semuaBh.length} titik${akar ? ` · <a href="${esc(akar)}" target="_blank" rel="noopener"><b>📂 Folder Google Drive ${klien ? "saya" : "utama"} ↗</b></a>` : klien ? " · folder Google Drive Anda sedang disiapkan (menunggu sinkron Drive)" : ""}`;
     $("#duG").innerHTML = DBU.filter(([k]) => F[k]).map(([k, ik, nm]) => { const xs = F[k].filter((x) => !fb || k === "DATA" || x.bh === fb), nb = new Set(xs.map((x) => x.bh)).size;
       return `<div class="card" style="margin:0;display:flex;flex-direction:column;gap:6px"><div style="display:flex;gap:10px;align-items:center"><span style="font-size:30px">${ik}</span><span style="flex:1"><b>${esc(nm)}</b><br><span class="muted" style="font-size:12.5px">${k === "DATA" ? `${xs.length} file Excel · semua titik` : GAL[k] ? (klien && /column|policy|permission/i.test(GAL[k]) ? "belum tersedia untuk akun Anda" : esc(GAL[k])) : `${xs.length} file · ${nb} titik`}</span></span></div>
         <div class="row" style="gap:6px"><button data-du="${k}" ${xs.length ? "" : "disabled"} style="flex:1">📂 Buka folder</button>${DF[k] ? `<a href="${esc(DF[k])}" target="_blank" rel="noopener" class="btn sec" style="flex:1;text-align:center;padding:9px 8px;border-radius:10px;border:1px solid #1E9E69;color:#1E9E69;text-decoration:none;font-weight:600">Google Drive ↗</a>` : ""}</div></div>`; }).join("");

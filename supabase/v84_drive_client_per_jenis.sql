@@ -1,0 +1,5 @@
+-- v84 (28/11/2026): Google Drive folder khusus CLIENT, per jenis data.
+--  private.drive_rilis_jenis: 'DDR PDF' → rilis 'DDR' (PDF DDR bertanda tangan ikut disalin ke folder client).
+--  policy "client baca salinan sendiri" on drive_client (client melihat link file Drive salinannya sendiri di Database utama).
+--  drive-sync v21/v22: POST folder_catat (link folder per jenis), PDF form sample memuat TTD penerima.
+--  Apps Script tambahan: supabase/appsscript/XTerraClient.gs (sinkronClient + pasangClient).

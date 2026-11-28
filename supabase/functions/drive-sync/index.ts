@@ -61,7 +61,9 @@ async function buatDokumen(n = 4) {
         const [ka, kb] = await kop();
         let ttd: Uint8Array | null = null; // v19: TTD elektronik pengirim
         if (k.pengirim_ttd_at && k.pengirim_ttd_path) { const { data: blob } = await sb.storage.from("signatures").download(k.pengirim_ttd_path); ttd = blob ? new Uint8Array(await blob.arrayBuffer()) : null; }
-        pdf = await pdfKirim(k, it ?? [], ka, kb, PT, rev, ttd);
+        let ttdR: Uint8Array | null = null; // v22: TTD penerima (client)
+        if (k.penerima_ttd_at && k.penerima_ttd_path) { const { data: blob } = await sb.storage.from("signatures").download(k.penerima_ttd_path); ttdR = blob ? new Uint8Array(await blob.arrayBuffer()) : null; }
+        pdf = await pdfKirim(k, it ?? [], ka, kb, PT, rev, ttd, ttdR);
         nama = `FormKirimSample_${nm(k.no_kirim)}_${k.tanggal}${sfx}.pdf`;
       }
       const path = `${p.jenis === "DDR" ? "ddr" : "kirim"}/${p.ref_id}/${p.versi}.pdf`;
