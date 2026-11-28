@@ -1,0 +1,5 @@
+-- v75 (28/11/2026): TTD pengirim form pengiriman sample otomatis dari TTD terdaftar (signature_profile) sesuai nama pengirim,
+-- seperti TTD wellsite di BA stop bor. RPC public.ttd_kirim_otomatis(p_kirim uuid) — dipanggil app saat buka edit / cetak form
+-- dan saat pengirim diganti (metode 'TTD_TERDAFTAR'; bila nama tak punya TTD terdaftar, TTD otomatis dilepas).
+-- Diterapkan juga ke 5 form KS/TGEP/DH-NPG08R, 09, 12, 13, 14R (pengirim Imam Gazali, Wellsite Geologist).
+-- Definisi lengkap: lihat migrasi v75_ttd_kirim_otomatis di Supabase.

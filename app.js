@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.103";
+const APP_VERSION = "2026-11-28.104";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6982,6 +6982,7 @@ async function sampelView(v) {
 
 // v.41: ✏️ Edit form pengiriman sample (kepala + isi per sample), juga setelah PDF dibuat; tiap perubahan tercatat (data_edit_log). PDF dibuat ulang dari data terbaru.
 async function editKirim(id, selesai) {
+  try { await sb.rpc("ttd_kirim_otomatis", { p_kirim: id }); } catch {}
   const [{ data: k, error }, { data: it }] = await Promise.all([sb.from("kirim_preparasi").select("*").eq("id", id).single(), sb.from("kirim_preparasi_item").select("id,urut,sample_no,no_kantong,berat_kg,catatan").eq("kirim_id", id).order("urut")]);
   if (error || !k) return alert(error?.message ?? "Form tidak ditemukan.");
   const H = [["no_kirim", "No. kirim"], ["tanggal", "Tanggal kirim", "date"], ["tujuan", "Tujuan"], ["pengirim", "Pengirim"], ["penerima", "Penerima"], ["jumlah_karung", "Jumlah karung"], ["no_segel", "No. segel"], ["catatan", "Catatan"]];
@@ -6999,11 +7000,11 @@ async function editKirim(id, selesai) {
     if (k.pengirim_ttd_at) { const u = k.pengirim_ttd_path ? (await signedUrls("signatures", [k.pengirim_ttd_path]))[k.pengirim_ttd_path] : null;
       T.innerHTML = `${u ? `<img src="${esc(u)}" alt="" style="height:60px;background:#fff;border:1px solid #ccd;border-radius:6px">` : ""}<div><b>${esc(k.pengirim ?? "")}</b>${k.pengirim_jabatan ? ` · ${esc(k.pengirim_jabatan)}` : ""}<br><span class="muted">Ditandatangani ${esc(fmtT(new Date(k.pengirim_ttd_at)))} · ${esc(k.pengirim_ttd_metode ?? "")}</span></div>
         ${me?.role === "admin" ? `<button class="sec" id="ekTb" style="flex:0;margin-top:6px;padding:4px 10px">Batalkan TTD (admin)</button>` : ""}`;
-      const pi = m.querySelector('[data-h="pengirim"]'); if (pi) { pi.disabled = true; pi.title = "Sudah ditandatangani — batalkan TTD dulu untuk mengganti pengirim"; }
+      const pi = m.querySelector('[data-h="pengirim"]'); if (pi && k.pengirim_ttd_metode === "TTD_TERDAFTAR") pi.title = "TTD otomatis — bila pengirim diganti, TTD ikut menyesuaikan TTD terdaftar orang tersebut"; else if (pi) { pi.disabled = true; pi.title = "Sudah ditandatangani — batalkan TTD dulu untuk mengganti pengirim"; }
       const b = q("#ekTb"); if (b) b.onclick = async () => { const al = prompt("Alasan membatalkan tanda tangan pengirim:"); if (!al?.trim()) return;
         const { error: e } = await sb.rpc("batal_ttd_kirim_sample", { p_kirim: id, p_alasan: al.trim() }); if (e) return alert(e.message); toast("TTD pengirim dibatalkan"); m.remove(); selesai?.(); };
       return; }
-    T.innerHTML = `<p class="muted" style="margin:0 0 6px">Belum ditandatangani. Pengirim memakai TTD terdaftarnya (menu <b>TTD saya</b>) dengan PIN atau kartu QR.</p><button id="ekTs" style="width:auto">✍️ Tanda tangan sebagai ${esc(k.pengirim || PENGIRIM_KIRIM)}</button>`;
+    T.innerHTML = `<p class="err" style="margin:0 0 6px">TTD ${esc(k.pengirim || "pengirim")} belum terdaftar di menu <b>TTD saya</b>, jadi belum bisa terpasang otomatis.</p><p class="muted" style="margin:0 0 6px">Atau tanda tangani manual: pengirim memakai TTD terdaftarnya (menu <b>TTD saya</b>) dengan PIN atau kartu QR.</p><button id="ekTs" style="width:auto">✍️ Tanda tangan sebagai ${esc(k.pengirim || PENGIRIM_KIRIM)}</button>`;
     q("#ekTs").onclick = async () => { const r = await signDialog0("PENGIRIM", k.pengirim || PENGIRIM_KIRIM); if (!r || !r.signer_id) return;
       const { data, error: e } = await sb.rpc("sign_kirim_sample", { p_kirim: id, p_signer: r.signer_id, p_method: r.method, p_proof: r.proof });
       if (e) return alert("Gagal tanda tangan: " + e.message); toast(`✓ Ditandatangani ${data?.nama ?? ""}`); m.remove(); selesai?.(); }; };
@@ -7019,6 +7020,7 @@ async function editKirim(id, selesai) {
     try { if (Object.keys(hd).length) { const { data, error: e } = await sb.rpc("admin_ubah_data", { p_tabel: "kirim_preparasi", p_id: id, p_data: hd, p_alasan: al }); if (e) throw e; n += data?.changed ?? 0; }
       for (const [iid, d] of items) { const { data, error: e } = await sb.rpc("admin_ubah_data", { p_tabel: "kirim_preparasi_item", p_id: iid, p_data: d, p_alasan: al }); if (e) throw e; n += data?.changed ?? 0; }
     } catch (e) { q("#ekOk").disabled = false; return E(e.message); }
+    if ("pengirim" in hd) { try { const { data: t } = await sb.rpc("ttd_kirim_otomatis", { p_kirim: id }); if (t && !t.ok) toast(t.alasan); } catch {} }
     m.remove(); toast(`✓ ${n} isian diperbarui — unduh ulang PDF bila perlu`); selesai?.(); };
 }
 // v.40: Form pengiriman sample ke preparasi — PDF A4 dengan kop surat PT Terra Grapindo Eco Prima (sama dengan Berita Acara)
@@ -7030,6 +7032,8 @@ function ttdTabel(cols) {
 }
 const CSS_TTDT = `table.ttdT{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:16px;break-inside:avoid;page-break-inside:avoid} table.ttdT td{border:0!important;text-align:center;padding:2px 14px;vertical-align:top} table.ttdT td.hd{vertical-align:bottom;line-height:1.35} table.ttdT td.im{height:92px;vertical-align:middle;padding:4px 14px} table.ttdT td.im img{max-height:86px;max-width:100%;object-fit:contain} table.ttdT td.im .kosong{height:86px} table.ttdT td.nm2{font-weight:bold;text-decoration:underline;padding-top:4px} table.ttdT td.kt{font-size:.92em;line-height:1.3} table.ttdT .te{font-size:8.5px;color:#666;display:block}`;
 async function cetakKirim(id) {
+  // v.104: TTD pengirim otomatis dari TTD terdaftar (menu TTD saya) sesuai nama pengirim — sama seperti wellsite di BA stop bor
+  if (isStaff()) { try { await sb.rpc("ttd_kirim_otomatis", { p_kirim: id }); } catch {} }
   const [{ data: k }, { data: it }] = await Promise.all([sb.from("kirim_preparasi").select("*").eq("id", id).single(), sb.from("v_kirim_preparasi").select("*").eq("kirim_id", id).order("urut")]);
   if (!k) return alert("Form pengiriman tidak ditemukan.");
   const w = jendelaDok(`Form kirim sample ${k.no_kirim}`, "A4"), I = it ?? [];
