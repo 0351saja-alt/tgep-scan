@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.73";
+const APP_VERSION = "2026-11-28.74";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2926,11 +2926,49 @@ function pasangDok(isi, host, buf, ukuran) {
   const doc = new DOMParser().parseFromString(buf, "text/html");
   const css = [...doc.querySelectorAll("style")].map((x) => x.textContent).join("\n").replace(/@page\s*\{[^}]*\}/g, "");
   doc.querySelectorAll(".bar0,.bar,script").forEach((x) => x.remove());
-  isi.innerHTML = ""; host.style.cssText = ukuran === "16:9" ? "padding:4px 0" : ukuran === "A3L" ? "background:#fff;width:420mm;margin:0 auto" : "background:#fff;max-width:1000px;margin:0 auto"; host.dataset.dok = "1"; isi.appendChild(host);
+  isi.innerHTML = ""; host.style.cssText = ukuran === "16:9" ? "padding:4px 0" : ukuran === "A3L" ? "background:#fff;width:420mm;margin:0 auto" : ukuran === "A4P" ? "width:210mm;margin:0 auto;padding:12px 0" : "background:#fff;max-width:1000px;margin:0 auto"; host.dataset.dok = "1"; isi.appendChild(host);
   const sh = host.shadowRoot ?? host.attachShadow({ mode: "open" });
   sh.innerHTML = `<style>:host{display:block}${css.replace(/\bbody\b/g, ".dok-body")}</style><div class="dok-body" style="margin:0;background:transparent">${doc.body.innerHTML}</div>`;
   if (ukuran === "16:9") { const skala = () => { if (isi.isConnected) host.style.zoom = Math.min(1, (isi.clientWidth - 6) / 1300); }; skala(); addEventListener("resize", skala); }
   if (ukuran === "A3L") { const skala = () => { if (isi.isConnected) host.style.zoom = Math.min(1, (isi.clientWidth - 6) / 1588); }; skala(); addEventListener("resize", skala); }
+  if (ukuran === "A4P") paginasiA4(sh).catch((e) => console.warn("paginasi", e)).finally(() => { const skala = () => { if (isi.isConnected) host.style.zoom = Math.min(1, (isi.clientWidth - 12) / 800); }; skala(); addEventListener("resize", skala); });
+}
+// v.74: tampilan surat PER LEMBAR A4 (BA / BASTP). Dokumen berisi <div class="src" data-kh="kop atas" data-kf="kop bawah"> dengan
+// <section class="alir"> (surat utama) dan <section class="alir lamp"> (lampiran, selalu mulai lembar baru). Blok dipindah ke lembar
+// 210×297 mm satu per satu; tabel dipotong per baris (baris judul diulang), kisi foto dipotong per baris foto, blok tanda tangan tidak dipotong.
+async function paginasiA4(root) {
+  const src = root.querySelector(".src"); if (!src) return;
+  const kh = src.dataset.kh || "", kf = src.dataset.kf || "", wadah = document.createElement("div"); wadah.className = "halaman"; src.before(wadah);
+  const hal = [], tunggu = (imgs) => Promise.all([...imgs].map((i) => (i.complete ? 0 : new Promise((r) => { i.onload = i.onerror = r; setTimeout(r, 5000); }))));
+  let kelas = ""; // kelas section (mis. "alir lamp") dibawa ke .isi tiap lembar agar gaya CSS bagian itu tetap berlaku
+  const baru = () => { const p = document.createElement("div"); p.className = "hal"; p.innerHTML = `${kh ? `<img class="kh" src="${kh}" alt="">` : ""}<div class="isi ${kelas}"></div><div class="nohal"></div>${kf ? `<img class="kf" src="${kf}" alt="">` : ""}`; wadah.appendChild(p); hal.push(p); return p.querySelector(".isi"); };
+  let isi = baru(); await tunggu(hal[0].querySelectorAll("img"));
+  await tunggu(src.querySelectorAll("img")).catch(() => {});
+  const penuh = () => isi.scrollHeight > isi.clientHeight + 1; let awal = null; // lembar tempat awal blok terakhir diletakkan
+  // potong wadah (tabel / kisi foto) per kelompok anak; kepala (baris judul tabel) diulang di lembar berikutnya
+  const potong = (blk, anak, kepala, per) => {
+    blk.remove(); let cur = null; const buat = () => { cur = blk.cloneNode(false); if (blk.tagName === "TABLE") { const tb = document.createElement("tbody"); cur.appendChild(tb); if (kepala) tb.appendChild(kepala.cloneNode(true)); } isi.appendChild(cur); return cur; };
+    const tujuan = () => (cur.tagName === "TABLE" ? cur.tBodies[0] : cur); let n = 0; buat();
+    for (let i = 0; i < anak.length; i += per) {
+      const grup = anak.slice(i, i + per); grup.forEach((x) => tujuan().appendChild(x)); n++;
+      if (penuh()) { grup.forEach((x) => x.remove()); if (n === 1 && isi.children.length > 1) { cur.remove(); isi = baru(); awal = isi; buat(); } else if (n > 1) { isi = baru(); buat(); } grup.forEach((x) => tujuan().appendChild(x)); n = 1; }
+    }
+  };
+  const taruh = (blk) => {
+    awal = isi; isi.appendChild(blk); if (!penuh()) return;
+    if (blk.tagName === "TABLE" && blk.rows.length > 2) { const R = [...blk.rows], k = R[0].querySelector("th") ? R.shift() : null; return potong(blk, R, k, 1); }
+    if (blk.classList?.contains("fg") && blk.children.length > 2) return potong(blk, [...blk.children], null, 2);
+    if (isi.children.length > 1) { blk.remove(); isi = baru(); awal = isi; isi.appendChild(blk); }
+  };
+  [...src.querySelectorAll(":scope > section.alir")].forEach((sec, i) => {
+    kelas = sec.className;
+    if (i > 0 && isi.children.length) isi = baru(); else isi.className = `isi ${kelas}`; // lampiran (dan bagian berikutnya) mulai dari atas lembar baru
+    const K = [...sec.children];
+    K.forEach((blk, j) => { const sblm = isi; taruh(blk); const jd = K[j - 1]; // judul (h2/h3) tidak boleh tertinggal sendirian di bawah lembar
+      if (awal !== sblm && jd && /^H[1-4]$/.test(jd.tagName) && sblm.lastElementChild === jd) awal.insertBefore(jd, awal.firstChild); });
+  });
+  src.remove();
+  hal.forEach((p, i) => (p.querySelector(".nohal").textContent = `Halaman ${i + 1} dari ${hal.length}`));
 }
 // wadah tulis yang menempel dokumen ke elemen halaman (dipakai Dashboard)
 function wadahDi(el, ukuran) { let buf = ""; const host = document.createElement("div");
@@ -2945,7 +2983,7 @@ function jendelaDok(judul, ukuran = "A4") {
     <div data-isi style="flex:1;overflow:auto;-webkit-overflow-scrolling:touch"><p style="color:#fff;font-family:Arial;padding:20px">Menyusun ${esc(judul.toLowerCase())}…</p></div>`;
   document.body.appendChild(L); document.body.style.overflow = "hidden";
   const pr = Object.assign(document.createElement("style"), { id: "dokPrint" });
-  pr.textContent = `@media print{@page{size:${ukuran === "16:9" ? "338.67mm 190.5mm" : ukuran === "A3L" ? "420mm 297mm" : "A4"};margin:${ukuran === "16:9" || ukuran === "A3L" ? 0 : "10mm"}}body>*:not(#dokLayer){display:none!important}#dokLayer{position:static!important;background:#fff!important}#dokLayer>div:first-child{display:none!important}#dokLayer [data-isi]{overflow:visible!important}[data-dok]{zoom:1!important;padding:0!important}}`;
+  pr.textContent = `@media print{@page{size:${ukuran === "16:9" ? "338.67mm 190.5mm" : ukuran === "A3L" ? "420mm 297mm" : "A4 portrait"};margin:${ukuran === "16:9" || ukuran === "A3L" || ukuran === "A4P" ? 0 : "10mm"}}body>*:not(#dokLayer){display:none!important}#dokLayer{position:static!important;background:#fff!important}#dokLayer>div:first-child{display:none!important}#dokLayer [data-isi]{overflow:visible!important}[data-dok]{zoom:1!important;padding:0!important}}`;
   document.head.appendChild(pr);
   const isi = L.querySelector("[data-isi]"), host = document.createElement("div"); let buf = "";
   const tutup = () => { L.remove(); pr.remove(); document.body.style.overflow = ""; };
@@ -6920,7 +6958,7 @@ async function tanyaPenandatangan(r) {
 async function cetakBA(id, opsi = {}) {
   const r0 = opsi.r ?? (await sb.from("berita_acara").select("*").eq("id", id).single()).data; if (!r0) return alert("Berita acara tidak ditemukan");
   const r = opsi.lihat ? r0 : await tanyaPenandatangan(r0); if (!r) return; const I = r.isi ?? {}, bast = r.jenis === "BASTP";
-  const w = jendelaDok(bast ? "BASTP" : `BA stop bor ${r.bhid}`, "A4");
+  const w = jendelaDok(bast ? "BASTP" : `BA stop bor ${r.bhid}`, "A4P");
   // v.60: LAMPIRAN foto — halaman baru (mulai dari atas kertas) setelah tanda tangan: foto patok, foto selesai bor, foto pengerjaan, foto core box.
   // BA stop bor: titik itu; BASTP: tiap titik dalam tabel, masing-masing mulai di halaman baru.
   const lampiranTitik = async (bh, no) => {
@@ -6936,9 +6974,9 @@ async function cetakBA(id, opsi = {}) {
     const fe = (e) => `<figure><img src="${u[e.photo_path] ?? ""}" alt=""><figcaption>${esc(EV[e.event_type] ?? e.event_type)} · ${esc(fmtT(new Date(e.captured_at)))}${e.depth_to != null ? ` · ${d2(e.depth_from)}–${d2(e.depth_to)} m` : ""}${e.reason ? " · " + esc(e.reason) : ""}${e.lat != null ? ` · GPS ${(+e.lat).toFixed(6)}, ${(+e.lon).toFixed(6)}${e.gps_accuracy_m != null ? ` ±${fmtD(e.gps_accuracy_m)} m` : ""}` : ""}${u[e.photo_path] ? "" : " · <i>(foto sudah dipindah ke Google Drive)</i>"}</figcaption></figure>`;
     const fc = (c) => { const x = uc[c.preview_path] ?? uc[c.photo_path]; return `<figure><img src="${x ?? ""}" alt="" style="object-fit:contain;background:#f2f2f2"><figcaption>Kotak ${esc(c.box_no ?? "")} · ${esc(c.photo_type ?? "")} · ${d2(c.depth_from)}–${d2(c.depth_to)} m${x ? "" : " · <i>(di Google Drive)</i>"}</figcaption></figure>`; };
     const bag = (judul, xs, f, kosong) => `<h3>${judul}</h3>${xs.length ? `<div class="fg">${xs.map(f).join("")}</div>` : `<p class="m">${kosong}</p>`}`;
-    return `<div class="lamp"><h2>LAMPIRAN${no ? " " + no : ""} — DOKUMENTASI TITIK ${esc(bh)}</h2><div class="no">Nomor BA: ${esc(r.nomor ?? "")}</div>
+    return `<section class="alir lamp"><h2>LAMPIRAN${no ? " " + no : ""} — DOKUMENTASI TITIK ${esc(bh)}</h2><div class="no">Nomor BA: ${esc(r.nomor ?? "")}</div>
       ${bag("A. Foto patok", patok, fe, "Foto patok belum ada di aplikasi.")}${bag("B. Foto selesai bor / drill pad", selesai, fe, "Foto selesai bor / drill pad belum ada di aplikasi.")}
-      ${bag("C. Foto pengerjaan", kerja, fe, "Foto pengerjaan belum ada di aplikasi.")}${bag(`D. Foto core box (${C.length})`, C, fc, "Foto core box belum ada di aplikasi.")}</div>`; };
+      ${bag("C. Foto pengerjaan", kerja, fe, "Foto pengerjaan belum ada di aplikasi.")}${bag(`D. Foto core box (${C.length})`, C, fc, "Foto core box belum ada di aplikasi.")}</section>`; };
   const RDRc = bast ? await petaRedrill().catch(() => ({})) : {}; // BASTP: dokumentasi lubang lama yang sudah di-redrill = dokumentasi lubang redrill-nya
   const daftarLamp = bast ? [...new Set((I.titik ?? []).map((t) => RDRc[t.bhid] ?? t.bhid).filter(Boolean))] : [r.bhid].filter(Boolean);
   const foto = (await Promise.all(daftarLamp.map((b, i) => lampiranTitik(b, bast && daftarLamp.length > 1 ? i + 1 : "")))).join("");
@@ -6951,14 +6989,16 @@ async function cetakBA(id, opsi = {}) {
       ${baris("Koordinat East / X", I.east)}${baris("Koordinat North / Y", I.north)}${baris("Elevasi / Z", I.rl)}${baris("Akurasi koordinat (± m)", I.akurasi)}${baris("Sistem koordinat", I.sistem)}${baris("Panjang coring (m)", I.coring)}${baris("Panjang open hole (m)", I.open)}${baris("Recovery core (%)", I.recovery)}${baris("Jumlah sample", I.conto)}${baris("Tebal limonit (m)", I.limonit)}${baris("Tebal saprolit (m)", I.saprolit)}</table>`;
   w.document.open(); w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>${esc(r.nomor ?? "Berita Acara")}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caladea:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
-  <style>@page{size:A4 portrait;margin:0} html{background:#eee} body{font-family:Cambria,Caladea,"Times New Roman",serif;font-size:12.5px;color:#111;box-sizing:border-box;width:210mm;max-width:100%;margin:12px auto;padding:0;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25)} @media print{html{background:#fff} body{width:210mm;margin:0;box-shadow:none}}
-  table.lay,table.lay>*>tr>td{border:0;padding:0;margin:0;width:100%} .kopA{display:block;width:210mm;max-width:100%} table.lay>tbody>tr>td.isi{padding:2mm 20mm 4mm} .kakiSp{height:28mm} .kaki{width:210mm;max-width:100%} .kaki img{display:block;width:100%}
+  <style>@page{size:A4 portrait;margin:0} body{font-family:Cambria,Caladea,"Times New Roman",serif;font-size:12.5px;color:#111;margin:0;padding:0;background:transparent}
+  .hal{box-sizing:border-box;width:210mm;height:297mm;margin:0 auto 14px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden}
+  .hal .kh,.hal .kf{display:block;width:100%;flex:0 0 auto} .hal .isi{flex:1 1 auto;min-height:0;overflow:hidden;padding:2mm 20mm 0} .hal .nohal{flex:0 0 auto;text-align:right;font-size:9px;color:#777;padding:1mm 20mm 1.5mm}
+  .src{box-sizing:border-box;width:210mm;background:#fff;padding:2mm 20mm}
+  @media print{.hal{margin:0;box-shadow:none;height:296.5mm;break-after:page;page-break-after:always} .hal:last-child{break-after:auto;page-break-after:auto}}
   h1{text-align:center;font-size:15px;margin:14px 0 2px;text-decoration:underline} .no{text-align:center;margin-bottom:12px} p{text-align:justify;text-justify:inter-word;hyphens:auto;-webkit-hyphens:auto;line-height:1.45} table.p td{text-align:justify} table{border-collapse:collapse;width:100%;margin:6px 0} td,th{border:1px solid #999;padding:4px 6px;text-align:left;vertical-align:top} th{background:#e6efe9} table.d td,table.d th{font-size:10px;padding:3px}
-  .blok{break-inside:avoid;page-break-inside:avoid} .ttd{break-inside:avoid;display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px;text-align:center} .ttd div{min-height:120px} .sp{height:70px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666} table.p td{border:0;padding:1px 4px} .fg{display:grid;grid-template-columns:1fr 1fr;gap:8px} .fg img{width:100%;border:1px solid #ccc} figure{margin:0} figcaption{font-size:9.5px;color:#444} .lamp{break-before:page;page-break-before:always} .lamp h2{text-align:center;font-size:14px;margin:6px 0 2px;text-decoration:underline} .lamp h3{margin:10px 0 4px;font-size:12.5px} .lamp figure{break-inside:avoid;page-break-inside:avoid} .lamp .fg img{height:62mm;object-fit:cover}
+  .blok{break-inside:avoid;page-break-inside:avoid} .ttd{break-inside:avoid;display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px;text-align:center} .ttd div{min-height:120px} .sp{height:70px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666} table.p td{border:0;padding:1px 4px} .fg{display:grid;grid-template-columns:1fr 1fr;gap:8px} .fg img{width:100%;border:1px solid #ccc} figure{margin:0} figcaption{font-size:9.5px;color:#444} .lamp h2{text-align:center;font-size:14px;margin:6px 0 2px;text-decoration:underline} .lamp h3{margin:10px 0 4px;font-size:12.5px} .lamp figure{break-inside:avoid;page-break-inside:avoid} .lamp .fg img{height:62mm;object-fit:cover}
 
-  @media print{button{display:none} .kaki{position:fixed;bottom:0;left:0}}</style></head><body>
-  <button onclick="print()">Cetak / simpan PDF</button>
-  <table class="lay"><thead><tr><td><img class="kopA" src="${KOP_HEADER}"></td></tr></thead><tfoot><tr><td><div class="kakiSp"></div></td></tr></tfoot><tbody><tr><td class="isi">
+  </style></head><body>
+  <div class="src" data-kh="${KOP_HEADER}" data-kf="${KOP_FOOTER}"><section class="alir">
   <h1>${bast ? "BERITA ACARA SERAH TERIMA PEKERJAAN (BASTP)" : "BERITA ACARA STOP BOR"}</h1><div class="no">Nomor: ${esc(r.nomor ?? "")}${r.status !== "FINAL" ? " <span class=m>(DRAF)</span>" : ""}</div>
   ${bast ? `<p>Pada ${esc(tglTerbilang(I.tanggal ?? ""))}, bertempat di ${esc(I.tempat ?? "")}, kami yang bertanda tangan di bawah ini:</p>
   <table class="p"><tr><td style="width:24px">1.</td><td style="width:120px">Nama</td><td>: <b>${esc(I.direktur || KOP.direktur)}</b></td></tr><tr><td></td><td>Jabatan</td><td>: ${esc(I.direktur_jabatan || KOP.jabatanDir)}</td></tr><tr><td></td><td>Perusahaan</td><td>: ${KOP.pt}</td></tr><tr><td></td><td>Alamat</td><td>: ${esc(KOP.alamat.join(", "))}</td></tr>
@@ -6975,9 +7015,7 @@ async function cetakBA(id, opsi = {}) {
     <div>PIHAK KEDUA<br>Yang menerima,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b><div class="sp"></div><span class="nm">${esc(I.penerima || "(......................)")}</span><br>${esc(I.penerima_jabatan ?? "")}</div></div>`
   : `<div class="ttd"><div>Dibuat oleh,<br><b>${KOP.pt}</b><br>${esc(I.geologist_jabatan ?? "Wellsite Geologist")}<div class="sp"></div><span class="nm">${esc(I.geologist || "(......................)")}</span></div>
     <div>Disaksikan oleh,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b><br>${esc(I.penerima_jabatan ?? "Pengawas Lapangan")}<div class="sp"></div><span class="nm">${esc(I.penerima || "(......................)")}</span></div></div>`}</div>
-  ${foto}
-  </td></tr></tbody></table>
-  <div class="kaki"><img src="${KOP_FOOTER}"></div>
+  </section>${foto}</div>
   </body></html>`); w.document.close();
 }
 
