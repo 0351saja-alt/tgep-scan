@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.123";
+const APP_VERSION = "2026-11-28.124";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -958,11 +958,18 @@ function cekCoreRun(L) {
   for (const x of sw) if (!/swell/i.test(x.remark ?? "")) x.remark = x.remark ? `${x.remark}; SWELLING` : "SWELLING";
   return null;
 }
+// v.124: Hole ID foto core = DROPDOWN titik yang sudah terdaftar di DDR (tidak bisa mengetik / memilih titik rencana yang belum dibor)
+async function bhDiDDR() {
+  let L = JSON.parse(localStorage.getItem("bhDDR") || "[]");
+  if (online()) { try { const [{ data: a }, { data: b }] = await Promise.all([sb.from("v_ddr_baris").select("bhid,tanggal").not("bhid", "is", null).order("tanggal", { ascending: false }).limit(5000), sb.from("ddr").select("bhid,report_date").not("bhid", "is", null).order("report_date", { ascending: false }).limit(2000)]);
+    const T = {}; for (const x of [...(a ?? []).map((r) => [r.bhid, r.tanggal]), ...(b ?? []).map((r) => [r.bhid, r.report_date])]) if (x[0] && (!T[x[0]] || x[1] > T[x[0]])) T[x[0]] = x[1];
+    L = Object.entries(T).sort((p, q) => String(q[1]).localeCompare(String(p[1])) || urutBH(p[0], q[0])); localStorage.setItem("bhDDR", JSON.stringify(L)); } catch {} }
+  return L; }
 async function coreView(v) {
-  const bh = localStorage.getItem("bhid") || "", lastType = localStorage.getItem("coreType") || "UTUH";
+  const bhL = await bhDiDDR(), bh0 = localStorage.getItem("bhid") || "", bh = bhL.some(([b]) => b === bh0) ? bh0 : (bhL[0]?.[0] ?? ""), lastType = localStorage.getItem("coreType") || "UTUH";
   const qd = (await qAll()).filter((x) => x.kind === "core");
   v.innerHTML = `<div class="card"><h2>Foto core</h2>
-   <div class="row"><div><label>Hole ID</label><input id="cb" data-bhid value="${esc(bh)}" autocapitalize="characters"></div><div><label>Jenis foto</label><select id="cty"><option value="UTUH" ${lastType === "UTUH" ? "selected" : ""}>Core UTUH</option><option value="BELAH" ${lastType === "BELAH" ? "selected" : ""}>Core BELAH</option></select></div></div>
+   <div class="row"><div><label>Hole ID <span class="muted" style="font-weight:400">(titik yang sudah ada di DDR)</span></label><select id="cb">${bhL.length ? bhL.map(([b, t]) => `<option value="${esc(b)}" ${b === bh ? "selected" : ""}>${esc(b)} · DDR terakhir ${esc(String(t ?? "").slice(5, 10).split("-").reverse().join("/"))}</option>`).join("") : `<option value="">— belum ada titik di DDR —</option>`}</select></div><div><label>Jenis foto</label><select id="cty"><option value="UTUH" ${lastType === "UTUH" ? "selected" : ""}>Core UTUH</option><option value="BELAH" ${lastType === "BELAH" ? "selected" : ""}>Core BELAH</option></select></div></div>
    <p id="cl" class="muted"></p>
    <div class="row"><div><label>Kotak ke-</label><input id="cx" inputmode="numeric"></div><div><label>FROM (m)</label><input id="cf" inputmode="decimal"></div><div><label>TO (m)</label><input id="ct" inputmode="decimal"></div></div>
    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="crt" style="width:auto"> Foto ulang kotak yang sudah pernah dikirim (mis. karena ditolak)</label>
