@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.119";
+const APP_VERSION = "2026-11-28.120";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -7462,7 +7462,35 @@ async function cetakBA(id, opsi = {}) {
       ${bag("C. Foto patok", patok, fe, "Foto patok belum ada di aplikasi.")}${bag(`D. Foto core box (${C.length})`, C, fc, "Foto core box belum ada di aplikasi.")}</section>`; };
   const RDRc = bast ? await petaRedrill().catch(() => ({})) : {}; // BASTP: dokumentasi lubang lama yang sudah di-redrill = dokumentasi lubang redrill-nya
   const daftarLamp = bast ? [...new Set((I.titik ?? []).map((t) => RDRc[t.bhid] ?? t.bhid).filter(Boolean))] : [r.bhid].filter(Boolean);
-  const foto = (await Promise.all(daftarLamp.map((b, i) => lampiranTitik(b, bast && daftarLamp.length > 1 ? i + 1 : "")))).join("");
+  // v.120: BASTP tidak lagi melampirkan foto — lampirannya BA stop bor, form pengiriman sample, DDR dan database (per titik yang diserahkan)
+  const lampiranBASTP = async () => {
+    const BH = [...new Set([...(I.titik ?? []).map((t) => t.bhid), ...daftarLamp])].filter(Boolean), ada = BH.length ? BH : ["-"];
+    const asal = Object.entries(RDRc).filter(([, b]) => BH.includes(b)).map(([a]) => a), BHd = [...new Set([...ada, ...asal])];
+    const aman = async (p) => { try { const x = await p; return x.data ?? []; } catch { return []; } };
+    const [BA, KP, DD, HO, ...TB] = await Promise.all([
+      aman(sb.from("berita_acara").select("id,nomor,bhid,status,isi,created_at,ba_signature(slot,signer_name,signed_at)").eq("jenis", "BA_STOP").in("bhid", BHd).order("bhid")),
+      aman(sb.from("kirim_preparasi").select("id,no_kirim,tanggal,status,jumlah_karung,no_segel,catatan,pengirim,pengirim_ttd_at,penerima,penerima_ttd_at,kirim_preparasi_item(count)").order("no_kirim")),
+      aman(sb.from("ddr").select("id,report_date,shift,rig,bhid,status,coring,open_hole,ddr_signature(slot)").in("bhid", BHd).order("report_date").order("shift")),
+      aman(sb.from("v_dash_hole").select("bhid,kedalaman:eoh,tebal_limonit,tebal_saprolit,tebal_boulder,tebal_bedrock,jumlah_conto,recovery_pct").in("bhid", ada)),
+      ...["v_dh_collar", "v_dh_survey", "v_dh_geology", "v_dh_density", "v_dh_assay"].map((v) => aman(sb.from(v).select("holeid").in("holeid", ada).limit(20000)))]);
+    const bhKs = (no) => { const m = String(no ?? "").match(/DH-?NPG\s*-?(\d+R?)/i); return m ? `DH-NPG ${m[1].toUpperCase()}` : ""; };
+    const KPx = KP.filter((k) => BHd.includes(bhKs(k.no_kirim)) || BHd.some((b) => String(k.catatan ?? "").includes(b)));
+    const m2 = (xs) => (xs ?? []).filter((x) => +x.to > +x.from).reduce((a, x) => a + (+x.to - +x.from), 0), d2 = (x) => (x == null || x === "" ? "–" : fmtD(+(+x).toFixed(2)));
+    const ttd = (sg, sl) => ((sg ?? []).some((g) => g.slot === sl) ? "✓" : "–");
+    const kepala = (no, judul, ket) => `<section class="alir lamp"><h2>LAMPIRAN ${no} — ${judul}</h2><div class="no">Nomor BASTP: ${esc(r.nomor ?? "")}</div>${ket ? `<p style="font-size:11px">${ket}</p>` : ""}`;
+    const L1 = kepala(1, "BERITA ACARA STOP BOR", `${BA.length} berita acara stop bor untuk ${BH.length} titik yang diserahkan. Dokumen lengkap tiap BA dapat dibuka di aplikasi X-Terra (menu Database utama → Berita acara).`)
+      + `<table class="d"><tr><th>No</th><th>Nomor BA</th><th>Titik</th><th>Tanggal stop</th><th>Kedalaman (m)</th><th>Status akhir</th><th>TTD Wellsite</th><th>TTD Site Rep.</th><th>Status</th></tr>${BA.map((b, i) => `<tr><td>${i + 1}</td><td>${esc(b.nomor ?? "")}</td><td>${esc(b.bhid ?? "")}</td><td>${esc(b.isi?.stop ?? "")}</td><td>${esc(b.isi?.kedalaman ?? "")}</td><td>${esc(b.isi?.status ?? "")}</td><td style="text-align:center">${ttd(b.ba_signature, "WELLSITE")}</td><td style="text-align:center">${ttd(b.ba_signature, "SITE_REP")}</td><td>${esc(b.status)}</td></tr>`).join("") || `<tr><td colspan="9">Belum ada BA stop bor tersimpan untuk titik ini.</td></tr>`}</table></section>`;
+    const L2 = kepala(2, "FORM PENGIRIMAN SAMPLE", `${KPx.length} form pengiriman · ${KPx.reduce((a, k) => a + (k.kirim_preparasi_item?.[0]?.count ?? 0), 0)} sample.`)
+      + `<table class="d"><tr><th>No</th><th>Nomor form</th><th>Titik</th><th>Tanggal</th><th>Sample</th><th>Karung</th><th>No. segel</th><th>Pengirim</th><th>Penerima</th><th>Status</th></tr>${KPx.map((k, i) => `<tr><td>${i + 1}</td><td>${esc(k.no_kirim)}</td><td>${esc(bhKs(k.no_kirim))}</td><td>${esc(k.tanggal ?? "")}</td><td style="text-align:right">${k.kirim_preparasi_item?.[0]?.count ?? 0}</td><td style="text-align:right">${k.jumlah_karung ?? ""}</td><td>${esc(k.no_segel ?? "")}</td><td>${esc(k.pengirim ?? "")}${k.pengirim_ttd_at ? " ✓" : ""}</td><td>${esc(k.penerima ?? "")}${k.penerima_ttd_at ? " ✓" : ""}</td><td>${esc(k.penerima_ttd_at ? "DITERIMA" : k.status)}</td></tr>`).join("") || `<tr><td colspan="10">Belum ada form pengiriman sample.</td></tr>`}</table></section>`;
+    const L3 = kepala(3, "DAILY DRILLING REPORT (DDR)", `${DD.length} DDR · coring ${d2(DD.reduce((a, d) => a + m2(d.coring), 0))} m · open hole ${d2(DD.reduce((a, d) => a + m2(d.open_hole), 0))} m. ✓ = sudah ditandatangani.`)
+      + `<table class="d"><tr><th>No</th><th>Tanggal</th><th>Shift</th><th>Rig</th><th>Titik</th><th>Coring (m)</th><th>Open hole (m)</th><th>Driller</th><th>Wellsite</th><th>Client</th><th>Status</th></tr>${DD.map((d, i) => `<tr><td>${i + 1}</td><td>${esc(d.report_date)}</td><td>${d.shift === "MALAM" ? "Night" : "Day"}</td><td>${esc(d.rig ?? "")}</td><td>${esc(d.bhid ?? "")}</td><td style="text-align:right">${d2(m2(d.coring))}</td><td style="text-align:right">${d2(m2(d.open_hole))}</td><td style="text-align:center">${ttd(d.ddr_signature, "DRILLER")}</td><td style="text-align:center">${ttd(d.ddr_signature, "WELLSITE")}</td><td style="text-align:center">${ttd(d.ddr_signature, "CLIENT")}</td><td>${d.status === "SIGNED" ? "LENGKAP TTD" : "DRAF"}</td></tr>`).join("") || `<tr><td colspan="11">Belum ada DDR.</td></tr>`}</table></section>`;
+    const nT = (rows, b) => rows.filter((x) => x.holeid === b).length, nm = ["Collar", "Survey", "Geologi", "Density", "Assay"];
+    const L4 = kepala(4, "DATABASE PEMBORAN", "Database diserahkan dalam format Excel (dari aplikasi X-Terra, menu Database utama → Data database): Collar, Survey, Geologi + recovery, Density, Assay dan QAQC. Ringkasan isi per titik:")
+      + `<table class="d"><tr><th>Titik</th><th>Kedalaman (m)</th><th>Limonit (m)</th><th>Saprolit (m)</th><th>Boulder (m)</th><th>Bedrock (m)</th><th>Recovery (%)</th><th>Conto</th>${nm.map((x) => `<th>${x}<br><span style="font-weight:400">(baris)</span></th>`).join("")}</tr>
+        ${BH.map((b) => { const h = HO.find((x) => x.bhid === b) ?? {}; return `<tr><td>${esc(b)}</td>${["kedalaman", "tebal_limonit", "tebal_saprolit", "tebal_boulder", "tebal_bedrock", "recovery_pct"].map((k) => `<td style="text-align:right">${d2(h[k])}</td>`).join("")}<td style="text-align:right">${h.jumlah_conto ?? 0}</td>${TB.map((rows) => `<td style="text-align:right">${nT(rows, b)}</td>`).join("")}</tr>`; }).join("")}
+        <tr><th>Total</th>${["kedalaman", "tebal_limonit", "tebal_saprolit", "tebal_boulder", "tebal_bedrock"].map((k) => `<th style="text-align:right">${d2(BH.reduce((a, b) => a + (+(HO.find((x) => x.bhid === b) ?? {})[k] || 0), 0))}</th>`).join("")}<th></th><th style="text-align:right">${BH.reduce((a, b) => a + (+(HO.find((x) => x.bhid === b) ?? {}).jumlah_conto || 0), 0)}</th>${TB.map((rows) => `<th style="text-align:right">${rows.length}</th>`).join("")}</tr></table></section>`;
+    return L1 + L2 + L3 + L4; };
+  const foto = bast ? await lampiranBASTP().catch((e) => `<section class="alir lamp"><p>Lampiran gagal disusun: ${esc(e.message)}</p></section>`) : (await Promise.all(daftarLamp.map((b, i) => lampiranTitik(b, "")))).join("");
   const tglPanjang = (t) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch { return t; } };
   const baris = (l, v) => `<tr><td style="width:38%">${l}</td><td>${esc(v ?? "") || "-"}</td></tr>`;
   const isi = bast ? `<table>${baris("Pekerjaan", I.pekerjaan)}${baris("Periode", `${r.dari} s/d ${r.sampai}`)}${baris("Jumlah titik diserahkan", `${(I.titik ?? []).length}${I.rencana ? ` dari ${I.rencana} titik rencana` : ""}`)}${baris("Total kedalaman (m)", (I.titik ?? []).reduce((s, t) => s + (+String(t.kedalaman).replace(",", ".") || 0), 0).toFixed(2))}</table>
