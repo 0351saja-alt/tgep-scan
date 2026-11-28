@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.130";
+const APP_VERSION = "2026-11-28.131";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3322,6 +3322,8 @@ const NASKAH = [
   ["pemberi", "Pemberi kerja", "PT Nusa Prima Gemilang", 1],
   ["pemilik_iup", "Pemegang IUP", "PT Luwuk Gas Sejati", 1],
   ["kontrak", "Nomor & tanggal kontrak / SPK", "[lengkapi: nomor dan tanggal kontrak/SPK]", 1],
+  ["penyusun", "Lembar kontrol: disusun oleh (Nama — Jabatan)", "[lengkapi: nama] — Geologist", 1],
+  ["pemeriksa", "Lembar kontrol: diperiksa oleh (Nama — Jabatan)", "[lengkapi: nama] — [lengkapi: jabatan]", 1],
   ["latar", "1.1 Latar belakang", "Pemegang IUP merencanakan pemboran eksplorasi untuk memperoleh informasi bawah permukaan, karakteristik litologi dan profil pelapukan sebagai data pendukung evaluasi potensi sumber daya nikel laterit. Pemberi kerja menetapkan lingkup pekerjaan dalam Scope of Work (SOW), dan PT Terra Grapindo Eco Prima (TGEP) melaksanakan pemboran inti, logging geologi serta pengambilan conto sesuai SOW tersebut."],
   ["tujuan", "1.2 Maksud dan tujuan (satu butir per baris)", "Memperoleh data bawah permukaan berdasarkan rencana titik pemboran.\nMengidentifikasi karakteristik litologi dan profil pelapukan (limonit, saprolit, batuan dasar).\nMendapatkan sampel core yang representatif untuk analisa kadar (Ni, Fe, Co, MgO, SiO₂).\nMenyediakan data kedalaman, recovery dan dokumentasi pemboran.\nMenyediakan data pendukung untuk evaluasi geologi dan potensi sumber daya.\nMenyelesaikan pekerjaan lapangan dalam waktu yang ditetapkan SOW."],
   ["lokasi", "1.3 Lokasi dan kesampaian daerah", "Lokasi pemboran berada di wilayah IUP [lengkapi: kecamatan, kabupaten], Provinsi Sulawesi Tengah. [lengkapi: nama desa, akses jalan dan waktu tempuh]"],
@@ -3443,7 +3445,7 @@ async function urlDokumen(paths) { const ps = (Array.isArray(paths) ? paths : [p
 async function sampulLaporanAkhir({ PJ, N, st, LB, HR, prof, mBor }) {
   const sel = LB.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)), prog = LB.filter((x) => x.status === "PROGRES"), tl = PJ?.target_lubang || LB.length || 0, tm = +PJ?.target_meter || 0;
   const meter = +mBor || LB.filter((x) => x.status !== "RENCANA").reduce((s, x) => s + (+x.kedalaman || 0), 0), conto = HR.reduce((s, h) => s + (+h.conto || 0), 0);
-  const rec = HR.filter((h) => h.rec != null && h.selesai), rAvg = rec.length ? rec.reduce((s, h) => s + +h.rec, 0) / rec.length : null, pc = (a, b) => (b ? (100 * a) / b : 0);
+  const SB0 = new Set(sel.map((x) => x.bhid)), rec = HR.filter((h) => h.rec != null && SB0.has(h.b)), rAvg = rec.length ? rec.reduce((s, h) => s + +h.rec, 0) / rec.length : null, pc = (a, b) => (b ? (100 * a) / b : 0);
   const tiga = await blok3D(LB, prof, { w: 900, h: 470 }).catch(() => "");
   const tglP = (t) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }); } catch { return t; } };
   return `<div class="sampul" style="min-height:0"><div class="cv">
@@ -3461,6 +3463,81 @@ async function sampulLaporanAkhir({ PJ, N, st, LB, HR, prof, mBor }) {
       <div class="pb"><span style="width:${pc(sel.length, tl)}%;background:#1E9E69"></span><span style="width:${pc(prog.length, tl)}%;background:#E0A100"></span></div></div>
     <div class="ft"><span>${KOP.pt}</span><span>${esc(tglP(todayWIB()))}</span></div></div></div>`;
 }
+// v.131: format laporan gaya laporan akhir eksplorasi — lembar kontrol, ringkasan, daftar isi/tabel/gambar/lampiran/singkatan, header-footer berjalan, penomoran per bab
+const SINGKATAN = [["APD", "Alat pelindung diri"], ["BA", "Berita acara"], ["BASTP", "Berita acara serah terima pekerjaan"], ["BD", "Boulder, bongkah batuan segar di dalam zona saprolit"], ["BR", "Bedrock, batuan dasar"], ["DDR", "Daily Drilling Report, laporan harian pemboran"],
+  ["DEMNAS", "Digital Elevation Model Nasional (Badan Informasi Geospasial)"], ["DGN95", "Datum Geodesi Nasional 1995"], ["EOH", "End of Hole, akhir lubang bor setelah menembus batuan dasar"], ["GPS", "Global Positioning System"], ["HQ", "Ukuran core bor, diameter core ±6,1 cm"],
+  ["IUP", "Izin Usaha Pertambangan"], ["K3", "Keselamatan dan kesehatan kerja"], ["L", "Limonit, zona laterit kaya oksida besi"], ["Loss", "Panjang core yang tidak terambil dalam satu run"], ["MD", "Jenis unit bor yang digunakan"], ["P2H", "Pemeriksaan harian sebelum operasi rig"],
+  ["QA/QC", "Quality assurance / quality control, pengendalian mutu data"], ["Recovery", "Perbandingan panjang core terambil terhadap panjang pemboran (%)"], ["Redrill", "Lubang bor ulang di lokasi yang sama (akhiran R)"], ["Run", "Satu kali penurunan dan pengangkatan core barrel"],
+  ["S", "Saprolit, batuan lapuk yang masih memperlihatkan tekstur batuan asal"], ["SIGAP", "Sistem informasi geospasial kawasan hutan Kementerian Kehutanan"], ["SOW", "Scope of Work, lingkup pekerjaan"], ["STB", "Stop bor sebelum EOH karena kondisi lubang atau teknis"],
+  ["SW", "Swelling, core mengembang sehingga recovery > 100 %"], ["TP", "Top soil, tanah penutup"], ["UTM", "Universal Transverse Mercator"], ["WIB", "Waktu Indonesia Barat"], ["WIUP", "Wilayah Izin Usaha Pertambangan"], ["X-Terra", "Aplikasi pencatatan data lapangan pemboran TGEP"]];
+const tanpaLengkapi = (t) => String(t ?? "").replace(/\s*\[(lengkapi|sesuaikan)[^\]]*\]/gi, "").trim();
+const kalimat = (t, n = 2) => (tanpaLengkapi(t).match(/[^.!?]+[.!?]+/g) ?? [tanpaLengkapi(t)]).slice(0, n).join(" ").trim();
+function cssLaporanAkhir(PJ, N, W) {
+  const q = (s) => `"${String(s ?? "").replace(/"/g, "'")}"`;
+  const iup = W ? `IUP ${W.nama?.match(/OP|Operasi Produksi/i) ? "Operasi Produksi " : ""}No. ${W.nomor_sk ?? "–"}` : `Wilayah IUP ${N.pemilik_iup}`;
+  return `@page{size:A4;margin:24mm 22mm 20mm 27mm;
+   @top-left{content:${q("LAPORAN KEGIATAN PEMBORAN EKSPLORASI\\A" + iup)};width:58%;white-space:pre;font:700 7.5pt Cambria,Georgia,serif;color:#555;vertical-align:bottom;padding-bottom:3mm;border-bottom:.6pt solid #1E9E69}
+   @top-right{content:${q(KOP.pt + "\\A" + tanpaLengkapi(N.lokasi_singkat))};width:42%;white-space:pre;text-align:right;font:700 7.5pt Cambria,Georgia,serif;color:#1E7A4F;vertical-align:bottom;padding-bottom:3mm;border-bottom:.6pt solid #1E9E69}
+   @bottom-left{content:${q("Laporan Kegiatan Pemboran · " + (PJ?.code ?? "TGEP"))};font:italic 8pt Cambria,Georgia,serif;color:#555}
+   @bottom-right{content:"Halaman " counter(page);font:8pt Cambria,Georgia,serif;color:#555}}
+  @page:first{@top-left{content:none;border:0}@top-right{content:none;border:0}@bottom-left{content:none}@bottom-right{content:none}}
+  @media print{body{margin:0!important;padding:0!important;max-width:none!important;font:10.5pt/1.45 Cambria,Georgia,"Times New Roman",serif} .cv{height:250mm} svg,img{max-width:100%;height:auto}}
+  body{font-family:Cambria,Georgia,"Times New Roman",serif;font-size:12.5px;line-height:1.5} p{margin:0 0 8px}
+  h2.bab{font-size:15pt;text-align:center;margin:0 0 22px;border:0;color:#000;line-height:1.3} h2:not(.bab){font-size:13pt;color:#000;border:0;margin:18px 0 8px} h3{font-size:11.5pt;color:#000;margin:12px 0 4px} h4{font-size:10.5pt;font-style:italic;margin:8px 0 4px}
+  table{font-family:Arial,sans-serif;font-size:9px} th{background:#E3EFE8} td,th{border-color:#9AB8A8}
+  .ctb{text-align:center;font-weight:400;margin:10px 0 4px;font-size:10.5pt} .ctb b,.cgb b{font-weight:700}
+  .cgb{display:grid;grid-template-columns:24mm 1fr;gap:2mm;font-style:italic;text-align:justify;font-size:10pt;margin:4px 0 14px} .cgb b{font-style:normal}
+  .fig{margin:6px 0 0;break-inside:avoid} .fig svg{max-width:100%;height:auto} .depan h2.bab{margin-bottom:14px}
+  ol.dl{list-style:none;margin:0;padding:0} ol.dl li{display:block;padding:2px 0;border-bottom:1px dotted #bbb;text-align:left} ol.dl li a{display:grid;grid-template-columns:var(--kol,24mm) 1fr} ol.dl li.b{font-weight:700;margin-top:4px} ol.dl li.b a{grid-template-columns:1fr} ol.dl a span.w{grid-column:1/-1} ol.dl li.l2{padding-left:8mm} ol.dl li.l3{padding-left:16mm}
+  ol.dl a{color:inherit;text-decoration:none} .rk h3{font-size:11pt;margin:10px 0 3px}`;
+}
+async function depanLaporanAkhir({ PJ, N, st, LB, HR, W, extra }) {
+  const f1 = angkaID, tglP = (t) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }); } catch { return t; } };
+  const sel = LB.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)), tl = PJ?.target_lubang || LB.length, tm = +PJ?.target_meter || 0;
+  const SB = new Set(sel.map((x) => x.bhid)), rec = HR.filter((h) => h.rec != null && SB.has(h.b)).map((h) => +h.rec), rAvg = rec.length ? rec.reduce((a, b) => a + b, 0) / rec.length : null;
+  const tlA = HR.filter((h) => SB.has(h.b) && h.tl != null).map((h) => +h.tl), tsA = HR.filter((h) => SB.has(h.b) && h.ts != null).map((h) => +h.ts), avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+  const conto = HR.reduce((s, h) => s + (+h.conto || 0), 0), nLog = HR.filter((h) => h.lstat === "LENGKAP").length;
+  const ttd = (s) => { const [nm, jb] = String(s ?? "").split(/\s+[—-]\s+/); return `${esc(tanpaLengkapi(nm) || "…………………………")}<br><small>${esc(jb ?? "")}</small>`; };
+  const lembar = `<div class="halbaru depan"><h2 class="bab">LEMBAR KONTROL DOKUMEN</h2><table class="lay" style="font-family:inherit;font-size:11px"><tr><th style="width:28%">Nama laporan</th><td colspan="2"><b>LAPORAN KEGIATAN PEMBORAN EKSPLORASI NIKEL LATERIT</b><br>Wilayah IUP ${esc(N.pemilik_iup)}, ${esc(tanpaLengkapi(N.lokasi_singkat))}</td></tr>
+    <tr><th>Periode</th><td colspan="2">${esc(tglP(st.from))} – ${esc(tglP(st.to))}</td></tr><tr><th>Disusun untuk</th><td colspan="2">${esc(N.pemberi)}</td></tr><tr><th>Disiapkan oleh</th><td colspan="2">${KOP.pt}</td></tr></table>
+    <table class="lay" style="font-family:inherit;font-size:11px;margin-top:14px"><tr><th>Otorisasi</th><th>Nama</th><th style="width:28%">Tanda tangan</th><th style="width:18%">Tanggal</th></tr>
+    <tr><td>Disusun oleh</td><td>${ttd(N.penyusun)}</td><td style="height:56px"></td><td></td></tr><tr><td>Diperiksa oleh</td><td>${ttd(N.pemeriksa)}</td><td style="height:56px"></td><td></td></tr>
+    <tr><td>Disetujui oleh</td><td>${esc(KOP.direktur)}<br><small>${esc(KOP.jabatanDir)}</small></td><td style="height:56px"></td><td></td></tr></table></div>`;
+  const R = [["Latar Belakang dan Perizinan", `${kalimat(N.latar, 2)} ${W ? `Wilayah IUP ditetapkan dengan keputusan nomor ${W.nomor_sk ?? "–"}${W.tanggal_sk ? ` tanggal ${tglP(W.tanggal_sk)}` : ""}${W.luas_sk_ha ? ` seluas ${f1(W.luas_sk_ha, 0)} ha` : ""}.` : ""}`],
+    ["Maksud dan Tujuan", `Kegiatan dimaksudkan untuk ${tanpaLengkapi(String(N.tujuan).split(/\n/)[0]).replace(/^./, (c) => c.toLowerCase()).replace(/\.$/, "")}, dengan tujuan ${String(N.tujuan).split(/\n/).slice(1, 4).map((x) => tanpaLengkapi(x).replace(/^./, (c) => c.toLowerCase()).replace(/\.$/, "")).join("; ")}.`],
+    ["Lokasi dan Keadaan Umum", `${kalimat(N.lokasi, 1)} ${kalimat(N.kondisi, 1)}`],
+    ["Waktu Pelaksanaan, Metoda dan Pelaksana", `Laporan mencakup kegiatan ${tglP(st.from)} sampai ${tglP(st.to)}. Pemboran inti dilaksanakan oleh ${KOP.pt} menggunakan ${tanpaLengkapi(N.unit_bor)} dengan sistem ${tanpaLengkapi(N.sistem_core).toLowerCase()} dan ukuran core ${tanpaLengkapi(N.diameter)}. Logging, foto core box, pengambilan conto dan pelaporan harian dicatat di aplikasi X-Terra.`],
+    ["Geologi", kalimat(N.geoReg, 2)],
+    ["Kegiatan dan Hasil Pemboran", `Sampai ${tglP(st.to)} telah diselesaikan ${sel.length} dari ${tl} titik rencana (${f1((100 * sel.length) / (tl || 1), 1)} %) dengan total ${f1(extra.mBor)} m${tm ? ` dari target ${f1(tm, 0)} m` : ""}. Rekapitulasi disajikan pada tabel berikut.`, `<p class="ctb">Rekapitulasi kegiatan pemboran</p><table><tr><th>Indikator</th><th>Rencana / target</th><th>Realisasi</th></tr>
+      <tr><td>Titik bor selesai (EOH/STB)</td><td>${tl} titik</td><td>${sel.length} titik</td></tr><tr><td>Total meter bor</td><td>${tm ? f1(tm, 0) + " m" : "–"}</td><td>${f1(extra.mBor)} m</td></tr>
+      <tr><td>Recovery core rata-rata</td><td>≥ 90 %</td><td>${rAvg != null ? f1(rAvg) + " %" : "–"}</td></tr><tr><td>Conto terlogging</td><td>seluruh interval</td><td>${conto} conto</td></tr><tr><td>Form Logging lengkap</td><td>seluruh titik selesai</td><td>${nLog} titik</td></tr></table>`],
+    ["Profil Laterit", tlA.length ? `Profil laterit pada titik yang selesai tersusun atas limonit dengan tebal rata-rata ${f1(avg(tlA))} m dan saprolit ${f1(avg(tsA))} m di atas batuan dasar. Penilaian kadar menunggu hasil analisa laboratorium.` : "Profil laterit akan diuraikan setelah data logging tersedia."],
+    ["Mutu Data dan Keselamatan Kerja", `Recovery core ${rec.filter((x) => x >= 90).length} dari ${rec.length} titik berada di atas target 90 %. Data DDR dan Form Logging diuji silang otomatis, dan setiap koreksi tercatat beserta alasannya. ${kalimat(N.k3, 1)}`],
+    ["Kesimpulan Sementara dan Tindak Lanjut", sel.length >= tl ? "Seluruh titik rencana telah selesai dibor. Tahap berikutnya adalah penyerahan seluruh conto dan data, analisa laboratorium, serta serah terima pekerjaan." : `Pekerjaan dilanjutkan pada ${tl - sel.length} titik tersisa sampai target ${tl} titik terpenuhi beserta kelengkapan datanya. Conto dikirim ke laboratorium untuk analisa kadar sebagai dasar penilaian prospek.`]];
+  const ringkas = `<div class="halbaru depan rk" id="ringkasan"><h2 class="bab">RINGKASAN</h2>${R.map(([j, t, x], i) => `<h3>${i + 1}. ${esc(j)}</h3><p>${esc(t)}</p>${x ?? ""}`).join("")}</div>`;
+  const daftar = (id, j) => `<div class="halbaru depan"><h2 class="bab">${j}</h2><ol class="dl" id="${id}"></ol></div>`;
+  const singk = `<div class="halbaru depan"><h2 class="bab">DAFTAR SINGKATAN DAN ISTILAH</h2><table class="lay" style="font-family:inherit;font-size:11px">${SINGKATAN.map(([a, b]) => `<tr><td style="width:24mm"><b>${esc(a)}</b></td><td>${esc(b)}</td></tr>`).join("")}</table></div>`;
+  return lembar + ringkas + daftar("dIsi", "DAFTAR ISI") + daftar("dTabel", "DAFTAR TABEL") + daftar("dGambar", "DAFTAR GAMBAR") + daftar("dLamp", "DAFTAR LAMPIRAN") + singk;
+}
+// penomoran Gambar/Tabel per bab (1-1, R-1, A-1) dan isi daftar — dijalankan di jendela laporan
+const SKRIP_PENOMORAN = `<script>(function(){if(document.body.dataset.nomor)return;document.body.dataset.nomor=1;var rom={I:1,II:2,III:3,IV:4,V:5,VI:6,VII:7,VIII:8,IX:9,X:10};var isi=document.getElementById("isi");if(!isi)return;var bab="",nt={},ng={},nl={},T=[],G=[],L=[],H=[],k=0;
+function teks(e){return (e.textContent||"").replace(/\\s+/g," ").trim()}function id(e){if(!e.id)e.id="h"+(++k);return e.id}
+var hs=isi.querySelectorAll("h2.bab, h2, h3, table, .fig, .ctb, .cgb, .clp");var judulTerakhir="";
+for(var i=0;i<hs.length;i++){var e=hs[i];if(e.closest(".cv")||e.closest(".fig")&&!e.classList.contains("fig"))continue;
+ if(e.matches("h2.bab")){var t=teks(e),m=t.match(/^BAB\\s+([IVX]+|\\d+)\\s+(.*)$/i),ml=t.match(/^LAMPIRAN\\s+([A-Z])\\b[.\\s]*(.*)$/i);
+  if(m){bab=String(rom[m[1].toUpperCase()]||m[1]);e.innerHTML="BAB "+bab+"<br>"+m[2].toUpperCase();H.push([1,"BAB "+bab+"  "+m[2].toUpperCase(),id(e)]);}
+  else if(ml){bab=ml[1].toUpperCase();H.push([1,"LAMPIRAN "+bab+"  "+ml[2].toUpperCase(),id(e)]);L.push([1,"LAMPIRAN "+bab+"  "+ml[2].toUpperCase(),id(e)]);}
+  else{bab=e.closest("#ringkasan")?"R":bab;if(!/DAFTAR ISI|LEMBAR KONTROL/.test(t))H.push([1,t,id(e)]);}judulTerakhir="";continue;}
+ if(e.matches("h2,h3")){if(e.closest(".depan"))continue;var tt=teks(e);judulTerakhir=tt.replace(/^[\\d.]+\\s*/,"");H.push([e.tagName==="H2"?2:3,tt,id(e)]);continue;}
+ var pf=bab||"R";
+ if(e.classList.contains("clp")){nl[pf]=(nl[pf]||0)+1;var lb="Lampiran "+pf+"-"+nl[pf],tx=teks(e);e.innerHTML="<b>"+lb+"</b><span>"+tx+"</span>";e.className="cgb";L.push([2,lb+"\\t"+tx,id(e)]);continue;}
+ if(e.classList.contains("ctb")){var tb=e.nextElementSibling;if(tb&&tb.tagName==="TABLE")tb.dataset.cap=1;nt[pf]=(nt[pf]||0)+1;var lb2="Tabel "+pf+"-"+nt[pf],tx2=teks(e);e.innerHTML="<b>"+lb2+"</b> "+tx2;T.push([2,lb2+"\\t"+tx2,id(e)]);continue;}
+ if(e.tagName==="TABLE"){if(e.dataset.cap||e.classList.contains("lay")||e.closest(".depan")&&!e.closest("#ringkasan"))continue;nt[pf]=(nt[pf]||0)+1;var c=document.createElement("p");c.className="ctb";var lb3="Tabel "+pf+"-"+nt[pf];c.innerHTML="<b>"+lb3+"</b> "+(judulTerakhir||"Data");e.parentNode.insertBefore(c,e);T.push([2,lb3+"\\t"+(judulTerakhir||"Data"),id(c)]);continue;}
+ if(e.classList.contains("cgb")){ng[pf]=(ng[pf]||0)+1;var lb4="Gambar "+pf+"-"+ng[pf],tx4=teks(e).replace(/^Gambar\\s+[\\d.\\-]+\\s*/,"");e.innerHTML="<b>"+lb4+"</b><span>"+tx4+"</span>";G.push([2,lb4+"\\t"+tx4,id(e)]);continue;}
+ if(e.classList.contains("fig")){var nx=e.nextElementSibling;if(nx&&nx.classList&&nx.classList.contains("cgb"))continue;ng[pf]=(ng[pf]||0)+1;var lb5="Gambar "+pf+"-"+ng[pf],tx5=e.dataset.cap||judulTerakhir;var c2=document.createElement("div");c2.className="cgb";c2.innerHTML="<b>"+lb5+"</b><span>"+tx5+". Sumber: database aplikasi X-Terra.</span>";e.parentNode.insertBefore(c2,e.nextSibling);G.push([2,lb5+"\\t"+tx5,id(c2)]);}}
+function isiDaftar(el,xs,kol){if(!el)return;if(kol)el.style.setProperty("--kol",kol);el.innerHTML=xs.map(function(x){var p=x[1].split("\\t");return '<li class="'+(x[0]===1?"b":"l"+x[0])+'"><a href="#'+x[2]+'">'+(p.length>1?"<span>"+p[0]+"</span><span>"+p[1]+"</span>":"<span class=w>"+p[0]+"</span>")+"</a></li>"}).join("")||"<li>–</li>"}
+isiDaftar(document.getElementById("dIsi"),H.map(function(h){return [h[0],h[0]===1?h[1]:h[1].replace(/^([\\d.]+)\\s*/,"$1\\t"),h[2]]}),"14mm");isiDaftar(document.getElementById("dTabel"),T,"20mm");isiDaftar(document.getElementById("dGambar"),G,"22mm");isiDaftar(document.getElementById("dLamp"),L,"26mm");})();<\/script>`;
+
 // Bab awal laporan: sampul, daftar isi, BAB I–III (naskah + angka otomatis dari database) — format dokumen v.130
 async function babAwalLaporan({ PJ, st, LB, HR, prof, T }) {
   const N = naskahIsi(PJ), tanda = (t) => esc(t).replace(/\[(lengkapi|sesuaikan)[^\]]*\]/gi, (x) => `<mark>${x}</mark>`), par = (t) => String(t ?? "").split(/\n+/).filter((x) => x.trim()).map((x) => `<p>${tanda(x)}</p>`).join("");
@@ -3479,7 +3556,7 @@ async function babAwalLaporan({ PJ, st, LB, HR, prof, T }) {
   const selesai = LB.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)), prog = LB.filter((x) => x.status === "PROGRES"), meter = +(T?.harian?.at(-1)?.[3]) || LB.filter((x) => x.status !== "RENCANA").reduce((s, x) => s + (+x.kedalaman || 0), 0);
   const tl = PJ?.target_lubang || LB.length, tm = +PJ?.target_meter || 0, dSel = selesai.map((x) => +x.kedalaman).filter((x) => x > 0);
   const rl = col.map((x) => +x.rl), nKarung = kirim.reduce((s, k) => s + (+k.jumlah_karung || 0), 0), nConto = kirim.reduce((s, k) => s + (k.kirim_preparasi_item?.[0]?.count ?? 0), 0);
-  const recs = HR.filter((h) => h.rec != null && h.selesai).map((h) => +h.rec), rAvg = recs.length ? recs.reduce((a, b) => a + b, 0) / recs.length : null;
+  const SB1 = new Set(selesai.map((x) => x.bhid)), recs = HR.filter((h) => h.rec != null && SB1.has(h.b)).map((h) => +h.rec), rAvg = recs.length ? recs.reduce((a, b) => a + b, 0) / recs.length : null;
   const nLog = HR.filter((h) => h.lstat === "LENGKAP").length;
   const tglP = (t) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }); } catch { return t; } };
   const mulai = tglAll[0], akhir = tglAll[tglAll.length - 1], hariKe = mulai ? Math.round((new Date(st.to) - new Date(mulai)) / 864e5) + 1 : null, semua = tl && selesai.length >= tl;
@@ -3503,14 +3580,14 @@ async function babAwalLaporan({ PJ, st, LB, HR, prof, T }) {
   // koordinat batas WIUP
   const W = wil[0], WT = (W?.titik ?? []).filter((t) => t.lat != null && t.lon != null);
   const wiupHTML = W ? `<p>Wilayah IUP ${tanda(W.pemegang ?? N.pemilik_iup)} ditetapkan melalui keputusan nomor ${esc(W.nomor_sk ?? "–")}${W.tanggal_sk ? ` tanggal ${esc(tglP(W.tanggal_sk))}` : ""}${W.luas_sk_ha ? `, luas ${f1(W.luas_sk_ha, 0)} ha` : ""}. Batas wilayah terdiri dari ${WT.length} titik koordinat${W.datum_sumber ? ` (${esc(W.datum_sumber)})` : ""}, disalin pada Tabel 1.1 beserta konversi UTM yang dipakai di aplikasi.${N.lampiran_iup?.length || PJ?.laporan?.lampiran_iup?.length ? " Salinan SK terdapat di Lampiran A." : ""}</p>
-    <p class="kg">Tabel 1.1 Koordinat batas ${esc(W.nama ?? "WIUP")}</p>${tb(["No", "Bujur Timur", "Lintang Selatan", "X UTM (m)", "Y UTM (m)"], WT.map((t, i) => [t.no ?? i + 1, dmsTxt(t.lon, "BT", "BB", 3), dmsTxt(t.lat, "LU", "LS", 3), t.x != null ? f1(t.x, 2) : "–", t.y != null ? f1(t.y, 2) : "–"]))}
+    <p class="ctb">Koordinat batas ${esc(W.nama ?? "WIUP")}</p>${tb(["No", "Bujur Timur", "Lintang Selatan", "X UTM (m)", "Y UTM (m)"], WT.map((t, i) => [t.no ?? i + 1, dmsTxt(t.lon, "BT", "BB", 3), dmsTxt(t.lat, "LU", "LS", 3), t.x != null ? f1(t.x, 2) : "–", t.y != null ? f1(t.y, 2) : "–"]))}
     <p>${LB.filter((x) => x.di_dalam_iup !== false).length} dari ${LB.length} titik bor berada di dalam batas wilayah IUP.</p>` : "";
-  const gbr = async (k, no, judul) => { const u = (await urlDokumen(PJ?.laporan?.[k]))[0]; return u ? `<img src="${esc(u)}" style="width:100%;margin-top:6px"><p class="kg">Gambar ${no} ${esc(judul)}</p>` : `<p class="kg"><mark>Gambar ${no} ${esc(judul)} — unggah di ✍️ Naskah laporan</mark></p>`; };
+  const gbr = async (k, no, judul) => { const u = (await urlDokumen(PJ?.laporan?.[k]))[0]; return u ? `<div class="fig"><img src="${esc(u)}" style="width:100%;margin-top:6px"></div><p class="cgb">${esc(judul)}</p>` : `<p class="kg"><mark>Gambar ${no} ${esc(judul)} — unggah di ✍️ Naskah laporan</mark></p>`; };
   const DI = ["BAB I PENDAHULUAN", "1.1 Latar belakang", "1.2 Maksud dan tujuan", "1.3 Lokasi dan koordinat wilayah IUP", "1.4 Lingkup pekerjaan", "1.5 Spesifikasi teknis SOW dan pelaksanaan", "1.6 Jadwal pelaksanaan", "1.7 Tanggung jawab para pihak", "1.8 Sistem pelaporan", "1.9 Periode, peralatan dan personil",
     "BAB II GEOLOGI REGIONAL DAN KONDISI UMUM", "2.1 Geologi regional", "2.2 Profil laterit dan kode zona", "2.3 Morfologi dan kondisi umum lokasi", "BAB III METODOLOGI", "3.1 Metode pemboran", "3.2 Metode logging", "3.3 Pengambilan dan pengiriman conto", "3.4 Pengendalian mutu data (QA/QC)", "3.5 Keselamatan kerja",
     "BAB IV HASIL PEKERJAAN", "BAB V PEMBAHASAN DAN KESIMPULAN SEMENTARA", "BAB VI PENUTUP", "LAMPIRAN"];
-  return `<style>${CSS_LAPAKHIR}</style>${await sampulLaporanAkhir({ PJ, N, st, LB, HR, prof, mBor: meter })}
-    <div class="halbaru"><h2 class="bab">DAFTAR ISI</h2><ol class="di">${DI.map((x) => `<li class="${/^(BAB|LAMPIRAN)/.test(x) ? "b" : ""}">${esc(x)}</li>`).join("")}</ol></div>
+  return `<style>${CSS_LAPAKHIR}${cssLaporanAkhir(PJ, N, W)}</style>${await sampulLaporanAkhir({ PJ, N, st, LB, HR, prof, mBor: meter })}
+    ${await depanLaporanAkhir({ PJ, N, st, LB, HR, W, extra: { mBor: meter } })}<div id="isi">
     <h2 class="bab halbaru">BAB I PENDAHULUAN</h2><h3>1.1 Latar belakang</h3>${par(N.latar)}<h3>1.2 Maksud dan tujuan</h3>${daftar(N.tujuan)}
     <h3>1.3 Lokasi dan koordinat wilayah IUP</h3>${par(N.lokasi)}${wiupHTML}
     <h3>1.4 Lingkup pekerjaan</h3><p>Pemberi kerja: <b>${tanda(N.pemberi)}</b> · pelaksana: <b>${KOP.pt}</b> · kontrak: ${tanda(N.kontrak)}.</p>${daftar(N.sow, false)}
@@ -3535,7 +3612,7 @@ async function babAkhirLaporan({ PJ, st, LB, HR, mCum }) {
     bh.length ? sb.from("core_photo").select("id", { count: "exact", head: true }).in("bhid", bh) : { count: 0 }, sb.from("kirim_preparasi").select("id,status,penerima_ttd_at,kirim_preparasi_item(count)").lte("tanggal", st.to), sb.from("berita_acara").select("jenis,status,bhid,isi")]);
     nDdr = a.count ?? 0; nCol = (b.data ?? []).filter((x) => x.east != null).length; ncore = c.count ?? 0; kirim = d.data ?? []; ba = e.data ?? []; } catch {}
   const conto = HR.reduce((s, h) => s + (+h.conto || 0), 0), cK = (k) => k.kirim_preparasi_item?.[0]?.count ?? 0, nKirim = kirim.reduce((s, k) => s + cK(k), 0), nTerima = kirim.filter((k) => k.penerima_ttd_at).reduce((s, k) => s + cK(k), 0);
-  const nLog = HR.filter((h) => h.lstat === "LENGKAP").length, recs = HR.filter((h) => h.rec != null && h.selesai).map((h) => +h.rec), rAvg = recs.length ? recs.reduce((a, b) => a + b, 0) / recs.length : null;
+  const nLog = HR.filter((h) => h.lstat === "LENGKAP").length, recs = HR.filter((h) => h.rec != null && sel.some((x) => x.bhid === h.b)).map((h) => +h.rec), rAvg = recs.length ? recs.reduce((a, b) => a + b, 0) / recs.length : null;
   const selB = new Set(sel.map((x) => x.bhid)), baOk = ba.filter((b) => b.jenis === "BA_STOP" && b.status === "FINAL" && selB.has(b.bhid ?? b.isi?.bhid)).length, bastp = ba.some((b) => b.jenis === "BASTP" && b.status === "FINAL");
   const DLV = [["Mobilization report dan daftar peralatan", N.mob_report], ["Drilling daily report (DDR)", `${nDdr} DDR`], ["Koordinat aktual setiap titik", `${nCol} titik ber-collar`], ["Kedalaman aktual dan progres", `${f1(mCum)} m, dashboard harian`],
     ["Drilling log setiap lubang", `Form Logging lengkap ${nLog} titik`], ["Core recovery report", rAvg != null ? `Recovery rata-rata ${f1(rAvg)} %` : "–"], ["Dokumentasi foto core box", `${ncore} foto`], ["Core box tersusun dan beridentitas", "Berlabel, tersimpan di lapangan"],
@@ -3547,10 +3624,18 @@ async function babAkhirLaporan({ PJ, st, LB, HR, mCum }) {
   const capL = (xs) => xs.map((x, i) => `(${String.fromCharCode(97 + i)}) ${x.cap}`).join("; ");
   const iv = `<h2>4.14 Status deliverables SOW</h2><table><tr><th>No</th><th>Deliverable</th><th>Status</th></tr>${DLV.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r[0])}</td><td>${tanda(r[1])}</td></tr>`).join("")}</table>
     <h2>4.15 Dokumentasi pekerjaan</h2><p>${tanda(N.ket_foto)}</p>
-    ${FK.length ? `${panelFoto(FK, 200)}<p class="kg">Gambar 4.1 Penerapan K3 selama kegiatan pemboran: ${esc(capL(FK))}. Sumber: foto bergeotag aplikasi X-Terra.</p>` : "<p>Belum ada foto kegiatan pada periode ini.</p>"}
-    ${FC.length ? `${panelFoto(FC, 230)}<p class="kg">Gambar 4.2 Dokumentasi core box dengan papan identitas dan pita ukur: ${esc(capL(FC))}. Sumber: foto core aplikasi X-Terra; koordinat dari collar lubang.</p>` : ""}`;
+    ${FK.length ? `${panelFoto(FK, 200)}<p class="cgb">Penerapan K3 selama kegiatan pemboran: ${esc(capL(FK))}. Sumber: foto bergeotag aplikasi X-Terra.</p>` : "<p>Belum ada foto kegiatan pada periode ini.</p>"}
+    ${FC.length ? `${panelFoto(FC, 230)}<p class="cgb">Dokumentasi core box dengan papan identitas dan pita ukur: ${esc(capL(FC))}. Sumber: foto core aplikasi X-Terra; koordinat dari collar lubang.</p>` : ""}`;
   const vi = `<h3>Kriteria penerimaan pekerjaan</h3><table><tr><th>Kriteria</th><th>Status</th></tr>${krit.map((k, i) => { const s = st5[i]; return `<tr><td>${tanda(k)}</td><td>${s ? `<span class="${s[0] ? "ok" : "blm"}">${s[0] ? "✓ terpenuhi" : "○ belum"}</span> · ${esc(s[1])}` : "–"}</td></tr>`; }).join("")}</table>`;
-  const lamp = LA.length ? `<h2 class="bab halbaru">LAMPIRAN A. SK IUP ${esc(String(N.pemilik_iup).toUpperCase())}</h2>${LA.map((u, i) => `<div style="break-inside:avoid;text-align:center"><img src="${esc(u)}" style="max-width:100%;max-height:250mm;border:1px solid #ccc"><p class="kg" style="text-align:center">Lampiran A.${i + 1}</p></div>`).join("")}` : "";
+  // lampiran: A SK IUP (bila diunggah), lalu data titik bor dan daftar conto dari database
+  let col2 = [], smp = [];
+  try { const [c1, c2] = await Promise.all([bh.length ? sb.from("v_dh_collar").select("holeid,east,north,rl,depth,start_date,stop_date,coord_source").in("holeid", bh) : { data: [] },
+    sel.length ? sb.from("v_sample_qc").select("sample_no,bhid,depth_from,depth_to,core_length,core_recovery,geozone_id,geolithcode_id_1").in("bhid", sel.map((x) => x.bhid)).order("bhid").order("depth_from").limit(5000) : { data: [] }]); col2 = c1.data ?? []; smp = c2.data ?? []; } catch {}
+  const huruf = "ABCDEFG"; let nl = 0; const judulL = (t) => `<h2 class="bab halbaru">LAMPIRAN ${huruf[nl++]}. ${esc(t)}</h2>`, C2 = Object.fromEntries(col2.map((c) => [c.holeid, c]));
+  const lamp = (LA.length ? `${judulL(`SK IUP ${String(N.pemilik_iup).toUpperCase()}`)}${LA.map((u, i) => `<div style="break-inside:avoid;text-align:center"><img src="${esc(u)}" style="max-width:100%;max-height:230mm;border:1px solid #ccc"><p class="clp">Salinan SK IUP ${esc(N.pemilik_iup)}, halaman ${i + 1}</p></div>`).join("")}` : "")
+    + `${judulL("DATA TITIK BOR")}<p class="ctb">Koordinat collar, kedalaman dan status titik bor</p><table><tr><th>Hole ID</th><th>Rig</th><th>Status</th><th>X UTM (m)</th><th>Y UTM (m)</th><th>Elevasi (m)</th><th>Kedalaman (m)</th><th>Mulai</th><th>Selesai</th><th>Sumber koordinat</th></tr>${LB.map((x) => { const c = C2[x.bhid] ?? {};
+      return `<tr><td>${esc(x.bhid)}</td><td>${esc(x.rig ?? "")}</td><td>${esc(LABEL_STATUS[x.status] ?? x.status)}</td><td>${c.east != null ? f1(c.east, 2) : "–"}</td><td>${c.north != null ? f1(c.north, 2) : "–"}</td><td>${c.rl != null ? f1(c.rl, 1) : "–"}</td><td>${x.kedalaman != null ? f1(x.kedalaman, 2) : "–"}</td><td>${esc(String(c.start_date ?? "").slice(0, 10))}</td><td>${esc(String(c.stop_date ?? "").slice(0, 10))}</td><td>${esc(c.coord_source ?? (x.sumber_posisi === "RENCANA" ? "rencana" : ""))}</td></tr>`; }).join("")}</table>`
+    + (smp.length ? `${judulL("DAFTAR CONTO")}<p class="ctb">Daftar interval dan nomor conto titik bor yang selesai</p><table><tr><th>No. conto</th><th>Hole ID</th><th>Dari (m)</th><th>Sampai (m)</th><th>Core (m)</th><th>Recovery (%)</th><th>Zona</th><th>Litologi</th></tr>${smp.map((s) => `<tr><td>${esc(s.sample_no)}</td><td>${esc(s.bhid)}</td><td>${f1(s.depth_from, 2)}</td><td>${f1(s.depth_to, 2)}</td><td>${f1(s.core_length, 2)}</td><td>${f1(s.core_recovery, 1)}</td><td>${esc(s.geozone_id ?? "")}</td><td>${esc(s.geolithcode_id_1 ?? "")}</td></tr>`).join("")}</table>` : "");
   return { iv, vi, lamp };
 }
 // catatan logging untuk laporan (lempung/pasir → indikasi sedimen, swelling)
@@ -5034,11 +5119,11 @@ async function laporanProgres(st) {
     <div class="bar"><button onclick="print()">Cetak / simpan PDF</button><button onclick="try{opener._lapDL()}catch(e){alert('Buka ulang laporan dari menu Dashboard untuk mengunduh Excel.')}">Unduh Excel laporan</button></div>
     ${await babAwalLaporan({ PJ, st, LB, HR, prof, T })}
     <h2>4.1 Ringkasan kegiatan</h2>${tbl(T.ringkasan)}
-    <h2>4.2 Peta lokasi titik bor dan grafik per lubang</h2>${petaGrafik}
+    <h2>4.2 Peta lokasi titik bor dan grafik per lubang</h2><div class="fig" data-cap="Peta lokasi titik bor dengan section kolom log, batas IUP dan grafik per lubang">${petaGrafik}</div>
     <h3 style="font-size:12px;margin:8px 0 2px">Titik bor (rencana, progres, EOH/STB)</h3>${tbl(T.titik)}
     <h2>4.3 Catatan dan hal yang perlu ditindaklanjuti</h2><ul>${notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
     <h2>4.4 Progres per rig</h2>${tbl(T.rig)}
-    <h2>4.5 Meter bor harian</h2>${svg}${tbl(T.harian)}
+    <h2>4.5 Meter bor harian</h2><div class="fig" data-cap="Meter bor harian">${svg}</div>${tbl(T.harian)}
     <h2>4.6 Status lubang</h2>${klien ? tbl(clientGeo() ? [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Conto", "Limonit (m)", "Saprolit (m)", "Recovery %", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.conto, h.tl == null ? "" : +f1(h.tl), h.ts == null ? "" : +f1(h.ts), h.rec == null ? "" : Math.round(h.rec), h.selesai ? "SELESAI" : "BERJALAN"])] : [["Hole ID", "Rig", "Mulai", "Bor terakhir", "Kedalaman (m)", "Target (m)", "Status lubang"], ...HR.map((h) => [h.b, h.rig, h.mulai, h.akhir, +f2(h.bor) || 0, h.tgt || "", h.selesai ? "SELESAI" : "BERJALAN"])]) : tbl(T.lubang, { col: 1 })}<p style="color:#555">SELESAI = tanggal selesai terisi atau kedalaman ≥ target/total depth di DDR. Kedalaman dari foto RUN aplikasi${klien ? "" : "; tebal zona dan recovery dari Form Logging yang sudah disetujui"}.</p>
     ${(() => { const T2 = statistikData({ dayRows, HR, LB, prof, st, PJ, mCum }), f = T2.f; return `<h2>4.7 Statistik pemboran dan geologi</h2><table><tr><th>Indikator</th><th>Nilai</th><th>Indikator</th><th>Nilai</th></tr>
       <tr><td>Rata-rata meter / hari aktif</td><td>${f(T2.sH.mean)} m (median ${f(T2.sH.med)}, SD ${f(T2.sH.sd)})</td><td>Overburden (TP + sedimen)</td><td>${f(T2.sOB.mean)} m (${f(T2.sOB.min)}–${f(T2.sOB.max)})</td></tr>
@@ -5046,16 +5131,16 @@ async function laporanProgres(st) {
       <tr><td>Kedalaman akhir rata-rata</td><td>${f(T2.sEOH.mean)} m (${f(T2.sEOH.min)}–${f(T2.sEOH.max)})</td><td>Tebal saprolit rata-rata</td><td>${f(T2.sS.mean)} m (median ${f(T2.sS.med)})</td></tr>
       <tr><td>Recovery core rata-rata</td><td>${f(T2.sRec.mean, 0)}% (${T2.recOk}/${T2.sRec.n} lubang ≥ 90%)</td><td>Kedalaman ke bluezone/bedrock</td><td>${f(T2.sBR.mean)} m</td></tr>
       <tr><td>Sisa meter ke target</td><td>${f(T2.sisa, 0)} m dari ${f(T2.tgtM, 0)} m</td><td>Perkiraan selesai (laju sekarang)</td><td>${T2.eta ?? "–"}</td></tr></table>
-      ${T2.zona.length ? boxSVG(T2.zona.map((z) => ({ label: z.nama, warna: z.warna, s: z.s })), { unit: "tebal (m)", w: 760 }) : ""}${T2.bh.length && T2.bh.length < 5 ? `<p><i>Baru ${T2.bh.length} lubang berdata logging — statistik belum representatif.</i></p>` : ""}`; })()}
-    <h2>4.8 Tampilan 3D pemboran</h2>${gbr3D}
+      ${T2.zona.length ? `<div class="fig" data-cap="Sebaran ketebalan tiap layer (box plot)">${boxSVG(T2.zona.map((z) => ({ label: z.nama, warna: z.warna, s: z.s })), { unit: "tebal (m)", w: 760 })}</div>` : ""}${T2.bh.length && T2.bh.length < 5 ? `<p><i>Baru ${T2.bh.length} lubang berdata logging — statistik belum representatif.</i></p>` : ""}`; })()}
+    <h2>4.8 Tampilan 3D pemboran</h2><div class="fig" data-cap="Tampilan 3D topografi DEMNAS, citra drone dan lubang bor (panjang lubang diperbesar)">${gbr3D}</div>
     ${await (async () => { const A = await analisisData(LB, prof, days), f = (x, d = 1) => (x == null || !Number.isFinite(+x) ? "–" : (+x).toFixed(d));
-      return `<h2>4.9 Statistik per rig</h2>${A.rigs.length ? rigHarianSVG(days, A.rigs) + `<table><tr><th>Rig</th><th>Hari aktif</th><th>Total meter</th><th>Rata-rata m/hari</th><th>Maks/hari</th><th>Lubang (selesai)</th><th>Jumlah kedalaman</th><th>Overburden</th><th>Limonit</th><th>Saprolit</th></tr>${A.perRig.map((x) => `<tr><td>${esc(x.r)}</td><td>${x.hari}</td><td>${f(x.meter)}</td><td>${f(x.sm.mean)}</td><td>${f(x.sm.max)}</td><td>${x.lubang} (${x.selesai})</td><td>${f(x.totDalam)} m</td><td>${x.OB.n ? f(x.OB.mean) + " m" : "–"}</td><td>${x.L.n ? f(x.L.mean) + " m" : "–"}</td><td>${x.S.n ? f(x.S.mean) + " m" : "–"}</td></tr>`).join("")}</table>` : "<p>Belum ada data rig.</p>"}
-      ${A.zona.length ? `<h2>4.10 Sebaran ketebalan layer</h2><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">${A.zona.map((z) => histKecil(z.tebal, z.warna, z.nama)).join("")}</div>${kedalamanLayerSVG(A.zona)}` : ""}
-      <h2>4.11 Hubungan kedalaman, ketebalan dan lereng</h2><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${pencarSVG(A.hub.eohL, { judul: "Kedalaman akhir vs tebal limonit", sx: "kedalaman akhir (m)", sy: "tebal limonit (m)" })}${pencarSVG(A.hub.eohS, { judul: "Kedalaman akhir vs tebal saprolit", sx: "kedalaman akhir (m)", sy: "tebal saprolit (m)" })}${pencarSVG(A.hub.lerEoh, { judul: "Lereng vs kedalaman", sx: "lereng (°)", sy: "kedalaman (m)" })}${pencarSVG(A.hub.lerL, { judul: "Lereng vs tebal limonit", sx: "lereng (°)", sy: "tebal limonit (m)" })}</div>
+      return `<h2>4.9 Statistik per rig</h2>${A.rigs.length ? `<div class="fig" data-cap="Meter bor harian per rig">${rigHarianSVG(days, A.rigs)}</div>` + `<table><tr><th>Rig</th><th>Hari aktif</th><th>Total meter</th><th>Rata-rata m/hari</th><th>Maks/hari</th><th>Lubang (selesai)</th><th>Jumlah kedalaman</th><th>Overburden</th><th>Limonit</th><th>Saprolit</th></tr>${A.perRig.map((x) => `<tr><td>${esc(x.r)}</td><td>${x.hari}</td><td>${f(x.meter)}</td><td>${f(x.sm.mean)}</td><td>${f(x.sm.max)}</td><td>${x.lubang} (${x.selesai})</td><td>${f(x.totDalam)} m</td><td>${x.OB.n ? f(x.OB.mean) + " m" : "–"}</td><td>${x.L.n ? f(x.L.mean) + " m" : "–"}</td><td>${x.S.n ? f(x.S.mean) + " m" : "–"}</td></tr>`).join("")}</table>` : "<p>Belum ada data rig.</p>"}
+      ${A.zona.length ? `<h2>4.10 Sebaran ketebalan layer</h2><div class="fig" data-cap="Histogram ketebalan tiap layer" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">${A.zona.map((z) => histKecil(z.tebal, z.warna, z.nama)).join("")}</div>${kedalamanLayerSVG(A.zona)}` : ""}
+      <h2>4.11 Hubungan kedalaman, ketebalan dan lereng</h2><div class="fig" data-cap="Hubungan kedalaman akhir, ketebalan layer dan lereng" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${pencarSVG(A.hub.eohL, { judul: "Kedalaman akhir vs tebal limonit", sx: "kedalaman akhir (m)", sy: "tebal limonit (m)" })}${pencarSVG(A.hub.eohS, { judul: "Kedalaman akhir vs tebal saprolit", sx: "kedalaman akhir (m)", sy: "tebal saprolit (m)" })}${pencarSVG(A.hub.lerEoh, { judul: "Lereng vs kedalaman", sx: "lereng (°)", sy: "kedalaman (m)" })}${pencarSVG(A.hub.lerL, { judul: "Lereng vs tebal limonit", sx: "lereng (°)", sy: "tebal limonit (m)" })}</div>
       <p><small>r = korelasi Pearson; dengan jumlah lubang kecil nilainya belum stabil. Lereng dari DEMNAS di posisi collar.</small></p>`; })()}
     <h2>4.12 Recovery core per lubang dan per layer</h2>${RC.nLubang || RC.layer.length ? `<p>Recovery rata-rata <b>${RC.total != null ? RC.total.toFixed(1) + " %" : "–"}</b> (${RC.adaLogging ? `tertimbang panjang, ${RC.nInt} interval / ${RC.mInt.toFixed(1)} m; ${RC.low} interval &lt; 90 %` : "dari laporan harian"}); ${RC.okLubang} dari ${RC.nLubang} lubang ≥ 90 %.</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div><b>Per lubang</b>${barH(RC.lubang, { lw: 92, rh: 20, max: 100 })}</div><div><b>Per layer</b>${RC.layer.length ? barH(RC.layer, { lw: 110, rh: 22, max: 100 }) : "<p>Muncul setelah Form Logging disetujui.</p>"}${RC.titik.length >= 2 ? pencarSVG(RC.titik, { judul: "Recovery vs kedalaman", sx: "kedalaman tengah interval (m)", sy: "recovery (%)" }) : ""}</div></div>` : "<p>Belum ada data recovery.</p>"}
-    <h2>4.13 Profil bor (ketebalan zona)</h2>${(prof ?? []).length ? profilSVG(prof) : "<p>Belum ada data logging yang masuk database untuk lubang-lubang ini.</p>"}
+      <div class="fig" data-cap="Recovery core per lubang dan per layer" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div><b>Per lubang</b>${barH(RC.lubang, { lw: 92, rh: 20, max: 100 })}</div><div><b>Per layer</b>${RC.layer.length ? barH(RC.layer, { lw: 110, rh: 22, max: 100 }) : "<p>Muncul setelah Form Logging disetujui.</p>"}${RC.titik.length >= 2 ? pencarSVG(RC.titik, { judul: "Recovery vs kedalaman", sx: "kedalaman tengah interval (m)", sy: "recovery (%)" }) : ""}</div></div>` : "<p>Belum ada data recovery.</p>"}
+    <h2>4.13 Profil bor (ketebalan zona)</h2>${(prof ?? []).length ? `<div class="fig" data-cap="Penampang profil laterit per titik">${profilSVG(prof)}</div>` : "<p>Belum ada data logging yang masuk database untuk lubang-lubang ini.</p>"}
     ${BA.iv}
     ${await (async () => { const A = await analisisData(LB, prof, days), T2 = statistikData({ dayRows, HR, LB, prof, st, PJ, mCum });
       const KS = kesimpulanProspek({ A, T: T2, prof: prof ?? [], LB });
@@ -5067,8 +5152,8 @@ async function laporanProgres(st) {
     ${klien ? "" : `<h2>5.4 Kepatuhan pengiriman data operator</h2>${opRows.length ? tbl(T.operator, { col: 1 }) : "<p>Belum ada data operator.</p>"}
     <h2>5.5 Kelengkapan data dan QC</h2>${tbl(T.qc)}`}
     <h2 class="bab halbaru">BAB VI PENUTUP</h2>${String(naskahIsi(PJ).penutup).split(/\n+/).map((x) => `<p>${esc(x)}</p>`).join("")}${BA.vi}
-    <table style="margin-top:24px"><tr><td style="height:90px;width:50%;vertical-align:top;text-align:center"><b>Disusun oleh</b><br>${KOP.pt}<br><br><br><br>(..............................)<br>Geologist</td><td style="vertical-align:top;text-align:center"><b>Disetujui oleh</b><br>${KOP.pt}<br><br><br><br><u>${esc(KOP.direktur)}</u><br>${esc(KOP.jabatanDir)}</td></tr></table>
-    ${BA.lamp}
+    <table class="lay" style="margin-top:24px"><tr><td style="height:90px;width:50%;vertical-align:top;text-align:center"><b>Disusun oleh</b><br>${KOP.pt}<br><br><br><br>(..............................)<br>Geologist</td><td style="vertical-align:top;text-align:center"><b>Disetujui oleh</b><br>${KOP.pt}<br><br><br><br><u>${esc(KOP.direktur)}</u><br>${esc(KOP.jabatanDir)}</td></tr></table>
+    ${BA.lamp}</div>${SKRIP_PENOMORAN}
     <small>Dibuat otomatis dari database aplikasi X-Terra · ${new Date().toLocaleString("id-ID")} · oleh ${esc(me?.full_name ?? "")}. Angka mengikuti data yang sudah masuk server saat laporan dibuat.</small></body></html>`);
     w.document.close();
   } catch (e) { w.document.body.innerHTML = `<p style="font-family:Arial;color:#b00">Gagal menyusun laporan: ${esc(e.message)}</p>`; }
