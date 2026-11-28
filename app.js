@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.108";
+const APP_VERSION = "2026-11-28.109";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -342,7 +342,7 @@ async function render() {
     $("#out").onclick = () => { localStorage.setItem("manualLogout", "1"); localStorage.removeItem("lastUser"); sb.auth.signOut(); }; return; }
   if (!["client", "admin", "verifier", "admin_lapangan"].includes(me?.role) && (!myTugas || myTugas.pilih_rig) && !sessionStorage.getItem("proyekOk")) return pilihProyekView(false);
   const R = me?.role, staff = ["geologist", "verifier", "admin"].includes(R), ver = ["verifier", "admin"].includes(R);
-  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["dbu", "📁 Database utama"], ["klien", "Laporan rig & DDR"], ["ba", "Berita acara"], ["kirimk", "Pengiriman sample"], ["peta", "Peta"], ["fk", "Foto & scan"], ["db", "Database"], ["dok", "Dokumen"], ["simpan", "Data tersimpan"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
+  const navs = R === "admin_lapangan" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["peta", "Peta"], ["dok", "Dokumen"]] : R === "client" ? [["dash", "Dashboard"], ["dbu", "📁 Database utama"], ["peta", "Peta"], ["ttdk", "✍️ Tanda tangan"]] : [["prog", "Progres bor"], ["ddr", "DDR"], ["foto", "Foto formulir"], ...(staff ? [["core", "Foto core"], ["sampel", "Kirim sample"], ["ba", "BA & BASTP"]] : []),
     ...(ver ? [["review", "Periksa scan"]] : []), ...(staff ? [["dbu", "📁 Database utama"], ["data", "Data & cek"], ["db", "Database"]] : []), ...(ver ? [["dash", "Dashboard"], ["rekap", "Rekap operator"]] : []), ["simpan", "Data tersimpan"], ["peta", "Peta"], ...(R === "admin" ? [["keu", "Keuangan"], ["absl", "Absensi tim"], ["users", "Pengguna"]] : []), ["dok", "Dokumen"], ["ttd", "TTD saya"]];
   if (!navs.some(([k]) => k === tab)) tab = navs[0][0];
   // Tombol 📖 Panduan di kepala aplikasi: membuka panduan sesuai peran akun ini (PDF di menu Dokumen juga)
@@ -381,6 +381,7 @@ async function render() {
   if (tab === "fk") return fotoKlienView($("#v"));
   if (tab === "kirimk") return kirimKlienView($("#v"));
   if (tab === "dbu") return dbUtamaView($("#v"));
+  if (tab === "ttdk") { $("#v").innerHTML = `<div id="ttA"></div><div id="ttB"></div>`; baKlienView($("#ttA")); return kirimKlienView($("#ttB")); }
   if (tab === "peta") return petaView($("#v"));
   if (tab === "keu") return isKeu() ? keuView($("#v")) : null;
   if (tab === "absl") return isKeu() ? abslView($("#v")) : null;
