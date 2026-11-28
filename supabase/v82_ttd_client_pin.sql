@@ -1,0 +1,5 @@
+-- v82 (28/11/2026): client menandatangani DDR / BA / penerimaan sample dengan TTD TERDAFTAR + PIN (seperti wellsite).
+-- public.ttd_client_pin(p_jenis 'DDR'|'BA'|'KIRIM', p_id, p_pin_token, p_catatan) — cek PIN (private.signature_secret, kunci 15 mnt
+-- setelah 5x salah), lalu memakai signature_profile.signature_path milik client: ttd_ddr_client / ttd_ba_site_rep / ttd_terima_sample,
+-- metode dicatat 'PIN', waktu = now() server. Pendaftaran TTD client lewat set_signature (sama dengan TTD saya staf).
+-- Definisi lengkap: migrasi v82_ttd_client_pin di Supabase.

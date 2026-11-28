@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.120";
+const APP_VERSION = "2026-11-28.121";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -381,7 +381,7 @@ async function render() {
   if (tab === "fk") return fotoKlienView($("#v"));
   if (tab === "kirimk") return kirimKlienView($("#v"));
   if (tab === "dbu") return dbUtamaView($("#v"));
-  if (tab === "ttdk") { $("#v").innerHTML = `<div id="ttD"></div><div id="ttA"></div><div id="ttB"></div>`; ddrKlienTtd($("#ttD")); baKlienView($("#ttA")); return kirimKlienView($("#ttB")); }
+  if (tab === "ttdk") { $("#v").innerHTML = `<div id="ttR"></div><div id="ttD"></div><div id="ttA"></div><div id="ttB"></div>`; ttdKlienDaftar($("#ttR")).catch(() => {}); ddrKlienTtd($("#ttD")); baKlienView($("#ttA")); return kirimKlienView($("#ttB")); }
   if (tab === "peta") return petaView($("#v"));
   if (tab === "keu") return isKeu() ? keuView($("#v")) : null;
   if (tab === "absl") return isKeu() ? abslView($("#v")) : null;
@@ -1681,7 +1681,7 @@ async function ttdView(v) {
   if (online()) prof = (await sb.from("signature_profile").select("*").eq("user_id", session.user.id).maybeSingle()).data;
   const img = prof ? (await signedUrls("signatures", [prof.signature_path]))[prof.signature_path] : null;
   v.innerHTML = `<div class="card"><h2>Tanda tangan elektronik</h2>
-    ${prof ? `<p>TTD terdaftar atas nama <b>${esc(prof.full_name)}</b>${prof.title ? " · " + esc(prof.title) : ""}.</p><img src="${img ?? ""}" alt="Tanda tangan terdaftar" style="max-width:320px;background:#fff;border:1px solid #ccc;border-radius:8px">` : `<p>Belum ada TTD. Daftarkan sekali, lalu setiap DDR cukup ditandatangani dengan <b>PIN</b> atau <b>kartu QR</b>.</p>`}
+    ${prof ? `<p>TTD terdaftar atas nama <b>${esc(prof.full_name)}</b>${prof.title ? " · " + esc(prof.title) : ""}.</p><img src="${img ?? ""}" alt="Tanda tangan terdaftar" style="max-width:320px;background:#fff;border:1px solid #ccc;border-radius:8px">` : `<p>Belum ada TTD. Daftarkan sekali, lalu setiap dokumen cukup ditandatangani dengan <b>PIN</b> atau <b>kartu QR</b>.</p>`}
     <p class="muted">PIN dan kartu QR sama dengan tanda tangan Anda — jangan diberikan ke orang lain. Salah PIN 5 kali mengunci TTD 15 menit.</p></div>
     <div class="card"><h3>${prof ? "Ganti" : "Daftarkan"} tanda tangan</h3>
     <label>Cara membuat tanda tangan</label>
@@ -1691,7 +1691,7 @@ async function ttdView(v) {
     <label>Tanda tangan (kotak putih)</label>
     <canvas id="pad" width="600" height="220" style="width:100%;max-width:600px;height:auto;background:#fff;border:2px dashed #9aa59f;border-radius:8px;touch-action:none"></canvas>
     <div class="row" style="margin-top:6px"><button class="sec" id="clr" style="flex:0">Hapus gambar</button></div>
-    <label>Jabatan</label><input id="ttl" value="${esc(prof?.title ?? (me?.role === "driller" ? "Driller" : "Wellsite Geologist"))}">
+    <label>Jabatan</label><input id="ttl" value="${esc(prof?.title ?? (me?.role === "driller" ? "Driller" : me?.role === "client" ? "Site Representative" : "Wellsite Geologist"))}">
     <div class="row"><div><label>PIN 6 angka</label><input id="p1" type="password" inputmode="numeric" maxlength="6"></div><div><label>Ulangi PIN</label><input id="p2" type="password" inputmode="numeric" maxlength="6"></div></div>
     <div style="margin-top:10px"><button id="sv">Simpan TTD & buat kartu QR</button></div><div id="e" class="err"></div><div id="card"></div></div>`;
   const pad = $("#pad"), x = pad.getContext("2d"); let drawing = false, inked = false;
@@ -7412,25 +7412,36 @@ async function kirimKlienView(v) {
     $("#kkL").querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => tandaTanganKlien(b.dataset.s, b.dataset.nm, muat, { judul: "Tanda tangan penerima sample", setuju: "Sample sudah saya terima dan sesuai daftar di form ini.", catatan: true, awalan: "kirim", rpc: "ttd_terima_sample", selesaiTeks: "✓ Penerimaan sample ditandatangani" }))); };
   await muat();
 }
+// v.121: client menandatangani dengan TTD TERDAFTAR + PIN (seperti wellsite) — gambar TTD tertempel otomatis, waktu TTD dicatat server
 async function tandaTanganKlien(id, nomor, selesai, o = {}) {
-  const m = modal(`<h3 style="margin-top:0">✍️ ${esc(o.judul ?? "Tanda tangan Site Representative")}</h3><p class="muted" style="margin-top:0">${esc(nomor)} · ${esc(me?.full_name ?? "")}. Pastikan isinya sudah diperiksa (👁 Lihat). Tanda tangan di kotak putih.</p>
-    <canvas id="tkP" width="600" height="220" style="width:100%;max-width:600px;height:auto;background:#fff;border:2px dashed #9aa59f;border-radius:8px;touch-action:none"></canvas>
-    <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="tkS" style="width:auto"> ${esc(o.setuju ?? "Saya telah memeriksa dan menyetujui isi berita acara ini.")}</label>${o.catatan ? `<label>Catatan penerimaan (opsional)</label><input id="tkN" placeholder="mis. 15 karung diterima, segel utuh">` : ""}
-    <div class="row" style="margin-top:8px"><button id="tkOk">Simpan tanda tangan</button><button class="sec" id="tkC" style="flex:0">Hapus</button><button class="sec" id="tkX" style="flex:0">Batal</button></div><div id="tkE" class="err"></div>`);
-  const cv = m.querySelector("#tkP"), x = cv.getContext("2d"); let gambar = false, ada = false; x.lineWidth = 3; x.lineCap = "round"; x.strokeStyle = "#0b2a6b";
-  const pos = (e) => { const r = cv.getBoundingClientRect(); return [((e.clientX - r.left) * cv.width) / r.width, ((e.clientY - r.top) * cv.height) / r.height]; };
-  cv.onpointerdown = (e) => { gambar = true; cv.setPointerCapture(e.pointerId); x.beginPath(); x.moveTo(...pos(e)); };
-  cv.onpointermove = (e) => { if (!gambar) return; x.lineTo(...pos(e)); x.stroke(); ada = true; };
-  cv.onpointerup = () => (gambar = false);
-  m.querySelector("#tkC").onclick = () => { x.clearRect(0, 0, cv.width, cv.height); ada = false; };
+  const jenis = o.rpc === "ttd_ddr_client" ? "DDR" : o.rpc === "ttd_terima_sample" ? "KIRIM" : "BA";
+  const { data: pr } = await sb.from("signature_profile").select("full_name,title,signature_path").eq("user_id", session.user.id).maybeSingle();
+  if (!pr) { alert("TTD Anda belum terdaftar. Daftarkan dulu di bagian atas halaman Tanda tangan (sekali saja), lalu tanda tangan cukup dengan PIN."); document.getElementById("ttR")?.scrollIntoView({ behavior: "smooth" }); return; }
+  const img = (await signedUrls("signatures", [pr.signature_path]).catch(() => ({})))[pr.signature_path];
+  const m = modal(`<h3 style="margin-top:0">✍️ ${esc(o.judul ?? "Tanda tangan Site Representative")}</h3><p class="muted" style="margin-top:0">${esc(nomor)}. Pastikan isinya sudah diperiksa (👁 Lihat).</p>
+    <div style="background:#fff;border:1px solid #dde6e1;border-radius:10px;padding:8px;text-align:center">${img ? `<img src="${esc(img)}" alt="" style="max-height:90px;max-width:100%">` : ""}<div><b>${esc(pr.full_name)}</b>${pr.title ? ` · ${esc(pr.title)}` : ""}</div><div class="muted" style="font-size:12px">TTD terdaftar ini akan tertempel otomatis, dengan waktu tanda tangan saat Anda menekan Tanda tangani.</div></div>
+    ${o.catatan ? `<label>Catatan penerimaan (opsional)</label><input id="tkN" placeholder="mis. 15 karung diterima, segel utuh">` : ""}
+    <label>PIN tanda tangan</label><input id="tkP" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="PIN Anda">
+    <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="tkS" style="width:auto"> ${esc(o.setuju ?? "Saya telah memeriksa dan menyetujui isi berita acara ini.")}</label>
+    <div class="row" style="margin-top:8px"><button id="tkOk">Tanda tangani</button><button class="sec" id="tkX" style="flex:0">Batal</button></div><div id="tkE" class="err"></div>`);
+  const E = (t) => (m.querySelector("#tkE").textContent = t);
   m.querySelector("#tkX").onclick = () => m.remove();
-  m.querySelector("#tkOk").onclick = async () => { const E = (t) => (m.querySelector("#tkE").textContent = t);
-    if (!ada) return E("Tanda tangan dulu di kotak putih."); if (!m.querySelector("#tkS").checked) return E("Centang pernyataan persetujuan.");
+  m.querySelector("#tkOk").onclick = async () => { const pin = m.querySelector("#tkP").value.trim();
+    if (!pin) return E("Isi PIN."); if (!m.querySelector("#tkS").checked) return E("Centang pernyataan persetujuan.");
     m.querySelector("#tkOk").disabled = true; E("Menyimpan…");
-    const blob = await new Promise((r) => cv.toBlob(r, "image/png")), path = `${session.user.id}/${o.awalan ?? "ba"}-${id}-${Date.now()}.png`;
-    const up = await sb.storage.from("signatures").upload(path, blob, { contentType: "image/png" }); if (up.error) { m.querySelector("#tkOk").disabled = false; return E(up.error.message); }
-    const { error } = o.rpc ? await sb.rpc(o.rpc, o.args ? o.args(path) : { p_kirim: id, p_path: path, p_catatan: m.querySelector("#tkN")?.value ?? null }) : await sb.rpc("ttd_ba_site_rep", { p_ba: id, p_path: path }); if (error) { m.querySelector("#tkOk").disabled = false; return E(error.message); }
-    m.remove(); toast(o.selesaiTeks ?? "✓ Berita acara ditandatangani"); selesai?.(); };
+    const { data, error } = await sb.rpc("ttd_client_pin", { p_jenis: jenis, p_id: id, p_pin_token: await pinToken(session.user.id, pin), p_catatan: m.querySelector("#tkN")?.value ?? null });
+    if (error) { m.querySelector("#tkOk").disabled = false; return E(error.message); }
+    m.remove(); toast(`${o.selesaiTeks ?? "✓ Berita acara ditandatangani"} · ${fmtT(new Date(data?.waktu ?? Date.now()))}`); selesai?.(); };
+}
+// v.121: kartu "TTD terdaftar" di atas halaman Tanda tangan client — daftarkan sekali (gambar + PIN), sesudahnya cukup PIN
+async function ttdKlienDaftar(el) {
+  const { data: pr } = await sb.from("signature_profile").select("full_name,title,signature_path,updated_at").eq("user_id", session.user.id).maybeSingle();
+  if (!pr) { el.innerHTML = `<div class="card" style="border-left:5px solid #E0A100"><h2 style="margin:0 0 4px">1️⃣ Daftarkan tanda tangan Anda dulu</h2><p class="muted" style="margin:0">Sekali saja: buat TTD dan PIN. Setelah itu setiap DDR, berita acara dan form sample cukup ditandatangani dengan PIN — TTD tertempel otomatis.</p></div><div id="ttRv"></div>`; return ttdView(el.querySelector("#ttRv")); }
+  const img = (await signedUrls("signatures", [pr.signature_path]).catch(() => ({})))[pr.signature_path];
+  el.innerHTML = `<div class="card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-left:5px solid #1E9E69">${img ? `<img src="${esc(img)}" alt="" style="height:56px;background:#fff;border:1px solid #dde6e1;border-radius:8px;padding:2px 8px">` : ""}
+    <span style="flex:1;min-width:180px"><b>✅ TTD terdaftar: ${esc(pr.full_name)}</b>${pr.title ? ` · ${esc(pr.title)}` : ""}<br><span class="muted" style="font-size:12.5px">Tanda tangan dokumen cukup dengan PIN — TTD ini tertempel otomatis beserta waktu tanda tangan.</span></span>
+    <button class="sec" id="ttRg" style="flex:0;white-space:nowrap">Ganti TTD / PIN</button></div><div id="ttRv"></div>`;
+  el.querySelector("#ttRg").onclick = () => ttdView(el.querySelector("#ttRv"));
 }
 async function cetakBA(id, opsi = {}) {
   const r0 = opsi.r ?? (await sb.from("berita_acara").select("*").eq("id", id).single()).data; if (!r0) return alert("Berita acara tidak ditemukan");
