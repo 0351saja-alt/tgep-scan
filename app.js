@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.107";
+const APP_VERSION = "2026-11-28.108";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -7277,7 +7277,7 @@ async function baKlienView(v) {
 // v.106: 📁 DATABASE UTAMA — semua file yang sudah FIX dikumpulkan per jenis data (folder) lalu per titik bor.
 // DDR bertanda tangan lengkap, Form Logging disetujui, form pengiriman sample, berita acara, foto core, foto aktivitas bor, arsip formulir.
 // Client hanya melihat data proyeknya yang sudah dirilis. Tiap folder punya tombol ke folder Google Drive (tabel drive_folder).
-const DBU = [["DDR", "📄", "DDR bertanda tangan"], ["LOGGING", "🧾", "Form Logging (disetujui)"], ["KIRIM", "📦", "Pengiriman sample"], ["BA", "✍️", "Berita acara (BA stop bor & BASTP)"],
+const DBU = [["DATA", "📊", "Data database (Excel per kategori)"], ["DDR", "📄", "DDR bertanda tangan"], ["LOGGING", "🧾", "Form Logging (disetujui)"], ["KIRIM", "📦", "Pengiriman sample"], ["BA", "✍️", "Berita acara (BA stop bor & BASTP)"],
   ["CORE", "🪨", "Foto core box"], ["AKTIVITAS", "📷", "Foto aktivitas bor"], ["ARSIP", "🗂", "Arsip formulir lapangan"]];
 async function dbUtamaView(v) {
   if (!online()) { v.innerHTML = `<div class="card"><h2>📁 Database utama</h2><p class="muted">Perlu sinyal internet.</p></div>`; return; }
@@ -7296,9 +7296,20 @@ async function dbUtamaView(v) {
     aman(sb.from("drill_event").select("id,bhid,rig,event_type,depth_to,photo_path,captured_at").not("photo_path", "is", null).order("captured_at").limit(5000)),
     aman(sb.from("form_photo").select("id,jenis,bhid,rig,tanggal,shift,halaman,jumlah_halaman,photo_path,captured_at").order("tanggal").limit(3000)),
     aman(sb.from("drive_folder").select("kunci,user_id,url"))]);
+  // v.108: Form Logging dari database (hasil impor Excel / transkripsi) — satu file Excel per titik, selain scan yang disetujui
+  const geoBH = clientGeo() || !klien ? await aman(sb.from("v_dh_geology").select("holeid").limit(10000)) : { data: [] };
+  const nGeo = {}; for (const r of geoBH.data ?? []) if (r.holeid) nGeo[r.holeid] = (nGeo[r.holeid] ?? 0) + 1;
+  const fDB = (k) => ({ ds: k, bh: "", bad: false, page: 0, proj: sessionStorage.getItem("filterProyek") || "", lub: "semua", rd: {}, rig: "", rigBH: [] });
+  const bersih = (rows) => rows.map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (Array.isArray(o[c])) o[c] = o[c].join("; "); else if (o[c] && typeof o[c] === "object") o[c] = JSON.stringify(o[c]); return o; });
+  const xlUnduh = async (nama, sheets) => { const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
+    for (const [nm, rows] of sheets) X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), nm.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
+    X.writeFile(wb, `${nama.replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_").slice(0, 80)}.xlsx`); };
+  const unduhDS = async (k) => { toast(`Menyiapkan ${DATASETS[k].t}…`); try { await xlUnduh(`TGEP_${DATASETS[k].t}_${todayWIB()}`, [[DATASETS[k].t, bersih(await tambahLink(k, await fetchAll(DATASETS[k], fDB(k))))]]); } catch (e) { alert(e.message); } };
+  const unduhLog = async (b) => { try { const { data, error } = await sb.from("v_dh_geology").select("*").eq("holeid", b).order("from"); if (error) throw error; await xlUnduh(`Form_Logging_${b}_database`, [[`Logging ${b}`, bersih(data ?? [])]]); } catch (e) { alert(e.message); } };
   const F = { // tiap item: {bh, judul, ket, buka}
     DDR: (ddr.data ?? []).filter((d) => !klien || d.status === "SIGNED").map((d) => ({ bh: d.bhid || "", t: d.report_date, judul: `DDR ${d.report_date} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${d.rig ?? ""}`, ket: "lengkap ditandatangani", buka: () => (klien ? ddrClientModal(d) : printDDR(d.id)) })),
-    LOGGING: (lg.data ?? []).filter((j) => j.photo_path).map((j) => ({ bh: j.bhid_hint || "", t: j.reviewed_at ?? j.captured_at, judul: `Form Logging hal. ${j.page_no ?? "-"}`, ket: `disetujui ${tgl(j.reviewed_at)}`, buka: () => bukaFile("scan-photos", j.photo_path) })),
+    DATA: (dsAllowed() ?? Object.keys(DATASETS).filter((k) => !DATASETS[k].admin || me?.role === "admin")).map((k, i) => ({ bh: "Semua kategori", t: String(i).padStart(3, "0"), k, tombol: "⬇️ Unduh", judul: `${DATASETS[k].t}.xlsx`, ket: "Excel dari database (data terbaru saat diunduh)", buka: () => unduhDS(k) })),
+    LOGGING: [...Object.entries(nGeo).map(([b, n]) => ({ bh: b, t: "0", judul: `Data Form Logging ${b} (Excel dari database)`, ket: `${n} interval`, buka: () => unduhLog(b) })), ...(lg.data ?? []).filter((j) => j.photo_path).map((j) => ({ bh: j.bhid_hint || "", t: j.reviewed_at ?? j.captured_at, judul: `Scan Form Logging hal. ${j.page_no ?? "-"}`, ket: `disetujui ${tgl(j.reviewed_at)}`, buka: () => bukaFile("scan-photos", j.photo_path) }))],
     KIRIM: (kp.data ?? []).map((k) => ({ bh: bhKs(k.no_kirim) || (String(k.catatan ?? "").match(/DH-NPG \d+R?/i)?.[0] ?? ""), t: k.tanggal, judul: k.no_kirim, ket: `${k.tanggal} · ${k.penerima_ttd_at ? "DITERIMA" : k.status}`, buka: () => cetakKirim(k.id) })),
     BA: (ba.data ?? []).filter((r) => !klien || r.status !== "BATAL").map((r) => ({ bh: r.bhid || "(BASTP)", t: r.created_at, judul: `${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"} ${r.nomor ?? ""}`, ket: r.jenis === "BASTP" ? `${r.dari ?? ""} s/d ${r.sampai ?? ""} · ${r.status}` : r.status, buka: () => cetakBA(r.id, { lihat: true }) })),
     CORE: (cp.data ?? []).filter((c) => !c.ditolak && (c.photo_path || c.preview_path)).map((c) => ({ bh: c.bhid || "", t: c.captured_at, judul: `Kotak ${c.box_no ?? "-"}${c.depth_from != null ? ` · ${fmtD(+c.depth_from)}–${fmtD(+c.depth_to)} m` : ""}`, ket: c.photo_type ?? "", buka: () => bukaFile("core-photos", c.photo_path || c.preview_path) })),
@@ -7308,19 +7319,20 @@ async function dbUtamaView(v) {
   const GAL = { DDR: ddr.galat, LOGGING: lg.galat, KIRIM: kp.galat, BA: ba.galat, CORE: cp.galat, AKTIVITAS: ev.galat, ARSIP: fp.galat };
   const DF = {}; for (const f of df.data ?? []) if (!DF[f.kunci] || f.user_id) DF[f.kunci] = f.url;
   if (klien) for (const k of Object.keys(DF)) if (!(df.data ?? []).some((f) => f.kunci === k && f.user_id)) delete DF[k];
-  const semuaBh = [...new Set(Object.values(F).flat().map((x) => x.bh).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
+  const semuaBh = [...new Set(Object.entries(F).filter(([k]) => k !== "DATA").flatMap(([, xs]) => xs).map((x) => x.bh).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
   $("#duB").innerHTML += semuaBh.map((b) => `<option>${esc(b)}</option>`).join("");
   const tampil = () => { const fb = $("#duB").value, tot = Object.values(F).flat().filter((x) => !fb || x.bh === fb).length;
     $("#duS").innerHTML = `${tot} file · ${semuaBh.length} titik${klien && !Object.keys(DF).length ? " · folder Google Drive Anda sedang disiapkan (menunggu sinkron Drive)" : ""}`;
-    $("#duG").innerHTML = DBU.map(([k, ik, nm]) => { const xs = F[k].filter((x) => !fb || x.bh === fb), nb = new Set(xs.map((x) => x.bh)).size;
-      return `<div class="card" style="margin:0;display:flex;flex-direction:column;gap:6px"><div style="display:flex;gap:10px;align-items:center"><span style="font-size:30px">${ik}</span><span style="flex:1"><b>${esc(nm)}</b><br><span class="muted" style="font-size:12.5px">${GAL[k] ? (klien && /column|policy|permission/i.test(GAL[k]) ? "belum tersedia untuk akun Anda" : esc(GAL[k])) : `${xs.length} file · ${nb} titik`}</span></span></div>
+    $("#duG").innerHTML = DBU.map(([k, ik, nm]) => { const xs = F[k].filter((x) => !fb || k === "DATA" || x.bh === fb), nb = new Set(xs.map((x) => x.bh)).size;
+      return `<div class="card" style="margin:0;display:flex;flex-direction:column;gap:6px"><div style="display:flex;gap:10px;align-items:center"><span style="font-size:30px">${ik}</span><span style="flex:1"><b>${esc(nm)}</b><br><span class="muted" style="font-size:12.5px">${k === "DATA" ? `${xs.length} file Excel · semua titik` : GAL[k] ? (klien && /column|policy|permission/i.test(GAL[k]) ? "belum tersedia untuk akun Anda" : esc(GAL[k])) : `${xs.length} file · ${nb} titik`}</span></span></div>
         <div class="row" style="gap:6px"><button data-du="${k}" ${xs.length ? "" : "disabled"} style="flex:1">📂 Buka folder</button>${DF[k] ? `<a href="${esc(DF[k])}" target="_blank" rel="noopener" class="btn sec" style="flex:1;text-align:center;padding:9px 8px;border-radius:10px;border:1px solid #1E9E69;color:#1E9E69;text-decoration:none;font-weight:600">Google Drive ↗</a>` : ""}</div></div>`; }).join("");
     $("#duG").querySelectorAll("[data-du]").forEach((b) => (b.onclick = () => isiFolder(b.dataset.du))); };
-  const isiFolder = (k) => { const fb = $("#duB").value, xs = F[k].filter((x) => !fb || x.bh === fb), [, ik, nm] = DBU.find((d) => d[0] === k);
+  const isiFolder = (k) => { const fb = $("#duB").value, xs = F[k].filter((x) => !fb || k === "DATA" || x.bh === fb), [, ik, nm] = DBU.find((d) => d[0] === k);
     const G = {}; for (const x of xs) (G[x.bh || "(tanpa titik)"] ??= []).push(x); const kunci = Object.keys(G).sort((a, b) => a.localeCompare(b, "id", { numeric: true })), L = [];
-    $("#duD").innerHTML = `<div class="card"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0;flex:1">${ik} ${esc(nm)} <span class="muted" style="font-weight:400;font-size:13px">· ${xs.length} file</span></h3>${DF[k] ? `<a href="${esc(DF[k])}" target="_blank" rel="noopener">📂 Buka di Google Drive ↗</a>` : ""}</div>
-      ${kunci.map((b, i) => `<details ${kunci.length <= 2 ? "open" : ""} style="border:1px solid #dde6e1;border-radius:10px;padding:6px 10px;margin-top:8px"><summary style="cursor:pointer"><b>📁 ${esc(b)}</b> <span class="muted">(${G[b].length})</span></summary><ul class="list" style="margin:6px 0 0">${G[b].sort((p, q) => String(p.t ?? "").localeCompare(String(q.t ?? ""))).map((x) => { L.push(x); return `<li><span style="flex:1">${esc(x.judul)}<br><span class="muted" style="font-size:12px">${esc(x.ket ?? "")}</span></span><button class="sec" data-dx="${L.length - 1}" style="flex:0;white-space:nowrap">Buka</button></li>`; }).join("")}</ul></details>`).join("") || `<p class="muted">Kosong.</p>`}</div>`;
-    $("#duD").querySelectorAll("[data-dx]").forEach((b) => (b.onclick = () => L[+b.dataset.dx].buka())); $("#duD").scrollIntoView({ behavior: "smooth" }); };
+    $("#duD").innerHTML = `<div class="card"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0;flex:1">${ik} ${esc(nm)} <span class="muted" style="font-weight:400;font-size:13px">· ${xs.length} file</span></h3>${k === "DATA" ? `<button id="duAll" style="flex:0;white-space:nowrap">⬇️ Unduh semua (1 Excel, sheet per kategori)</button>` : ""}${DF[k] ? `<a href="${esc(DF[k])}" target="_blank" rel="noopener">📂 Buka di Google Drive ↗</a>` : ""}</div>
+      ${kunci.map((b, i) => `<details ${kunci.length <= 2 ? "open" : ""} style="border:1px solid #dde6e1;border-radius:10px;padding:6px 10px;margin-top:8px"><summary style="cursor:pointer"><b>📁 ${esc(b)}</b> <span class="muted">(${G[b].length})</span></summary><ul class="list" style="margin:6px 0 0">${G[b].sort((p, q) => String(p.t ?? "").localeCompare(String(q.t ?? ""))).map((x) => { L.push(x); return `<li><span style="flex:1">${esc(x.judul)}<br><span class="muted" style="font-size:12px">${esc(x.ket ?? "")}</span></span><button class="sec" data-dx="${L.length - 1}" style="flex:0;white-space:nowrap">${x.tombol ?? "Buka"}</button></li>`; }).join("")}</ul></details>`).join("") || `<p class="muted">Kosong.</p>`}</div>`;
+    $("#duD").querySelectorAll("[data-dx]").forEach((b) => (b.onclick = () => L[+b.dataset.dx].buka()));
+    const ua = $("#duAll"); if (ua) ua.onclick = async () => { ua.disabled = true; ua.textContent = "Menyiapkan…"; try { const sh = []; for (const x of F.DATA) sh.push([DATASETS[x.k].t, bersih(await tambahLink(x.k, await fetchAll(DATASETS[x.k], fDB(x.k))))]); await xlUnduh(`TGEP_Database_utama_${todayWIB()}`, sh); } catch (e) { alert(e.message); } ua.disabled = false; ua.textContent = "⬇️ Unduh semua (1 Excel, sheet per kategori)"; }; $("#duD").scrollIntoView({ behavior: "smooth" }); };
   $("#duB").onchange = () => { tampil(); $("#duD").innerHTML = ""; };
   tampil();
 }
