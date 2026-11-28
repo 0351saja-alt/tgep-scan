@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.124";
+const APP_VERSION = "2026-11-28.125";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -964,7 +964,9 @@ async function bhDiDDR() {
   if (online()) { try { const [{ data: a }, { data: b }] = await Promise.all([sb.from("v_ddr_baris").select("bhid,tanggal").not("bhid", "is", null).order("tanggal", { ascending: false }).limit(5000), sb.from("ddr").select("bhid,report_date").not("bhid", "is", null).order("report_date", { ascending: false }).limit(2000)]);
     const T = {}; for (const x of [...(a ?? []).map((r) => [r.bhid, r.tanggal]), ...(b ?? []).map((r) => [r.bhid, r.report_date])]) if (x[0] && (!T[x[0]] || x[1] > T[x[0]])) T[x[0]] = x[1];
     L = Object.entries(T).sort((p, q) => String(q[1]).localeCompare(String(p[1])) || urutBH(p[0], q[0])); localStorage.setItem("bhDDR", JSON.stringify(L)); } catch {} }
-  return L; }
+  // v.125: lubang utama yang sudah di-redrill (mis. DH-NPG 08 → 08R) tidak ditampilkan
+  const RDR = await petaRedrill().catch(() => ({})), ada = new Set(L.map(([b]) => b));
+  return L.filter(([b]) => !RDR[b] && !ada.has(b + "R")); }
 async function coreView(v) {
   const bhL = await bhDiDDR(), bh0 = localStorage.getItem("bhid") || "", bh = bhL.some(([b]) => b === bh0) ? bh0 : (bhL[0]?.[0] ?? ""), lastType = localStorage.getItem("coreType") || "UTUH";
   const qd = (await qAll()).filter((x) => x.kind === "core");
