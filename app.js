@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.115";
+const APP_VERSION = "2026-11-28.116";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6259,6 +6259,7 @@ async function petaView(v) {
   };
 }
 async function dbView(v) {
+  if (isClient() && online()) await loadTugas().catch(() => {}); // v.116: akses geologi client terbaru
   const keys = dsAllowed() ?? Object.keys(DATASETS).filter((k) => !DATASETS[k].admin || me?.role === "admin");
   const st = JSON.parse(sessionStorage.getItem("dbst") || '{"ds":"collar","bh":"","bad":false,"page":0}');
   if (!keys.includes(st.ds)) st.ds = keys[0];
@@ -7323,6 +7324,7 @@ const DBU = [["DATA", "📊", "Data database (Excel per kategori)"], ["DDR", "�
 async function dbUtamaView(v) {
   if (!online()) { v.innerHTML = `<div class="card"><h2>📁 Database utama</h2><p class="muted">Perlu sinyal internet.</p></div>`; return; }
   const klien = isClient();
+  if (klien) await loadTugas().catch(() => {}); // v.116: akses geologi client terbaru (bukan cache) sebelum menyusun folder
   v.innerHTML = `<div class="card"><h2 style="margin-bottom:4px">📁 Database utama</h2><p class="muted" style="margin-top:0">Semua file yang sudah <b>FIX</b> ${klien ? "untuk proyek Anda " : ""}dikumpulkan per jenis data, lalu per titik bor. Ketuk folder untuk melihat isinya; tombol <b>📂 Google Drive</b> membuka folder yang sama di Google Drive.</p>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end"><div style="flex:1 1 160px"><label>Titik bor</label><select id="duB"><option value="">Semua titik</option></select></div><div id="duS" class="muted" style="flex:2 1 220px;font-size:12.5px"></div></div></div>
     <div id="duG" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px"><div class="card muted">Memuat…</div></div><div id="duD"></div>`;
