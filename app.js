@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.112";
+const APP_VERSION = "2026-11-28.113";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2426,7 +2426,11 @@ async function ujiDetail(bhid, fokus = null) {
     sb.from("v_uji_silang_interval").select("*").eq("bhid", bhid).order("depth_from"), sb.from("v_ddr_baris").select("*").eq("bhid", bhid).order("dari_m")]);
   const n = (x) => (x == null || x === "" ? null : +x), f2 = (x) => (n(x) == null ? "–" : fmtD(+(+x).toFixed(2))), bad = (r) => r.chk_uji && r.chk_uji !== "OK";
   const runs = (a, b) => (B ?? []).filter((x) => n(x.dari_m) < b - 1e-6 && n(x.sampai_m) > a + 1e-6);
-  const P = (I ?? []).filter(bad), lb = L ?? {};
+  const P = (I ?? []).filter(bad), lb = L ?? {}, bolehSinkron = isStaff();
+  // v.113: 🔄 Sinkronkan — core DDR mengikuti Form Logging (meter LOSS di DDR disesuaikan) setelah konfirmasi; swelling: DDR maksimal = interval
+  const swell = (r) => n(r.core_log_m) > n(r.interval_m) + 0.005 && n(r.core_ddr_m) >= n(r.interval_m) - 0.005;
+  const tombolSinkron = (r) => !/CORE BEDA/.test(r.chk_uji) ? "" : swell(r) ? `<p class="muted" style="margin:4px 0;font-size:12px">ℹ️ Swelling: core logging (${f2(r.core_log_m)} m) lebih panjang dari interval (${f2(r.interval_m)} m); DDR sudah maksimal 100 % — tidak perlu disinkronkan.</p>`
+    : bolehSinkron ? `<button data-sk="${n(r.depth_from)}|${n(r.depth_to)}" style="width:auto;margin-top:6px">🔄 Sinkronkan — DDR ikuti Form Logging (${f2(r.core_ddr_m)} → ${f2(Math.min(n(r.core_log_m), n(r.interval_m)))} m)</button>` : "";
   const ddrTbl = (a, b) => { const rs = runs(a, b); return rs.length ? `<table style="font-size:12px;margin-top:4px"><tr><th>DDR</th><th>Run (m)</th><th>Meter</th><th>Core</th><th></th></tr>${rs.map((x) => `<tr><td>${esc(x.tanggal)} · ${x.shift === "MALAM" ? "Night" : "Day"} · ${esc(x.rig)}</td><td>${f2(x.dari_m)}–${f2(x.sampai_m)}</td><td>${f2(x.meter)}</td><td>${f2(x.core_m)}</td><td><button class="sec" data-dd="${x.ddr_id}" style="padding:2px 8px;width:auto">Lihat DDR</button></td></tr>`).join("")}</table>` : `<p class="err" style="margin:4px 0">Tidak ada run DDR yang mencakup interval ini.</p>`; };
   const jelas = (r) => { const cl = n(r.core_log_m), cd = n(r.core_ddr_m), d = n(r.selisih_core_m);
     if (/CORE BEDA/.test(r.chk_uji)) return `Form Logging mencatat core <b>${f2(cl)} m</b>, DDR (jumlah run di interval ini) <b>${f2(cd)} m</b> → selisih <b>${d > 0 ? "+" : ""}${f2(d)} m</b> (${d > 0 ? "logging lebih panjang dari DDR" : "DDR lebih panjang dari logging"}). Periksa panjang core di core box: salah satu dokumen perlu dikoreksi.`;
@@ -2439,10 +2443,16 @@ async function ujiDetail(bhid, fokus = null) {
     ${P.map((r) => `<div style="border:2px solid ${fokus != null && Math.abs(n(r.depth_from) - fokus) < 1e-6 ? "#D62828" : "#F0B4AE"};border-radius:10px;padding:8px 10px;margin:6px 0;background:#FFF8F7">
       <b>${f2(r.depth_from)}–${f2(r.depth_to)} m</b> · conto ${esc(r.sample_no ?? "")} · zona ${esc(r.geozone_id ?? "")} · <span style="color:#B3261E;font-weight:700">${esc(r.chk_uji)}</span>
       <div class="tw"><table style="font-size:12px;margin-top:4px"><tr><th></th><th>Core (m)</th><th>Recovery</th></tr><tr><td>Form Logging</td><td>${f2(r.core_log_m)}</td><td>${f2(r.recovery_log_pct)} %</td></tr><tr><td>DDR</td><td>${f2(r.core_ddr_m)}</td><td>${f2(r.recovery_ddr_pct)} %</td></tr></table></div>
-      <p style="margin:4px 0;font-size:12.5px">${jelas(r)}</p><div class="tw">${ddrTbl(n(r.depth_from), n(r.depth_to))}</div></div>`).join("") || `<p class="muted">Tidak ada interval yang berbeda.${bad(lb) ? " Selisih ada di tingkat lubang (lihat kotak di atas)." : ""}</p>`}
+      <p style="margin:4px 0;font-size:12.5px">${jelas(r)}</p><div class="tw">${ddrTbl(n(r.depth_from), n(r.depth_to))}</div>${tombolSinkron(r)}</div>`).join("") || `<p class="muted">Tidak ada interval yang berbeda.${bad(lb) ? " Selisih ada di tingkat lubang (lihat kotak di atas)." : ""}</p>`}
     <details style="margin-top:8px"><summary>Semua interval ${esc(bhid)} (${(I ?? []).length})</summary><div class="tw"><table style="font-size:12px"><tr><th>Dari</th><th>Sampai</th><th>Zona</th><th>Core log</th><th>Core DDR</th><th>Selisih</th><th>Status</th></tr>
       ${(I ?? []).map((r) => `<tr style="${bad(r) ? "background:#F6C9C3" : ""}"><td>${f2(r.depth_from)}</td><td>${f2(r.depth_to)}</td><td>${esc(r.geozone_id ?? "")}</td><td>${f2(r.core_log_m)}</td><td>${f2(r.core_ddr_m)}</td><td>${f2(r.selisih_core_m)}</td><td>${esc(r.chk_uji ?? "")}</td></tr>`).join("")}</table></div></details>`;
   box.querySelectorAll("[data-dd]").forEach((b) => (b.onclick = () => printDDR(b.dataset.dd)));
+  box.querySelectorAll("[data-sk]").forEach((b) => (b.onclick = async () => { const [a, z] = b.dataset.sk.split("|").map(Number), r = P.find((x) => Math.abs(n(x.depth_from) - a) < 1e-6);
+    const al = prompt(`Konfirmasi sinkron ${bhid} ${fmtD(a)}–${fmtD(z)} m\n\nCore DDR ${f2(r?.core_ddr_m)} m akan diubah menjadi ${f2(Math.min(n(r?.core_log_m), n(r?.interval_m)))} m mengikuti Form Logging (meter loss di run DDR disesuaikan). Perubahan tercatat di riwayat DDR.\n\nTulis alasan / hasil cek core box:`, "Sudah dicek di core box, panjang core sesuai Form Logging");
+    if (!al?.trim()) return; b.disabled = true; b.textContent = "Menyinkronkan…";
+    try { const { data, error } = await sb.rpc("sinkron_core_ddr", { p_bhid: bhid, p_from: a, p_to: z, p_alasan: al.trim() }); if (error) throw error;
+      toast(`✓ ${data?.diubah ?? 0} run DDR disesuaikan${(data?.run ?? []).length ? ": " + data.run.map((x) => `${x.run} m core ${fmtD(+x.lama)}→${fmtD(+x.baru)}`).join(", ") : ""}${Math.abs(+data?.sisa || 0) > 0.005 ? ` · sisa ${fmtD(+data.sisa)} m perlu disesuaikan manual` : ""}`);
+      m.remove(); ujiDetail(bhid, a); } catch (e) { b.disabled = false; b.textContent = "🔄 Sinkronkan"; alert(/function|does not exist|schema cache/i.test(e.message) ? "Fitur sinkron belum aktif di server (pembaruan database v80 belum dijalankan)." : e.message); } }));
 }
 function pasangEditTabel(wadah, ds, rows, ulang) {
   if (isClient()) return;
