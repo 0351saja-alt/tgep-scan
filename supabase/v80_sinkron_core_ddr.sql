@@ -3,7 +3,9 @@
 -- Hanya geologist/verifier/admin. Selisih (log − DDR) ditambahkan ke run DDR yang LOSS (core < meter) di dalam interval,
 -- atau dikurangkan dari run terakhir bila DDR lebih panjang. Swelling: DDR maksimal = panjang interval.
 -- Tiap perubahan tercatat di ddr_edit_log (tampil di dokumen DDR "Data coring/run diubah…"); PDF DDR di Drive dibuat ulang (revisi).
--- Jalankan sekali di SQL Editor: https://supabase.com/dashboard/project/ytrvezripgkzuwyjvmnb/sql/new
+-- DIPASANG 28/11/2026 (migrasi v80_sinkron_core_ddr + perbaikan urutan: run yang memuat posisi loss Form Logging didahulukan).
+-- Uji (dibatalkan/rollback): 09 3–4 m → run 3,00–3,50 core 0,25→0,50 (OK); 14R 7–8 m → run 7,40–7,65 core 0,25→0,00 'Loss 7.40–7.65 m' (OK).
+-- Bila perlu dijalankan ulang di SQL Editor: https://supabase.com/dashboard/project/ytrvezripgkzuwyjvmnb/sql/new
 create or replace function public.sinkron_core_ddr(p_bhid text, p_from numeric, p_to numeric, p_alasan text)
 returns jsonb language plpgsql security definer set search_path to '' as $$
 declare a public.app_user; s public.sample; target numeric; kini numeric := 0; delta numeric; sisa numeric; r record; tambah numeric; baru numeric; n int := 0; log jsonb := '[]';
@@ -26,9 +28,10 @@ begin
       from public.ddr d cross join lateral jsonb_array_elements(coalesce(d.coring, '[]')) with ordinality e(v, ord)
       where coalesce(nullif(e.v->>'bhid',''), d.bhid) = p_bhid and (e.v->>'from') ~ '^-?\d+(\.\d+)?$' and (e.v->>'to') ~ '^-?\d+(\.\d+)?$'
         and (e.v->>'from')::numeric >= p_from - 0.001 and (e.v->>'to')::numeric <= p_to + 0.001
-      order by case when delta > 0 then (e.v->>'from')::numeric end asc, case when delta < 0 then (e.v->>'from')::numeric end desc loop
+      order by case when s.lose_from is not null and s.lose_to is not null and (e.v->>'from')::numeric < s.lose_to and (e.v->>'to')::numeric > s.lose_from then (case when delta < 0 then 0 else 1 end) else (case when delta < 0 then 1 else 0 end) end,
+        case when delta > 0 then (e.v->>'from')::numeric end asc, case when delta < 0 then (e.v->>'from')::numeric end desc loop
     exit when abs(sisa) <= 0.005;
-    if sisa > 0 then tambah := least(sisa, (r.sampai - r.dari) - r.core); else tambah := -least(-sisa, r.core); end if;
+    if sisa > 0 then tambah := least(sisa, (r.sampai - r.dari) - r.core); else tambah := -least(-sisa, r.core, case when s.lose_from is not null and s.lose_to is not null and r.dari < s.lose_to and r.sampai > s.lose_from then least(r.sampai, s.lose_to) - greatest(r.dari, s.lose_from) else r.core end); end if;
     continue when tambah = 0;
     baru := round(r.core + tambah, 2);
     -- kedalaman loss ikut tersinkron: remark run DDR diisi posisi loss dari Form Logging (lose_from–lose_to) bila ada di run ini
