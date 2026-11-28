@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.110";
+const APP_VERSION = "2026-11-28.111";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2418,6 +2418,32 @@ function pasangMenuKlikKanan(el, ambilAksi) {
   ["touchend", "touchmove", "touchcancel"].forEach((n) => el.addEventListener(n, () => clearTimeout(tm), { passive: true }));
 }
 // Bilah ✏️ Edit di atas tabel + klik baris (pilih), klik dua kali (edit), klik kanan / tekan lama (menu)
+// v.111: rincian uji silang DDR ↔ Form Logging per lubang — menunjukkan interval yang tidak sinkron, nilai masing-masing dan run DDR penyusunnya
+async function ujiDetail(bhid, fokus = null) {
+  const m = modal(`<h3 style="margin-top:0">🔎 Uji silang ${esc(bhid)}</h3><div id="ujD" class="muted">Memuat…</div><div class="row" style="margin-top:10px"><button id="ujX">Tutup</button></div>`);
+  m.querySelector("#ujX").onclick = () => m.remove(); const box = m.querySelector("#ujD");
+  const [{ data: L }, { data: I }, { data: B }] = await Promise.all([sb.from("v_uji_silang_lubang").select("*").eq("bhid", bhid).maybeSingle(),
+    sb.from("v_uji_silang_interval").select("*").eq("bhid", bhid).order("depth_from"), sb.from("v_ddr_baris").select("*").eq("bhid", bhid).order("dari_m")]);
+  const n = (x) => (x == null || x === "" ? null : +x), f2 = (x) => (n(x) == null ? "–" : fmtD(+(+x).toFixed(2))), bad = (r) => r.chk_uji && r.chk_uji !== "OK";
+  const runs = (a, b) => (B ?? []).filter((x) => n(x.dari_m) < b - 1e-6 && n(x.sampai_m) > a + 1e-6);
+  const P = (I ?? []).filter(bad), lb = L ?? {};
+  const ddrTbl = (a, b) => { const rs = runs(a, b); return rs.length ? `<table style="font-size:12px;margin-top:4px"><tr><th>DDR</th><th>Run (m)</th><th>Meter</th><th>Core</th><th></th></tr>${rs.map((x) => `<tr><td>${esc(x.tanggal)} · ${x.shift === "MALAM" ? "Night" : "Day"} · ${esc(x.rig)}</td><td>${f2(x.dari_m)}–${f2(x.sampai_m)}</td><td>${f2(x.meter)}</td><td>${f2(x.core_m)}</td><td><button class="sec" data-dd="${x.ddr_id}" style="padding:2px 8px;width:auto">Lihat DDR</button></td></tr>`).join("")}</table>` : `<p class="err" style="margin:4px 0">Tidak ada run DDR yang mencakup interval ini.</p>`; };
+  const jelas = (r) => { const cl = n(r.core_log_m), cd = n(r.core_ddr_m), d = n(r.selisih_core_m);
+    if (/CORE BEDA/.test(r.chk_uji)) return `Form Logging mencatat core <b>${f2(cl)} m</b>, DDR (jumlah run di interval ini) <b>${f2(cd)} m</b> → selisih <b>${d > 0 ? "+" : ""}${f2(d)} m</b> (${d > 0 ? "logging lebih panjang dari DDR" : "DDR lebih panjang dari logging"}). Periksa panjang core di core box: salah satu dokumen perlu dikoreksi.`;
+    if (/TIDAK ADA DDR|BELUM/.test(r.chk_uji)) return `Interval ini ada di Form Logging tetapi tidak tercakup run DDR (tercakup ${f2(r.tercakup_ddr_m)} dari ${f2(r.interval_m)} m).`;
+    return esc(r.chk_uji); };
+  box.innerHTML = `<div style="background:${bad(lb) || P.length ? "#FDECEA" : "#EAF6EF"};border-radius:10px;padding:8px 10px;color:#12251E">
+      <b>${esc(lb.chk_uji ?? (P.length ? "ADA SELISIH" : "OK"))}</b> · DDR ${f2(lb.ddr_dari_m)}–${f2(lb.ddr_sampai_m)} m (core ${f2(lb.ddr_core_m)} m, rec ${f2(lb.ddr_recovery_pct)} %) · Form Logging ${f2(lb.log_dari_m)}–${f2(lb.log_sampai_m)} m (core ${f2(lb.log_core_m)} m, ${lb.n_conto ?? 0} conto)
+      ${n(lb.selisih_kedalaman_m) ? `<br>⚠ Kedalaman akhir beda <b>${f2(lb.selisih_kedalaman_m)} m</b> antara DDR dan Form Logging.` : ""}${n(lb.ddr_belum_dilog_m) ? `<br>⚠ <b>${f2(lb.ddr_belum_dilog_m)} m</b> pemboran di DDR belum ada di Form Logging.` : ""}${n(lb.n_core_logging_kosong) ? `<br>⚠ ${lb.n_core_logging_kosong} interval logging tanpa panjang core.` : ""}</div>
+    <h4 style="margin:12px 0 4px">Letak ketidaksesuaian (${P.length} interval)</h4>
+    ${P.map((r) => `<div style="border:2px solid ${fokus != null && Math.abs(n(r.depth_from) - fokus) < 1e-6 ? "#D62828" : "#F0B4AE"};border-radius:10px;padding:8px 10px;margin:6px 0;background:#FFF8F7">
+      <b>${f2(r.depth_from)}–${f2(r.depth_to)} m</b> · conto ${esc(r.sample_no ?? "")} · zona ${esc(r.geozone_id ?? "")} · <span style="color:#B3261E;font-weight:700">${esc(r.chk_uji)}</span>
+      <div class="tw"><table style="font-size:12px;margin-top:4px"><tr><th></th><th>Core (m)</th><th>Recovery</th></tr><tr><td>Form Logging</td><td>${f2(r.core_log_m)}</td><td>${f2(r.recovery_log_pct)} %</td></tr><tr><td>DDR</td><td>${f2(r.core_ddr_m)}</td><td>${f2(r.recovery_ddr_pct)} %</td></tr></table></div>
+      <p style="margin:4px 0;font-size:12.5px">${jelas(r)}</p><div class="tw">${ddrTbl(n(r.depth_from), n(r.depth_to))}</div></div>`).join("") || `<p class="muted">Tidak ada interval yang berbeda.${bad(lb) ? " Selisih ada di tingkat lubang (lihat kotak di atas)." : ""}</p>`}
+    <details style="margin-top:8px"><summary>Semua interval ${esc(bhid)} (${(I ?? []).length})</summary><div class="tw"><table style="font-size:12px"><tr><th>Dari</th><th>Sampai</th><th>Zona</th><th>Core log</th><th>Core DDR</th><th>Selisih</th><th>Status</th></tr>
+      ${(I ?? []).map((r) => `<tr style="${bad(r) ? "background:#F6C9C3" : ""}"><td>${f2(r.depth_from)}</td><td>${f2(r.depth_to)}</td><td>${esc(r.geozone_id ?? "")}</td><td>${f2(r.core_log_m)}</td><td>${f2(r.core_ddr_m)}</td><td>${f2(r.selisih_core_m)}</td><td>${esc(r.chk_uji ?? "")}</td></tr>`).join("")}</table></div></details>`;
+  box.querySelectorAll("[data-dd]").forEach((b) => (b.onclick = () => printDDR(b.dataset.dd)));
+}
 function pasangEditTabel(wadah, ds, rows, ulang) {
   if (isClient()) return;
   const tbl = wadah.querySelector("table"); if (!tbl) return;
@@ -6309,6 +6335,10 @@ async function dbView(v) {
     }
     if (["ddr", "rekapddr"].includes(f.ds)) $("#tb").insertAdjacentHTML("afterbegin", `<button class="sec" id="ddrFol" style="width:auto;margin-bottom:6px">📁 Tampilkan per rig → tanggal</button>`), ($("#ddrFol").onclick = () => { try { localStorage.removeItem("dbDdrTabel"); } catch {} show(page); });
     pasangEditTabel($("#tb"), f.ds, data, () => show(page)); // v.20: bilah ✏️ Edit di atas tabel + klik kanan / tekan lama
+    // v.111: Uji silang — ketuk baris → rincian letak ketidaksesuaian (interval mana, run DDR mana, nilai DDR vs Form Logging)
+    if (["ujilubang", "ujiinterval"].includes(f.ds)) { const trs = [...($("#tb").querySelector("table")?.querySelectorAll("tr") ?? [])].slice(1);
+      trs.forEach((t, i) => { const r = data[i]; if (!r?.bhid) return; t.style.cursor = "pointer"; t.title = "Ketuk untuk melihat letak ketidaksesuaian";
+        t.addEventListener("click", (e) => { if (e.target.closest("button,a")) return; ujiDetail(r.bhid, f.ds === "ujiinterval" ? +r.depth_from : null); }); }); }
   };
   $("#go").onclick = () => show(0); $("#pv").onclick = () => show(st.page - 1); $("#nx").onclick = () => show(st.page + 1);
   $("#ds").onchange = () => show(0);
