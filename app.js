@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.90";
+const APP_VERSION = "2026-11-28.91";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -7097,9 +7097,11 @@ async function baView(v) {
   const segarIsiBA = (I, rk) => { let n = 0; const man = new Set(I.manual ?? []);
     for (const k of KUNCI_BA) { const v = rk[k] ?? ""; if (man.has(k) || v === "" || String(I[k] ?? "") === String(v)) continue; I[k] = v; n++; } return n; };
   const segarBA = (r) => { if (r.status === "FINAL") return r; const I = { ...(r.isi ?? {}) }, man = new Set(I.manual ?? []);
-    if (r.jenis === "BA_STOP") { segarIsiBA(I, ringkas(I.bhid || r.bhid)); const w = WSG[I.bhid || r.bhid]; if (w && !man.has("geologist")) { I.geologist = w; I.geologist_jabatan = "Wellsite Geologist"; } }
-    if (!I.penerima && !man.has("penerima")) I.penerima = SITE_REP.nama; if (!I.penerima_jabatan || /pengawas lapangan|perwakilan pemberi kerja/i.test(I.penerima_jabatan)) I.penerima_jabatan = SITE_REP.jabatan; // v.90
-    return { ...r, isi: I }; };
+    if (r.jenis === "BA_STOP") segarIsiBA(I, ringkas(I.bhid || r.bhid));
+    kunciTTD(I, r); return { ...r, isi: I }; };
+  // v.91: penanda tangan TERKUNCI — wellsite = penanda tangan WELL SITE di DDR titik itu; pihak NPG = Haryo Purnomo, Site Representative
+  const kunciTTD = (I, r) => { if (r.jenis === "BA_STOP") { const w = WSG[I.bhid || r.bhid]; if (w) I.geologist = w; I.geologist_jabatan = "Wellsite Geologist"; }
+    I.penerima = SITE_REP.nama; I.penerima_jabatan = SITE_REP.jabatan; I.penerima_pt = KOP.pemberi; return I; };
   const titikPeriode = (f, t) => bhs.filter((b) => !RDR[b]).filter((b) => { const r = ringkas(b); return selesai(b) && r.stop >= f && r.stop <= t; }).map(barisT);
   const nomor = (jenis, b) => { const d = new Date(); return `${jenis === "BASTP" ? "BASTP" : "BA-STOP"}/TGEP/${b ? b.replace(/\s+/g, "") + "/" : ""}${BULAN_ROMAWI[d.getMonth()]}/${d.getFullYear()}`; };
   const daftar = async () => { const { data } = await sb.from("berita_acara").select("id,jenis,nomor,bhid,dari,sampai,status,created_at,created_by").order("created_at", { ascending: false }).limit(100);
@@ -7131,7 +7133,8 @@ async function baView(v) {
     await daftar(); edit(data.id); };
   // ----- menu edit -----
   const edit = async (id) => { const { data: r, error } = await sb.from("berita_acara").select("*").eq("id", id).single(); if (error) return alert(error.message);
-    const I = r.isi ?? {}, inp = (k, l, w = "1 1 150px") => `<div style="flex:${w}"><label>${l}</label><input data-k="${k}" value="${esc(I[k] ?? "")}"></div>`, kunci = r.status === "FINAL" && me?.role !== "admin";
+    const I = r.status === "FINAL" ? r.isi ?? {} : kunciTTD({ ...(r.isi ?? {}) }, r), TK = new Set(["geologist", "geologist_jabatan", "penerima", "penerima_jabatan", "penerima_pt"]);
+    const inp = (k, l, w = "1 1 150px") => `<div style="flex:${w}"><label>${l}${TK.has(k) ? ' <span class="muted" style="font-size:11px">🔒 otomatis</span>' : ""}</label><input data-k="${k}" value="${esc(I[k] ?? "")}"${TK.has(k) ? ' readonly style="background:#EEF3F0;color:#333"' : ""}></div>`, kunci = r.status === "FINAL" && me?.role !== "admin";
     // v.57: BASTP belum FINAL → titik yang sudah selesai di database dalam periode BASTP otomatis ditambahkan (kecuali yang pernah dihapus manual)
     let nBaru = 0;
     if (r.jenis === "BASTP" && r.status !== "FINAL" && r.dari && r.sampai) { const ada = new Set([...(I.titik ?? []).map((x) => x.bhid), ...(I.titik_dihapus ?? [])]);
@@ -7159,7 +7162,7 @@ async function baView(v) {
         <button class="sec" id="eaSrAdd" style="flex:0;margin-top:4px">+ item serahan</button>
         <label>Penutup</label><textarea data-k="penutup" rows="3">${esc(I.penutup ?? "")}</textarea>
         <h3>Tanda tangan</h3><div class="row" style="flex-wrap:wrap">${inp("direktur", "Pihak Pertama — Direktur TGEP")}${inp("direktur_jabatan", "Jabatan")}</div><div class="row" style="flex-wrap:wrap">${inp("penerima", "Pihak Kedua — nama")}${inp("penerima_jabatan", "Jabatan")}${inp("penerima_pt", "Perusahaan")}</div><div class="row">${inp("penerima_alamat", "Alamat Pihak Kedua (opsional)", "1 1 100%")}</div>`
-      : `<h3>Tanda tangan</h3><div class="row" style="flex-wrap:wrap">${inp("geologist", "Wellsite Geologist TGEP")}${inp("geologist_jabatan", "Jabatan")}</div><div class="row" style="flex-wrap:wrap">${inp("penerima", "Perwakilan lapangan — nama")}${inp("penerima_jabatan", "Jabatan")}${inp("penerima_pt", "Perusahaan")}</div>`}
+      : `<h3>Tanda tangan</h3><div class="row" style="flex-wrap:wrap">${inp("geologist", "Wellsite Geologist TGEP (dari DDR titik ini)")}${inp("geologist_jabatan", "Jabatan")}</div><div class="row" style="flex-wrap:wrap">${inp("penerima", "Site Representative PT Nusa Prima Gemilang")}${inp("penerima_jabatan", "Jabatan")}${inp("penerima_pt", "Perusahaan")}</div>`}
       <div class="row" style="margin-top:8px;flex-wrap:wrap"><button id="eaS">Simpan</button><button class="sec" id="eaV">👁 Lihat surat</button><button class="sec" id="eaP">🖨 Simpan & cetak</button>${r.status !== "FINAL" ? `<button class="sec" id="eaF">Tandai FINAL</button>` : ""}${r.status !== "FINAL" || me?.role === "admin" ? `<button class="danger" id="eaH" style="flex:0">Hapus</button>` : ""}<button class="sec" id="eaX" style="flex:0">Tutup</button></div><div id="eaE" class="err"></div></div>`;
     const E = $("#baEd"); E.scrollIntoView({ behavior: "smooth" }); if (nBaru > 0) toast(`➕ ${nBaru} titik selesai ditambahkan otomatis dari database — tekan Simpan`); else if (nBaru < 0) toast(`${-nBaru} isian diperbarui otomatis dari database (kedalaman, recovery, koordinat, dll.) — tekan Simpan`); if (kunci) E.querySelectorAll("input,textarea").forEach((x) => (x.disabled = true));
     // v.58: kolom Titik / Hole ID = pilihan titik terdaftar; begitu dipilih, kolom lain terisi otomatis dari database (DDR, lubang, logging)
@@ -7215,7 +7218,8 @@ async function tanyaPenandatangan(r) {
 // opsi.lihat = tampilkan isi surat saja (tanpa tanya penanda tangan); opsi.r = isian dari form edit yang belum disimpan
 async function cetakBA(id, opsi = {}) {
   const r0 = opsi.r ?? (await sb.from("berita_acara").select("*").eq("id", id).single()).data; if (!r0) return alert("Berita acara tidak ditemukan");
-  const r = opsi.lihat ? r0 : await tanyaPenandatangan(r0); if (!r) return; const I = r.isi ?? {}, bast = r.jenis === "BASTP";
+  const r = r0; const I = { ...(r.isi ?? {}) }, bast = r.jenis === "BASTP"; // v.91: penanda tangan sudah terkunci, tidak ditanya lagi saat cetak
+  if (r.status !== "FINAL") { I.penerima = SITE_REP.nama; I.penerima_jabatan = SITE_REP.jabatan; I.penerima_pt = KOP.pemberi; }
   const w = jendelaDok(bast ? "BASTP" : `BA stop bor ${r.bhid}`, "A4P");
   // v.60: LAMPIRAN foto — halaman baru (mulai dari atas kertas) setelah tanda tangan: foto patok, foto selesai bor, foto pengerjaan, foto core box.
   // BA stop bor: titik itu; BASTP: tiap titik dalam tabel, masing-masing mulai di halaman baru.
