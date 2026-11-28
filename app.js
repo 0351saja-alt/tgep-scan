@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.94";
+const APP_VERSION = "2026-11-28.95";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2979,11 +2979,14 @@ async function paginasiA4(root) {
     kelas = sec.className;
     if (i > 0 && isi.children.length) isi = baru(); else isi.className = `isi ${kelas}`; // lampiran (dan bagian berikutnya) mulai dari atas lembar baru
     const K = [...sec.children];
-    // v.94: section bertanda data-satu="1" (surat BASTP) diperkecil seperlunya (maks. 25 %) agar muat SATU lembar bersama tanda tangan
+    // v.94/95: section bertanda data-satu="1" (surat BA stop bor) diperkecil seperlunya (maks. 25 %) agar muat SATU lembar bersama tanda tangan
     if (sec.dataset.satu === "1" && !isi.children.length) { let z = 1; const uji = () => { isi.innerHTML = ""; for (const b of K) { const c = b.cloneNode(true); c.style.zoom = z; isi.appendChild(c); } return penuh(); };
       while (uji() && z > 0.7) z = +(z - 0.03).toFixed(2); isi.innerHTML = ""; if (z < 1) K.forEach((b) => (b.style.zoom = z)); }
     K.forEach((blk, j) => { const sblm = isi; taruh(blk); const jd = K[j - 1]; // judul (h2/h3) tidak boleh tertinggal sendirian di bawah lembar
-      if (awal !== sblm && jd && /^H[1-4]$/.test(jd.tagName) && sblm.lastElementChild === jd) awal.insertBefore(jd, awal.firstChild); });
+      if (awal !== sblm && jd && /^H[1-4]$/.test(jd.tagName) && sblm.lastElementChild === jd) awal.insertBefore(jd, awal.firstChild);
+      // v.95: blok tanda tangan (.tahan) tidak boleh sendirian di lembar terakhir — bawa paragraf/tabel terakhir lembar sebelumnya
+      else if (awal !== sblm && blk.classList?.contains("tahan") && sblm.children.length > 1) { const p = sblm.lastElementChild; awal.insertBefore(p, awal.firstChild);
+        if (awal.scrollHeight > awal.clientHeight + 1) sblm.appendChild(p); } });
   });
   src.remove();
   hal.forEach((p, i) => (p.querySelector(".nohal").textContent = `Halaman ${i + 1} dari ${hal.length}`));
@@ -7313,7 +7316,7 @@ async function cetakBA(id, opsi = {}) {
   .blok{break-inside:avoid;page-break-inside:avoid} .ttd{break-inside:avoid;display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px;text-align:center} .ttd div{min-height:120px} .sp{height:70px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666} table.p td{border:0;padding:1px 4px} .fg{display:grid;grid-template-columns:1fr 1fr;gap:8px} .fg img{width:100%;border:1px solid #ccc} figure{margin:0} figcaption{font-size:9.5px;color:#444} .satu .ttd{margin-top:10px} .satu .ttd div{min-height:0} .satu .sp{height:52px} .satu td,.satu th{padding:2px 5px} .satu p{margin:4px 0;line-height:1.35} .satu h3{margin:7px 0 3px} .satu table{margin:3px 0} .lamp h2{text-align:center;font-size:14px;margin:6px 0 2px;text-decoration:underline} .lamp h3{margin:10px 0 4px;font-size:12.5px} .lamp figure{break-inside:avoid;page-break-inside:avoid} .lamp .fg img{height:62mm;object-fit:cover}
 
   </style></head><body>
-  <div class="src" data-kh="${KOP_HEADER}" data-kf="${KOP_FOOTER}"><section class="alir${bast ? " satu" : ""}"${bast ? ' data-satu="1"' : ""}>
+  <div class="src" data-kh="${KOP_HEADER}" data-kf="${KOP_FOOTER}"><section class="alir${bast ? "" : " satu"}"${bast ? "" : ' data-satu="1"'}>
   <h1>${bast ? "BERITA ACARA SERAH TERIMA PEKERJAAN (BASTP)" : "BERITA ACARA STOP BOR"}</h1><div class="no">Nomor: ${esc(r.nomor ?? "")}${r.status !== "FINAL" ? " <span class=m>(DRAF)</span>" : ""}</div>
   ${bast ? `<p>Pada ${esc(tglTerbilang(I.tanggal ?? ""))}, bertempat di ${esc(I.tempat ?? "")}, kami yang bertanda tangan di bawah ini:</p>
   <table class="p"><tr><td style="width:24px">1.</td><td style="width:120px">Nama</td><td>: <b>${esc(I.direktur || KOP.direktur)}</b></td></tr><tr><td></td><td>Jabatan</td><td>: ${esc(I.direktur_jabatan || KOP.jabatanDir)}</td></tr><tr><td></td><td>Perusahaan</td><td>: ${KOP.pt}</td></tr><tr><td></td><td>Alamat</td><td>: ${esc(KOP.alamat.join(", "))}</td></tr>
@@ -7325,7 +7328,7 @@ async function cetakBA(id, opsi = {}) {
   ${isi}
   ${bast ? `<h3>3. Data, dokumen dan database yang diserahkan</h3><table class="d"><tr><th style="width:24px">No</th><th>Item</th><th style="width:70px">Diserahkan</th><th>Keterangan</th></tr>${(I.serah ?? []).map((c, i) => `<tr><td>${i + 1}</td><td>${esc(c.t)}</td><td style="text-align:center"><b>${esc(c.ya)}</b></td><td>${esc(c.ket ?? "")}</td></tr>`).join("")}</table>` : ""}
   ${I.catatan ? `<p><b>Catatan:</b> ${esc(I.catatan)}</p>` : ""}${bast && I.penutup ? `<p>${esc(I.penutup)}</p>` : ""}
-  <div class="blok"><p>${esc(I.tempat ?? "")}, ${esc(tglPanjang(I.tanggal ?? ""))}</p>
+  <div class="blok tahan"><p>${esc(I.tempat ?? "")}, ${esc(tglPanjang(I.tanggal ?? ""))}</p>
   ${bast ? `<div class="ttd"><div>PIHAK PERTAMA<br>Yang menyerahkan,<br><b>${KOP.pt}</b>${ttdImg("DIREKTUR")}<span class="nm">${esc(I.direktur || KOP.direktur)}</span><br>${esc(I.direktur_jabatan || KOP.jabatanDir)}</div>
     <div>PIHAK KEDUA<br>Yang menerima,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b>${ttdImg("SITE_REP")}<span class="nm">${esc(I.penerima || "(......................)")}</span><br>${esc(I.penerima_jabatan ?? "")}</div></div>`
   : `<div class="ttd"><div>Dibuat oleh,<br><b>${KOP.pt}</b><br>${esc(I.geologist_jabatan ?? "Wellsite Geologist")}${ttdImg("WELLSITE")}<span class="nm">${esc(I.geologist || "(......................)")}</span></div>
