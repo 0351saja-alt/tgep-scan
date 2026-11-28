@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.77";
+const APP_VERSION = "2026-11-28.78";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3134,23 +3134,19 @@ async function dashView(v) {
   new Chart(box("c11", "Distribusi jam DDR per kegiatan (jam)"), { type: "bar", data: { labels: Object.keys(hk).length ? Object.keys(hk) : ["(belum ada DDR)"], datasets: [{ label: "jam", data: Object.values(hk).map((m) => +(m / 60).toFixed(2)), backgroundColor: "#2F6FB0" }] }, options: { indexAxis: "y" } });
   new Chart(box("c12", "Drilling / Working / Standby (DDR)"), { type: "pie", data: { labels: Object.keys(hg).length ? Object.keys(hg) : ["(belum ada DDR)"], datasets: [{ data: Object.keys(hg).length ? Object.values(hg) : [1], backgroundColor: ["#1E9E69", "#E8892B", "#C8281F"] }] } });
   if (klien) { pasangKlikGrafik(Chart); return; }
-  // v.77: histogram tebal per layer — 4 panel (Limonit, Saprolit, Boulder, Bedrock), batang rapat tanpa celah, lebar kelas sama,
-  // isi arsir diagonal seperti histogram statistik. Boulder/bedrock hanya lubang yang menembus layer itu (tebal > 0).
-  { const d = document.createElement("div"); d.className = "card";
-    d.innerHTML = `<h3 style="margin:0 0 6px">Histogram tebal zona per lubang</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">${["c7a", "c7b", "c7c", "c7d"].map((id) => `<div><canvas id="${id}" height="210"></canvas></div>`).join("")}</div>`;
-    $("#ch").appendChild(d);
-    const arsir = (warna) => { const c = document.createElement("canvas"); c.width = c.height = 8; const x = c.getContext("2d"); x.fillStyle = warna + "22"; x.fillRect(0, 0, 8, 8);
+  // v.78: histogram tebal GABUNGAN — satu grafik, kelas sama lebar untuk semua layer, batang rapat tanpa celah & berarsir,
+  // ditumpuk per layer (Limonit, Saprolit, Boulder, Bedrock). Boulder/bedrock hanya lubang yang menembus layer itu (tebal > 0).
+  { const arsir = (warna) => { const c = document.createElement("canvas"); c.width = c.height = 8; const x = c.getContext("2d"); x.fillStyle = warna + "33"; x.fillRect(0, 0, 8, 8);
       x.strokeStyle = warna; x.lineWidth = 1.6; x.beginPath(); x.moveTo(0, 8); x.lineTo(8, 0); x.moveTo(-2, 2); x.lineTo(2, -2); x.moveTo(6, 10); x.lineTo(10, 6); x.stroke(); return x.createPattern(c, "repeat"); };
     const fm = (v) => String(+v.toFixed(2)).replace(".", ",");
-    [["c7a", "Limonit", "tebal_limonit", "#E8892B", false], ["c7b", "Saprolit", "tebal_saprolit", "#1E9E69", false], ["c7c", "Boulder", "tebal_boulder", "#3B82F6", true], ["c7d", "Bedrock", "tebal_bedrock", "#1E3A8A", true]].forEach(([id, nama, k, warna, pos]) => {
-      const vals = holes.map((h) => Number(h[k])).filter((v) => Number.isFinite(v) && (!pos || v > 0)), mx = Math.max(0, ...vals);
-      const w = mx <= 3 ? 0.5 : mx <= 10 ? 1 : mx <= 20 ? 2 : 5, nb = Math.max(4, Math.ceil((mx + 1e-9) / w)), ed = Array.from({ length: nb + 1 }, (_, i) => +(i * w).toFixed(2));
-      const rata = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-      new Chart(document.getElementById(id), { type: "bar",
-        data: { labels: ed.slice(0, -1).map((e, i) => `${fm(e)}–${fm(ed[i + 1])}`), datasets: [{ label: nama, data: hist(vals, ed), backgroundColor: arsir(warna), borderColor: warna, borderWidth: 1.5, barPercentage: 1, categoryPercentage: 1 }] },
-        options: { plugins: { legend: { display: false }, title: { display: true, text: vals.length ? `${nama} · ${vals.length} lubang · rata-rata ${fm(rata)} m` : `${nama} · belum ada lubang`, color: warna, font: { size: 13, weight: "600" } } },
-          scales: { x: { title: { display: true, text: "tebal (m)" }, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } }, y: { beginAtZero: true, title: { display: true, text: "jumlah lubang" }, ticks: { precision: 0 }, suggestedMax: 3 } } } });
-    }); }
+    const L = [["Limonit", "tebal_limonit", "#E8892B", false], ["Saprolit", "tebal_saprolit", "#1E9E69", false], ["Boulder", "tebal_boulder", "#3B82F6", true], ["Bedrock", "tebal_bedrock", "#1E3A8A", true]]
+      .map(([nama, k, warna, pos]) => ({ nama, warna, vals: holes.map((h) => Number(h[k])).filter((v) => Number.isFinite(v) && (!pos || v > 0)) }));
+    const mx = Math.max(0, ...L.flatMap((l) => l.vals)), w = mx <= 4 ? 0.5 : mx <= 25 ? 1 : 2, nb = Math.max(4, Math.ceil((mx + 1e-9) / w)), ed = Array.from({ length: nb + 1 }, (_, i) => +(i * w).toFixed(2));
+    new Chart(box("c7", "Histogram tebal zona per lubang"), { type: "bar",
+      data: { labels: ed.slice(0, -1).map((e, i) => `${fm(e)}–${fm(ed[i + 1])}`), datasets: L.map((l) => ({ label: `${l.nama} (${l.vals.length} lubang${l.vals.length ? `, rata ${fm(l.vals.reduce((a, b) => a + b, 0) / l.vals.length)} m` : ""})`,
+        data: hist(l.vals, ed), backgroundColor: arsir(l.warna), borderColor: l.warna, borderWidth: 1.5, barPercentage: 1, categoryPercentage: 1 })) },
+      options: { plugins: { legend: { labels: { boxWidth: 14 } } }, scales: { x: { stacked: true, title: { display: true, text: "tebal (m)" }, grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true } },
+        y: { stacked: true, beginAtZero: true, title: { display: true, text: "jumlah lubang" }, ticks: { precision: 0 } } } } }); }
   const nl = holes.reduce((s, h) => s + h.conto_limonit, 0), ns = holes.reduce((s, h) => s + h.conto_saprolit, 0), nt = holes.reduce((s, h) => s + h.jumlah_conto, 0);
   new Chart(box("c8", "Jumlah conto per zona"), { type: "pie", data: { labels: ["Limonit", "Saprolit", "TP / batuan dasar"], datasets: [{ data: [nl, ns, nt - nl - ns], backgroundColor: ["#E8892B", "#1E9E69", "#7A8B83"] }] } });
   const re = [0, 50, 70, 80, 90, 95, 100.01];
