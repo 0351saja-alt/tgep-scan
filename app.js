@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.117";
+const APP_VERSION = "2026-11-28.118";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -7341,7 +7341,7 @@ async function dbUtamaView(v) {
   // v.108: Form Logging dari database (hasil impor Excel / transkripsi) — satu file Excel per titik, selain scan yang disetujui
   const geoBH = clientGeo() || !klien ? await aman(sb.from("v_dh_geology").select("holeid").limit(10000)) : { data: [] };
   const nGeo = {}; for (const r of geoBH.data ?? []) if (r.holeid) nGeo[r.holeid] = (nGeo[r.holeid] ?? 0) + 1;
-  const fDB = (k) => ({ ds: k, bh: "", bad: false, page: 0, proj: sessionStorage.getItem("filterProyek") || "", lub: "semua", rd: {}, rig: "", rigBH: [] });
+  const fDB = (k) => ({ ds: k, bh: "", bad: false, page: 0, proj: null, lub: "semua", rd: {}, rig: "", rigBH: [] }); // v.118: proj = objek filter (bukan teks) — null = semua data yang boleh dilihat akun ini
   const bersih = (rows) => rows.map((r) => { const o = { ...r }; delete o.data; delete o.related; for (const c in o) if (Array.isArray(o[c])) o[c] = o[c].join("; "); else if (o[c] && typeof o[c] === "object") o[c] = JSON.stringify(o[c]); return o; });
   const xlUnduh = async (nama, sheets) => { const X = await import("./vendor/xlsx.js"), wb = X.utils.book_new();
     for (const [nm, rows] of sheets) X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([["(kosong)"]]), nm.slice(0, 31).replace(/[\\/?*\[\]:]/g, " "));
