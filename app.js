@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.86";
+const APP_VERSION = "2026-11-28.87";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3249,7 +3249,7 @@ function computeKPI(days, tm, cu, holes) {
 // v.80: susunan Dashboard per bagian (urutan baca: progres → waktu kerja → geologi → logistik); kartu besar selebar layar
 const DASH_SEKSI = [["prog", "1. Progres pemboran"], ["waktu", "2. Waktu kerja & standby (DDR)"], ["geo", "3. Geologi & kualitas core"], ["log", "4. BBM & material"]];
 const DASH_TEMPAT = { c1: ["prog", 1, 1], c2: ["prog", 2], c12: ["waktu", 1], c11: ["waktu", 2], c3: ["waktu", 3], c4: ["waktu", 4],
-  c9: ["geo", 1], c8: ["geo", 2], c10: ["geo", 3], c7: ["geo", 4, 1], catatan: ["geo", 5, 1], stat: ["geo", 6, 1], c5: ["log", 1], c6: ["log", 2] };
+  c9: ["geo", 1], c8: ["geo", 2], statg: ["geo", 3], c10: ["geo", 4], c7: ["geo", 5, 1], catatan: ["geo", 6, 1], stat: ["geo", 7, 1], c5: ["log", 1], c6: ["log", 2] };
 function taruhDash(el, key) {
   const [sek, urut, penuh] = DASH_TEMPAT[key] ?? ["log", 99], g = document.querySelector(`#ch [data-sek="${sek}"] .dgrid`) ?? document.getElementById("ch");
   el.style.order = urut; if (penuh) el.classList.add("dpenuh"); g.appendChild(el);
@@ -3320,12 +3320,13 @@ async function statistikConto(Chart, box, bhids) {
         <td>${f2(s.P?.mean)}</td><td>${f2(s.P?.med)}</td><td>${f2(s.P?.min)}</td><td>${f2(s.P?.max)}</td><td>${f2(s.P?.sd)}</td><td>${f2(s.D?.mean)}</td><td>${f2(s.D?.min)}</td><td>${f2(s.D?.max)}</td><td>${s.R ? f2(s.R.mean) : "–"}</td></tr>`).join("")}
       <tr style="font-weight:700;background:#F1F5F3"><td>Total</td><td>${tot}</td><td>100</td><td>${new Set(G.map((g) => g.holeid)).size}</td>${(() => { const P = statRingkas(G.map(panjang)), D = statRingkas(G.map(tengah)), R = statRingkas(G.map(rec));
         return `<td>${f2(P?.mean)}</td><td>${f2(P?.med)}</td><td>${f2(P?.min)}</td><td>${f2(P?.max)}</td><td>${f2(P?.sd)}</td><td>${f2(D?.mean)}</td><td>${f2(D?.min)}</td><td>${f2(D?.max)}</td><td>${R ? f2(R.mean) : "–"}</td>`; })()}</tr></table></div>
-      <p class="muted" style="font-size:12px">Ketuk baris layer untuk melihat daftar contonya. Layer atau litologi baru otomatis muncul begitu ada di Form Logging yang disetujui.</p>
-      <canvas id="cS1" width="1000" height="200"></canvas>` : `<p class="muted">Belum ada conto di database (Form Logging yang disetujui verifier).</p>`}`;
+      <p class="muted" style="font-size:12px">Ketuk baris layer untuk melihat daftar contonya. Layer atau litologi baru otomatis muncul begitu ada di Form Logging yang disetujui.</p>` : `<p class="muted">Belum ada conto di database (Form Logging yang disetujui verifier).</p>`}`;
   taruhDash(c, "stat");
   c.querySelectorAll("[data-lay]").forEach((tr) => (tr.onclick = () => daftar(S[+tr.dataset.lay])));
   if (!tot) return;
-  const ch = new Chart(c.querySelector("#cS1"), { type: "bar", data: { labels: S.map((s) => s.nama), datasets: [{ label: "Jumlah conto", data: S.map((s) => s.n), backgroundColor: S.map((s) => s.warna), yAxisID: "y" },
+  // v.87: grafik conto per layer dipisah jadi kartu kecil di samping grafik geologi lain (tidak selebar layar)
+  const cg = document.createElement("div"); cg.className = "card"; cg.innerHTML = `<h3 style="margin:0 0 6px">Jumlah conto & panjang rata-rata per layer</h3><canvas id="cS1" width="420" height="215"></canvas>`; taruhDash(cg, "statg");
+  const ch = new Chart(cg.querySelector("#cS1"), { type: "bar", data: { labels: S.map((s) => s.nama), datasets: [{ label: "Jumlah conto", data: S.map((s) => s.n), backgroundColor: S.map((s) => s.warna), yAxisID: "y" },
     { type: "line", label: "Panjang rata-rata (m)", data: S.map((s) => (s.P ? +s.P.mean.toFixed(2) : null)), yAxisID: "y2", borderColor: "#12251E", pointRadius: 4 }] },
     options: { scales: { y: { title: { display: true, text: "conto" } }, y2: { position: "right", grid: { display: false }, title: { display: true, text: "m" } } } } });
   ch.$detail = (i) => daftar(S[i]);
