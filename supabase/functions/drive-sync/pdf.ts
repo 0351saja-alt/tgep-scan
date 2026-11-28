@@ -172,7 +172,7 @@ export async function pdfKirim(kp: any, items: any[], kopAtas: Uint8Array, kopBa
   const tot = items.reduce((s, r) => s + (+r.berat_kg || 0), 0);
   const per: Record<string, number> = {}; for (const r of items) per[r.bhid ?? "-"] = (per[r.bhid ?? "-"] ?? 0) + 1;
   const KI: Kol[] = [{ w: 1.2 }, { w: 3 }];
-  for (const [l, v] of [["Tanggal kirim", tglPanjang(kp.tanggal)], ["Tujuan", kp.tujuan], ["Penerima (u.p.)", kp.penerima], ["Proyek", kp.project], ["Titik bor (jumlah sample)", Object.entries(per).map(([b, n]) => `${b} (${n})`).join(", ")],
+  for (const [l, v] of [["Tanggal kirim", tglPanjang(kp.tanggal)], ["Tujuan", kp.tujuan], ["Penerima (u.p.)", kp.penerima], ["Proyek", kp.project_nama || kp.project], ["Titik bor (jumlah sample)", Object.entries(per).map(([b, n]) => `${b} (${n})`).join(", ")],
     ["Jumlah sample", String(items.length)], ["Total berat (kg)", dk(tot.toFixed(2))], ["Jumlah karung", kp.jumlah_karung], ["No. segel", kp.no_segel], ["Status", kp.status], ...(kp.catatan ? [["Catatan", kp.catatan]] : [])])
     k.baris([String(l), String(v ?? "") || "-"], KI, { sz: 9.5 });
   k.y -= 8;

@@ -1,0 +1,4 @@
+-- v70 (28/11/2026): proyek di form pengiriman sample.
+--  kirim_preparasi.project_nama (diisi trigger isi_project_nama dari tabel project); simpan_kirim_preparasi menerima p.project
+--  (fallback: penugasan pembuat → proyek aktif pertama). 5 form KS lama diisi project = 'TGEP'.
+--  drive-sync v20: baris "Proyek" di PDF memakai nama proyek.
