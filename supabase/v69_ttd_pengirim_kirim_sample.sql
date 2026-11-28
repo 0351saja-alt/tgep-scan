@@ -1,0 +1,7 @@
+-- v69 (28/11/2026): tanda tangan elektronik PENGIRIM di form pengiriman sample.
+--  kirim_preparasi + pengirim_ttd_path, pengirim_ttd_at, pengirim_ttd_oleh, pengirim_ttd_metode, pengirim_jabatan
+--  public.sign_kirim_sample(p_kirim, p_signer, p_method 'PIN'|'QR', p_proof) — verifikasi PIN/QR seperti sign_ddr
+--    (salah 5x → kunci 15 menit), signer harus geologist/verifier/admin dengan TTD terdaftar (menu TTD saya);
+--    mengisi pengirim = initcap(nama TTD), jabatan & gambar TTD.
+--  public.batal_ttd_kirim_sample(p_kirim, p_alasan) — admin; dicatat di data_edit_log.
+--  App v.76: tombol ✍️ di ✏️ Edit form kirim; PDF (aplikasi & drive-sync v19) menampilkan gambar TTD + jabatan + waktu.

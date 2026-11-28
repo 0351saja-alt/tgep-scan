@@ -58,7 +58,9 @@ async function buatDokumen(n = 4) {
           sb.from("v_kirim_preparasi").select("*").eq("kirim_id", p.ref_id).order("urut")]);
         if (e1 || !k) throw new Error(e1?.message ?? "Form kirim tidak ditemukan");
         const [ka, kb] = await kop();
-        pdf = await pdfKirim(k, it ?? [], ka, kb, PT, rev);
+        let ttd: Uint8Array | null = null; // v19: TTD elektronik pengirim
+        if (k.pengirim_ttd_at && k.pengirim_ttd_path) { const { data: blob } = await sb.storage.from("signatures").download(k.pengirim_ttd_path); ttd = blob ? new Uint8Array(await blob.arrayBuffer()) : null; }
+        pdf = await pdfKirim(k, it ?? [], ka, kb, PT, rev, ttd);
         nama = `FormKirimSample_${nm(k.no_kirim)}_${k.tanggal}${sfx}.pdf`;
       }
       const path = `${p.jenis === "DDR" ? "ddr" : "kirim"}/${p.ref_id}/${p.versi}.pdf`;

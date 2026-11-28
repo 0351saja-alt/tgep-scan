@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.75";
+const APP_VERSION = "2026-11-28.76";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -1993,7 +1993,7 @@ async function signDialog0(slot, namaDriller = "") {
         ${TS.length ? `<label style="margin-top:6px">TTD driller tersimpan</label><div class="row"><select id="tsP">${TS.map((t, i) => `<option value="${i}" ${t === cocok ? "selected" : ""}>${esc(t.nama)}</option>`).join("")}</select><button id="tsOk" style="flex:0;white-space:nowrap">✔ Pakai TTD ini</button></div>
           <div id="tsImg" style="margin-top:4px"></div>${cocok ? `<small>Terpilih otomatis sesuai nama driller di DDR (${esc(cocok.nama)}).</small>` : ""}` : ""}
         <div class="row" style="margin-top:6px"><button class="${TS.length ? "sec" : ""}" id="crt">✍️ Driller tanda tangan di layar ini${TS.length ? " (baru)" : ""}</button></div></div><p class="muted" style="margin:4px 0">atau driller yang sudah punya akun & TTD terdaftar:</p>` : ""}
-      <label>Nama</label><select id="sg"><option value="">— pilih —</option>${signers.map((s) => `<option value="${s.user_id}">${esc(s.full_name)}${s.title ? " · " + esc(s.title) : ""}</option>`).join("")}</select>
+      <label>Nama</label><select id="sg"><option value="">— pilih —</option>${signers.map((s) => `<option value="${s.user_id}" ${slot !== "DRILLER" && namaDriller && kunciNama(s.full_name) === kunciNama(namaDriller) ? "selected" : ""}>${esc(s.full_name)}${s.title ? " · " + esc(s.title) : ""}</option>`).join("")}</select>
       <label>PIN 6 angka</label><input id="pin" type="password" inputmode="numeric" maxlength="6">
       <div class="row" style="margin-top:10px"><button id="okp">Tanda tangan dengan PIN</button></div>
       <p class="muted" style="margin:10px 0 4px">atau</p><div class="row"><button class="sec" id="qr">Scan kartu QR</button></div>
@@ -2517,7 +2517,7 @@ const HOUR_CAT = [["DRILLING SYSTEM", ["CORING DRILLING", "OPEN HOLE DRILLING"]]
   ["WORKING", ["RIG SET UP/DOWN/PREPARATION", "HOLE CONDITION/CEMENTING", "REAMING, CASING, INSTALLING", "RUNNING/PULL UP/STUCK ROD", "HANDLING HOLE"]],
   ["ACTIVE/STANDBY", ["TRAVELLING CREW", "P2H+P5M", "DRILL SITE PREPARATION", "WEATHER/UNSAVE CONDITION", "WAITING WATER", "WAITING ACCESS", "SERVICE/MAINTENANCE", "GEOSERVICES/LOGGING"]],
   ["ISTIRAHAT", ["ISTIRAHAT SIANG"]]]; // bukan standby/perbaikan, bukan jam bor efektif
-const SLOT_LABEL = { DRILLER: "Driller", WELLSITE: "Well site", CLIENT: "Client representative" };
+const SLOT_LABEL = { DRILLER: "Driller", WELLSITE: "Well site", CLIENT: "Client representative", PENGIRIM: "pengirim sample" };
 // "12,30" "12.30" "12:30" "1230" "12" "7.5" → "12:30" / "07:00"; teks tak terbaca dikembalikan apa adanya (server juga merapikan, v21a)
 const bakuJam = (s) => { const t = String(s ?? "").trim().replace(/\s+/g, ""); if (!t) return "";
   let m = /^(\d{1,2})[:.,;](\d{1,2})$/.exec(t), h, mi;
@@ -6685,8 +6685,8 @@ async function sampelView(v) {
   const ambilBaris = () => [...$("#kpTb").querySelectorAll("tr[data-i]")].filter((tr) => tr.querySelector("[data-c]").checked).map((tr) => ({ sample_no: S[+tr.dataset.i].sample_no,
     berat_kg: tr.querySelector("[data-w]").value.trim(), no_kantong: tr.querySelector("[data-k]").value.trim(), catatan: tr.querySelector("[data-n]").value.trim() }));
   const daftar = async () => {
-    const { data } = await sb.from("kirim_preparasi").select("id,no_kirim,tanggal,tujuan,status,pengirim,penerima,jumlah_karung,no_segel,catatan,kirim_preparasi_item(count)").order("created_at", { ascending: false }).order("no_kirim", { ascending: false }).limit(50);
-    $("#kpL").innerHTML = (data ?? []).map((k) => `<li style="flex-wrap:wrap"><span class="pill ${k.status === "DITERIMA" ? "APPROVED" : k.status === "DIKIRIM" ? "NEEDS_REVIEW" : "ANTRE"}">${esc(k.status)}</span><span style="flex:1;min-width:180px"><b>${esc(k.no_kirim)}</b> · ${esc(k.tanggal)} · ${esc(k.tujuan)}<br><span class="muted">${k.catatan ? `${esc(k.catatan)} · ` : ""}${k.kirim_preparasi_item?.[0]?.count ?? 0} sample${k.jumlah_karung ? ` · ${k.jumlah_karung} karung` : ""}${k.no_segel ? ` · segel ${esc(k.no_segel)}` : ""}${k.pengirim ? ` · ${esc(k.pengirim)}` : ""}${k.penerima ? ` → ${esc(k.penerima)}` : ""}</span></span>
+    const { data } = await sb.from("kirim_preparasi").select("id,no_kirim,tanggal,tujuan,status,pengirim,penerima,jumlah_karung,no_segel,catatan,pengirim_ttd_at,kirim_preparasi_item(count)").order("created_at", { ascending: false }).order("no_kirim", { ascending: false }).limit(50);
+    $("#kpL").innerHTML = (data ?? []).map((k) => `<li style="flex-wrap:wrap"><span class="pill ${k.status === "DITERIMA" ? "APPROVED" : k.status === "DIKIRIM" ? "NEEDS_REVIEW" : "ANTRE"}">${esc(k.status)}</span><span style="flex:1;min-width:180px"><b>${esc(k.no_kirim)}</b> · ${esc(k.tanggal)} · ${esc(k.tujuan)}<br><span class="muted">${k.pengirim_ttd_at ? `✍️ TTD ${esc(k.pengirim ?? "")} · ` : "belum TTD · "}${k.catatan ? `${esc(k.catatan)} · ` : ""}${k.kirim_preparasi_item?.[0]?.count ?? 0} sample${k.jumlah_karung ? ` · ${k.jumlah_karung} karung` : ""}${k.no_segel ? ` · segel ${esc(k.no_segel)}` : ""}${k.pengirim ? ` · ${esc(k.pengirim)}` : ""}${k.penerima ? ` → ${esc(k.penerima)}` : ""}</span></span>
       <button class="sec" data-edk="${k.id}" style="flex:0;white-space:nowrap">✏️ Edit</button><button data-pdf="${k.id}" style="flex:0;white-space:nowrap">📄 PDF</button><button class="sec" data-x="${k.id}" style="flex:0">⬇ Excel</button>${k.status !== "DITERIMA" ? `<button class="sec" data-st="${k.id}" data-v="${k.status === "DRAFT" ? "DIKIRIM" : "DITERIMA"}" style="flex:0">Tandai ${k.status === "DRAFT" ? "dikirim" : "diterima"}</button>` : ""}</li>`).join("") || `<li class="muted">Belum ada.</li>`;
     $("#kpL").querySelectorAll("[data-x]").forEach((b) => (b.onclick = () => excelKirim(b.dataset.x)));
     $("#kpL").querySelectorAll("[data-pdf]").forEach((b) => (b.onclick = () => cetakKirim(b.dataset.pdf)));
@@ -6755,9 +6755,24 @@ async function editKirim(id, selesai) {
     <div class="row" style="flex-wrap:wrap">${H.map(([c, l, t]) => `<div style="flex:1 1 140px"><label>${l}</label><input data-h="${c}" type="${t ?? "text"}" value="${esc(k[c] ?? "")}"></div>`).join("")}
       <div style="flex:1 1 140px"><label>Status</label><select data-h="status">${["DRAFT", "DIKIRIM", "DITERIMA"].map((x) => `<option ${x === k.status ? "selected" : ""}>${x}</option>`).join("")}</select></div></div>
     <div class="tw" style="margin-top:8px"><table><tr><th>No</th><th>No. sample</th><th>Berat (kg)</th><th>No. kantong</th><th>Catatan</th></tr>${I.map((r, i) => `<tr><td><input data-i="${i}" data-c="urut" inputmode="numeric" value="${esc(r.urut ?? "")}" style="max-width:52px"></td><td>${esc(r.sample_no)}</td><td><input data-i="${i}" data-c="berat_kg" inputmode="decimal" value="${esc(n2(r.berat_kg))}" style="max-width:80px"></td><td><input data-i="${i}" data-c="no_kantong" value="${esc(r.no_kantong ?? "")}" style="max-width:130px"></td><td><input data-i="${i}" data-c="catatan" value="${esc(r.catatan ?? "")}"></td></tr>`).join("")}</table></div>
+    <div style="background:#EEF6F1;border-radius:10px;padding:8px 10px;margin-top:10px"><b>✍️ Tanda tangan pengirim</b><div id="ekT" style="margin-top:6px"></div></div>
     <label>Alasan perubahan *</label><input id="ekA" placeholder="mis. salah tulis berat / no. kantong / penerima">
     <div class="row" style="margin-top:10px"><button id="ekOk">Simpan perubahan</button><button class="sec" id="ekX" style="flex:0">Batal</button></div><div id="ekE" class="err"></div>`);
   const q = (x) => m.querySelector(x), E = (t) => (q("#ekE").textContent = t); q("#ekX").onclick = () => m.remove();
+  // v.76: tanda tangan elektronik pengirim (PIN / kartu QR dari menu TTD saya) — tampil di PDF form
+  const ttdBox = async () => { const T = q("#ekT");
+    if (k.pengirim_ttd_at) { const u = k.pengirim_ttd_path ? (await signedUrls("signatures", [k.pengirim_ttd_path]))[k.pengirim_ttd_path] : null;
+      T.innerHTML = `${u ? `<img src="${esc(u)}" alt="" style="height:60px;background:#fff;border:1px solid #ccd;border-radius:6px">` : ""}<div><b>${esc(k.pengirim ?? "")}</b>${k.pengirim_jabatan ? ` · ${esc(k.pengirim_jabatan)}` : ""}<br><span class="muted">Ditandatangani ${esc(fmtT(new Date(k.pengirim_ttd_at)))} · ${esc(k.pengirim_ttd_metode ?? "")}</span></div>
+        ${me?.role === "admin" ? `<button class="sec" id="ekTb" style="flex:0;margin-top:6px;padding:4px 10px">Batalkan TTD (admin)</button>` : ""}`;
+      const pi = m.querySelector('[data-h="pengirim"]'); if (pi) { pi.disabled = true; pi.title = "Sudah ditandatangani — batalkan TTD dulu untuk mengganti pengirim"; }
+      const b = q("#ekTb"); if (b) b.onclick = async () => { const al = prompt("Alasan membatalkan tanda tangan pengirim:"); if (!al?.trim()) return;
+        const { error: e } = await sb.rpc("batal_ttd_kirim_sample", { p_kirim: id, p_alasan: al.trim() }); if (e) return alert(e.message); toast("TTD pengirim dibatalkan"); m.remove(); selesai?.(); };
+      return; }
+    T.innerHTML = `<p class="muted" style="margin:0 0 6px">Belum ditandatangani. Pengirim memakai TTD terdaftarnya (menu <b>TTD saya</b>) dengan PIN atau kartu QR.</p><button id="ekTs" style="width:auto">✍️ Tanda tangan sebagai ${esc(k.pengirim || PENGIRIM_KIRIM)}</button>`;
+    q("#ekTs").onclick = async () => { const r = await signDialog0("PENGIRIM", k.pengirim || PENGIRIM_KIRIM); if (!r || !r.signer_id) return;
+      const { data, error: e } = await sb.rpc("sign_kirim_sample", { p_kirim: id, p_signer: r.signer_id, p_method: r.method, p_proof: r.proof });
+      if (e) return alert("Gagal tanda tangan: " + e.message); toast(`✓ Ditandatangani ${data?.nama ?? ""}`); m.remove(); selesai?.(); }; };
+  ttdBox().catch((e) => (q("#ekT").textContent = e.message));
   q("#ekOk").onclick = async () => { const al = q("#ekA").value.trim(); if (!al) { q("#ekA").focus(); return E("Tulis alasan perubahan."); }
     const hd = {}; m.querySelectorAll("[data-h]").forEach((x) => { const c = x.dataset.h, v0 = String(k[c] ?? ""), v = x.value.trim(); if (v !== v0) hd[c] = v === "" ? null : c === "jumlah_karung" ? Number(v) : v; });
     if ("jumlah_karung" in hd && hd.jumlah_karung !== null && !Number.isFinite(hd.jumlah_karung)) return E("Jumlah karung bukan angka.");
@@ -6776,6 +6791,7 @@ async function cetakKirim(id) {
   const [{ data: k }, { data: it }] = await Promise.all([sb.from("kirim_preparasi").select("*").eq("id", id).single(), sb.from("v_kirim_preparasi").select("*").eq("kirim_id", id).order("urut")]);
   if (!k) return alert("Form pengiriman tidak ditemukan.");
   const w = jendelaDok(`Form kirim sample ${k.no_kirim}`, "A4"), I = it ?? [];
+  const ttdU = k.pengirim_ttd_at && k.pengirim_ttd_path ? (await signedUrls("signatures", [k.pengirim_ttd_path]).catch(() => ({})))[k.pengirim_ttd_path] : null;
   const tglPanjang = (t) => { try { return new Date(t + "T12:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch { return t ?? ""; } };
   const n2 = (x) => (x == null || x === "" ? "" : fmtD(x)), tot = I.reduce((s, r) => s + (+r.berat_kg || 0), 0);
   const perTitik = Object.entries(I.reduce((m, r) => ((m[r.bhid] ??= []).push(r), m), {})).map(([b, xs]) => `${esc(b)} (${xs.length})`).join(", ");
@@ -6794,7 +6810,7 @@ async function cetakKirim(id) {
   ${I.map((r) => `<tr><td>${esc(r.urut)}</td><td>${esc(r.bhid ?? "")}</td><td>${esc(r.sample_no ?? "")}</td><td>${esc(r.sample_id ?? "")}</td><td class="r">${n2(r.depth_from)}</td><td class="r">${n2(r.depth_to)}</td><td>${esc(r.geozone_id ?? "")}</td><td class="r">${n2(r.core_length)}</td><td class="r">${n2(r.berat_kg)}</td><td>${esc(r.no_kantong ?? "")}</td><td>${esc(r.catatan ?? "")}</td></tr>`).join("")}
   <tr><th colspan="8" style="text-align:right">Total ${I.length} sample</th><th style="text-align:right">${n2(tot)}</th><th colspan="2"></th></tr></table>
   <div class="blok"><p>Luwuk, ${esc(tglPanjang(k.tanggal))}</p>
-  <div class="ttd"><div>Pengirim,<br><b>${KOP.pt}</b><div class="sp"></div><span class="nm">${esc(k.pengirim || "(......................)")}</span></div>
+  <div class="ttd"><div>Pengirim,<br><b>${KOP.pt}</b><div class="sp">${ttdU ? `<img src="${esc(ttdU)}" alt="" style="height:62px;max-width:90%;object-fit:contain">` : ""}</div><span class="nm">${esc(k.pengirim || "(......................)")}</span>${k.pengirim_jabatan ? `<br>${esc(k.pengirim_jabatan)}` : ""}${k.pengirim_ttd_at ? `<br><span class="m" style="font-size:9px">Ditandatangani elektronik ${esc(fmtT(new Date(k.pengirim_ttd_at)))}</span>` : ""}</div>
     <div>Penerima,<br><b>${esc(k.tujuan || TUJUAN_KIRIM)}</b><div class="sp"></div><span class="nm">${esc(k.penerima || "(......................)")}</span></div></div></div>
   </td></tr></tbody></table>
   <div class="kaki"><img src="${KOP_FOOTER}"></div>

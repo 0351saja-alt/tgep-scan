@@ -159,7 +159,7 @@ export async function pdfDDR(d: any, sig: any[], ttdBytes: Record<string, Uint8A
 }
 
 // ---------------- Form kirim sample ----------------
-export async function pdfKirim(kp: any, items: any[], kopAtas: Uint8Array, kopBawah: Uint8Array, pt: string, revisi: number) {
+export async function pdfKirim(kp: any, items: any[], kopAtas: Uint8Array, kopBawah: Uint8Array, pt: string, revisi: number, ttd: Uint8Array | null = null) {
   const { doc, k } = await siapkan(`Form Kirim Sample ${kp.no_kirim}`, true);
   const [ia, ib] = [await gambar(doc, kopAtas), await gambar(doc, kopBawah)];
   const hA = ia ? (A4[0] * ia.height) / ia.width : 0, hB = ib ? (A4[0] * ib.height) / ib.width : 0;
@@ -180,16 +180,20 @@ export async function pdfKirim(kp: any, items: any[], kopAtas: Uint8Array, kopBa
   k.baris(["No", "Titik", "No. sample", "ID", "From (m)", "To (m)", "Zona", "Core (m)", "Berat (kg)", "No. kantong", "Catatan"], KD, { kepala: true, sz: 7.5 });
   for (const r of items) k.baris([String(r.urut ?? ""), r.bhid ?? "", r.sample_no ?? "", r.sample_id ?? "", dk(r.depth_from), dk(r.depth_to), r.geozone_id ?? "", dk(r.core_length), dk(r.berat_kg), r.no_kantong ?? "", r.catatan ?? ""], KD, { sz: 7.5 });
   k.baris([`Total ${items.length} sample`, dk(tot.toFixed(2)), ""], [{ w: 8.1, al: "r" }, { w: 0.9, al: "r" }, { w: 2.3 }], { tebal: [true, true, false], sz: 7.5 });
-  k.y -= 14; k.cukup(130);
+  k.y -= 14; k.cukup(150);
   k.teks(`Luwuk, ${tglPanjang(kp.tanggal)}`, { sz: 10, jarak: 6 });
-  const y0 = k.y, lb = k.lebar / 2;
+  const y0 = k.y, lb = k.lebar / 2, ttdImg = await gambar(doc, ttd);
+  if (ttdImg) { const sc = Math.min((lb - 40) / ttdImg.width, 52 / ttdImg.height), w = ttdImg.width * sc, h = ttdImg.height * sc;
+    k.pg.drawImage(ttdImg, { x: k.m + lb / 2 - w / 2, y: y0 - 88, width: w, height: h }); }
   [["Pengirim,", pt, kp.pengirim], ["Penerima,", kp.tujuan || "PT NUSA PRIMA GEMILANG", kp.penerima]].forEach(([a, b, n], i) => {
     const cx = k.m + i * lb + lb / 2, c = (t: string, y: number, font: any, sz: number) => { const s = aman(t); k.pg.drawText(s, { x: cx - font.widthOfTextAtSize(s, sz) / 2, y, size: sz, font }); };
     c(a, y0 - 10, k.f, 10); c(b, y0 - 23, k.fb, 10);
     const nm = n || "(......................)"; c(nm, y0 - 95, k.fb, 10);
     const w = k.fb.widthOfTextAtSize(aman(nm), 10); k.pg.drawLine({ start: { x: cx - w / 2, y: y0 - 97 }, end: { x: cx + w / 2, y: y0 - 97 }, thickness: 0.6 });
   });
-  k.y = y0 - 110;
+  if (kp.pengirim_jabatan) { const s = aman(kp.pengirim_jabatan); k.pg.drawText(s, { x: k.m + lb / 2 - k.f.widthOfTextAtSize(s, 9) / 2, y: y0 - 108, size: 9, font: k.f }); }
+  if (kp.pengirim_ttd_at) { const s = aman(`Ditandatangani elektronik ${jamWIB(kp.pengirim_ttd_at)} WIB`); k.pg.drawText(s, { x: k.m + lb / 2 - k.fi.widthOfTextAtSize(s, 7) / 2, y: y0 - 118, size: 7, font: k.fi, color: ABU }); }
+  k.y = y0 - 128;
   k.teks(`Dokumen dari database X-Terra - ID ${kp.id} - PDF dibuat otomatis ${jamWIB(new Date())} WIB.`, { sz: 6.5, i: true, warna: ABU });
   return await doc.save();
 }
