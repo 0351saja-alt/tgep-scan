@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.72";
+const APP_VERSION = "2026-11-28.73";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -6658,7 +6658,8 @@ async function sampelView(v) {
   // v.67: dropdown titik = semua titik terdaftar (lubang, DDR, logging, dst.); yang punya sample belum dikirim tampil di atas dengan jumlahnya
   const { data: H } = await sb.from("v_sample_belum_kirim").select("bhid").limit(5000);
   const nB = (H ?? []).reduce((m, x) => ((m[x.bhid] = (m[x.bhid] ?? 0) + 1), m), {});
-  const ada = Object.keys(nB).sort(urutBH), lain = [...new Set(daftarBHLokal().map(([b]) => b).concat(rencanaLokal().map((r) => r.bhid)))].filter((b) => b && !nB[b]).sort(urutBH);
+  const RDk = await petaRedrill().catch(() => ({})); // v.73: lubang lama yang sudah di-redrill tidak ditampilkan (sample-nya dari lubang redrill)
+  const ada = Object.keys(nB).filter((b) => !RDk[b]).sort(urutBH), lain = [...new Set(daftarBHLokal().map(([b]) => b).concat(rencanaLokal().map((r) => r.bhid)))].filter((b) => b && !nB[b] && !RDk[b]).sort(urutBH);
   $("#kpB").innerHTML = `<option value="">— pilih titik —</option>` + (ada.length ? `<optgroup label="Ada sample belum dikirim">${ada.map((b) => `<option value="${esc(b)}">${esc(b)} (${nB[b]} sample)</option>`).join("")}</optgroup>` : "")
     + (lain.length ? `<optgroup label="Titik lain (semua sudah dikirim / logging belum masuk)">${lain.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join("")}</optgroup>` : "");
   if (ada.length) $("#kpB").value = ada[0];
