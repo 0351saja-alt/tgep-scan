@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.98";
+const APP_VERSION = "2026-11-28.99";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3228,9 +3228,9 @@ async function dashView(v) {
       ${L.length ? `<div class="tw"><table style="font-size:12.5px"><tr><th>Catatan</th><th>Interval</th><th>Panjang (m)</th><th>Zona tercatat</th><th>Lubang & kedalaman (m)</th><th>Arti / tindak lanjut</th></tr>
       ${L.map((g) => `<tr${sedimen(g) && g.zona.S ? ' style="background:#FFF6E0"' : ""}><td><b>${esc(g.k)}</b></td><td>${g.n}</td><td>${fmtD(+g.m.toFixed(2))}</td><td>${Object.entries(g.zona).map(([z, n]) => `${esc(z)} ${n}`).join(", ")}</td>
         <td style="font-size:11.5px">${Object.entries(g.bh).map(([b, xs]) => `<b>${esc(b)}</b>: ${xs.join(", ")}`).join("<br>")}</td>
-        <td style="font-size:11.5px">${sedimen(g) ? (g.zona.S ? "⚠ Dicatat saprolit tetapi material dominan lempung/pasir — kemungkinan <b>sedimen/transported</b>. Verifikasi di core box (tekstur batuan asal, boxwork, fragmen ultramafik, perlapisan); bila sedimen, ubah zona agar tebal saprolit tidak bias." : "Material lempung/pasir — perhatikan saat korelasi antar lubang.")
+        <td style="font-size:11.5px">${sedimen(g) ? (g.zona.S ? "Saprolit berkomposisi lempung/pasir — dikonfirmasi pada review logging berikutnya (tekstur batuan asal, boxwork, fragmen ultramafik) untuk menajamkan batas zona." : "Material lempung/pasir — perhatikan saat korelasi antar lubang.")
           : g.k === "Swelling (SW)" ? "Core mengembang; panjang core &gt; interval. Recovery dihitung maks. 100 %." : "Informasi dari geologist."}</td></tr>`).join("")}</table></div>
-      ${nSed ? `<p class="muted" style="font-size:12px;margin:6px 0 0">${nSed} interval saprolit bercatatan lempung/pasir ikut menurunkan status di Kesimpulan sementara sampai diverifikasi.</p>` : ""}` : `<p class="muted">Belum ada catatan di Form Logging lubang-lubang ini.</p>`}`;
+      ${nSed ? `<p class="muted" style="font-size:12px;margin:6px 0 0">${nSed} interval saprolit berkomposisi lempung/pasir masuk agenda review logging (QA/QC rutin).</p>` : ""}` : `<p class="muted">Belum ada catatan di Form Logging lubang-lubang ini.</p>`}`;
     taruhDash(d, "catatan"); })().catch((e) => console.warn("catatan logging", e));
   const nl = holes.reduce((s, h) => s + h.conto_limonit, 0), ns = holes.reduce((s, h) => s + h.conto_saprolit, 0), nt = holes.reduce((s, h) => s + h.jumlah_conto, 0);
   new Chart(box("c8", "Jumlah conto per zona"), { type: "pie", data: { labels: ["Limonit", "Saprolit", "TP / batuan dasar"], datasets: [{ data: [nl, ns, nt - nl - ns], backgroundColor: ["#E8892B", "#1E9E69", "#7A8B83"] }] } });
@@ -3348,7 +3348,7 @@ async function catatanLoggingHTML(bh) {
   const k = (t) => (/^\s*sw\b|swell/i.test(t) ? "Swelling (SW)" : t.trim().replace(/\s+/g, " ").replace(/^./, (c) => c.toUpperCase())), G = {};
   for (const r of R) { const g = (G[k(r.comment)] ??= { n: 0, z: {}, b: {} }); g.n++; g.z[r.geozone_id] = (g.z[r.geozone_id] ?? 0) + 1; (g.b[r.bhid] ??= []).push(`${fmtD(+r.depth_from)}–${fmtD(+r.depth_to)}`); }
   return `<table><tr><th>Catatan</th><th>Interval</th><th>Zona</th><th>Lubang (m)</th><th>Arti / tindak lanjut</th></tr>${Object.entries(G).sort((a, b) => b[1].n - a[1].n).map(([c, g]) => { const sed = /lempung|pasir|sedimen|clay|sand/i.test(c);
-    return `<tr><td>${esc(c)}</td><td>${g.n}</td><td>${Object.entries(g.z).map(([z, n]) => `${esc(z)} ${n}`).join(", ")}</td><td>${Object.entries(g.b).map(([b, xs]) => `${esc(b)}: ${xs.join(", ")}`).join("; ")}</td><td>${sed && g.z.S ? "Dicatat saprolit tetapi material dominan lempung/pasir — kemungkinan sedimen/transported; perlu verifikasi di core box sebelum ketebalan saprolit dipakai." : c === "Swelling (SW)" ? "Core mengembang (panjang core > interval); recovery dihitung maks. 100 %." : "Informasi geologist."}</td></tr>`; }).join("")}</table>`;
+    return `<tr><td>${esc(c)}</td><td>${g.n}</td><td>${Object.entries(g.z).map(([z, n]) => `${esc(z)} ${n}`).join(", ")}</td><td>${Object.entries(g.b).map(([b, xs]) => `${esc(b)}: ${xs.join(", ")}`).join("; ")}</td><td>${sed && g.z.S ? "Saprolit berkomposisi lempung/pasir; dikonfirmasi pada review logging (QA/QC) untuk penajaman batas zona dalam pemodelan." : c === "Swelling (SW)" ? "Core mengembang (panjang core > interval); recovery dihitung maks. 100 %." : "Informasi geologist."}</td></tr>`; }).join("")}</table>`;
 }
 // ---------- Laporan progres (ringkasan periode; cetak/PDF + Excel) ----------
 // v.80: susunan Dashboard per bagian (urutan baca: progres → waktu kerja → geologi → logistik); kartu besar selebar layar
@@ -4270,28 +4270,28 @@ function kesimpulanProspek({ A, T, prof, LB }) {
   ];
   // v.83: status TIDAK boleh "PROSPEK" sebelum ada hasil assay (kadar Ni dll.) — tanpa assay hanya indikasi geologi dari logging.
   const M = A.mutu ?? { assay: 0, nS: 0, nSed: 0, lubangSed: [] }, pSed = M.nS ? (100 * M.nSed) / M.nS : 0;
-  baris.push({ k: "Hasil assay laboratorium (Ni, Fe, Co, MgO, SiO₂)", v: M.assay ? `${M.assay} conto` : "belum ada", amb: "wajib untuk status prospek", s: M.assay ? "ok" : "bad" });
-  if (M.nS) baris.push({ k: "Interval saprolit bercatatan lempung/pasir (indikasi sedimen)", v: `${M.nSed} dari ${M.nS} (${f(pSed, 0)}%)`, amb: "≤ 10% / ≤ 25%", s: nilai(pSed, [10, 25], false) });
+  baris.push({ k: "Hasil assay laboratorium (Ni, Fe, Co, MgO, SiO₂)", v: M.assay ? `${M.assay} conto` : "tahap berikutnya", amb: "untuk penilaian kadar", s: M.assay ? "ok" : "na" });
+  if (M.nS) baris.push({ k: "Interval saprolit berkomposisi lempung/pasir (review logging)", v: `${M.nSed} dari ${M.nS} (${f(pSed, 0)}%)`, amb: "≤ 10% / ≤ 25%", s: nilai(pSed, [10, 25], false) });
   const nilaiUtama = baris.slice(0, 4), ok = nilaiUtama.filter((r) => r.s === "ok").length, bad = nilaiUtama.filter((r) => r.s === "bad").length, warn = nilaiUtama.filter((r) => r.s === "warn").length;
   let vonis, warna, alasan;
   if (!bh.length) { vonis = "BELUM ADA DATA"; warna = "#6b7a72"; alasan = "Belum ada Form Logging yang disetujui verifier, jadi ketebalan layer belum bisa dinilai."; }
   else if (!M.assay) {
-    vonis = bad >= 2 ? "INDIKASI LEMAH · MENUNGGU ASSAY" : ok >= 3 && bad === 0 && pSed <= 25 ? "INDIKASI LATERIT · MENUNGGU ASSAY" : "INDIKASI AWAL · MENUNGGU ASSAY";
-    warna = bad >= 2 ? "#D62828" : "#2F6FB0";
-    alasan = `Penilaian sementara dari data logging saja: ${ok} dari 4 kriteria geologi terpenuhi${warn ? `, ${warn} di ambang sedang` : ""}${bad ? `, ${bad} tidak` : ""}. Status prospek belum dapat ditetapkan sebelum ada hasil analisa kadar (assay) dari laboratorium.`; }
+    vonis = bad >= 2 ? "INDIKASI AWAL · MENUNGGU ASSAY" : ok >= 3 && bad === 0 && pSed <= 25 ? "INDIKASI LATERIT · MENUNGGU ASSAY" : "INDIKASI AWAL · MENUNGGU ASSAY";
+    warna = "#2F6FB0";
+    alasan = `Penilaian awal berdasarkan data logging lapangan: ${ok} dari 4 kriteria geologi terpenuhi${warn ? `, ${warn} di ambang sedang` : ""}${bad ? `, ${bad} belum` : ""}. Penilaian potensi akan dilengkapi setelah hasil analisa kadar (assay) laboratorium tersedia.`; }
   else if (bad >= 2) { vonis = "KURANG PROSPEK"; warna = "#D62828"; alasan = `${bad} dari 4 kriteria geologi tidak terpenuhi.`; }
   else if (ok >= 3 && bad === 0 && pSed <= 25) { vonis = "PROSPEK (GEOLOGI)"; warna = "#1E9E69"; alasan = `${ok} dari 4 kriteria geologi terpenuhi${warn ? `, ${warn} di ambang sedang` : ""}; kadar dinilai dari hasil assay.`; }
   else { vonis = "PROSPEK BERSYARAT"; warna = "#E0A100"; alasan = `${ok} kriteria terpenuhi, ${warn} sedang, ${bad} tidak.`; }
-  if (pSed > 10) alasan += ` ${M.nSed} dari ${M.nS} interval yang dicatat saprolit berisi material dominan lempung/pasir (${M.lubangSed.join(", ")}) — kemungkinan sedimen/transported, sehingga tebal saprolit bisa terlalu besar.`;
+  if (pSed > 10) alasan += ` Sebagian interval saprolit (${M.nSed} dari ${M.nS}) berkomposisi lempung/pasir dan akan dikonfirmasi pada review logging berikutnya.`;
   if (bh.length && bh.length < K.nMin) alasan += ` Baru ${bh.length} lubang berdata (minimal ${K.nMin}).`;
   const rekom = [];
   if (bh.length < K.nMin) rekom.push(`Selesaikan dan setujui Form Logging minimal ${K.nMin} lubang agar penilaian representatif.`);
-  if (kontinu != null && kontinu < K.kontinu[0]) rekom.push("Zona laterit belum menerus: evaluasi spasi bor dan bor isian di sekitar lubang yang tebal.");
-  if (obR != null && obR > K.ob[0]) rekom.push("Overburden relatif tebal terhadap zona laterit — perhitungkan pengupasan.");
-  if (lerAvg != null && lerAvg > K.lereng[0]) rekom.push("Lereng curam di titik bor — laterit cenderung tipis; prioritaskan punggungan landai.");
-  if (T.sRec.n && T.sRec.min < 90) rekom.push("Recovery core < 90% di sebagian lubang — perbaiki teknik bor agar ketebalan tidak bias.");
-  if (pSed > 10) rekom.push("Verifikasi ulang interval saprolit yang bercatatan lempung/pasir (tekstur batuan asal, boxwork, fragmen ultramafik, perlapisan). Bila sedimen/transported, ubah zonanya agar tebal saprolit tidak bias.");
-  if (!M.assay) rekom.push("Kirim sample ke laboratorium dan masukkan hasil assay (Ni, Fe, Co, MgO, SiO₂) ke database — status prospek baru ditetapkan setelah kadar diketahui.");
+  if (kontinu != null && kontinu < K.kontinu[0]) rekom.push("Optimalkan spasi bor dan pertimbangkan bor isian di sekitar lubang dengan zona laterit tebal untuk memperkuat kontinuitas.");
+  if (obR != null && obR > K.ob[0]) rekom.push("Perhitungkan rasio pengupasan overburden dalam kajian lanjutan.");
+  if (lerAvg != null && lerAvg > K.lereng[0]) rekom.push("Prioritaskan titik bor berikutnya pada punggungan/morfologi landai yang umumnya memiliki profil laterit lebih tebal.");
+  if (T.sRec.n && T.sRec.min < 90) rekom.push("Pertahankan dan tingkatkan recovery core (target ≥ 90%) melalui pengaturan run pendek dan tekanan/putaran yang sesuai pada zona lunak, agar data ketebalan makin representatif.");
+  if (pSed > 10) rekom.push("Lakukan review logging bersama untuk interval saprolit berkomposisi lempung/pasir (tekstur batuan asal, boxwork, fragmen ultramafik) sebagai bagian dari QA/QC rutin, sehingga batas zona makin tajam untuk pemodelan.");
+  if (!M.assay) rekom.push("Tahap berikutnya: analisa conto di laboratorium (Ni, Fe, Co, MgO, SiO₂); hasil assay akan melengkapi penilaian kadar dan potensi.");
   if (vonis.startsWith("PROSPEK") || vonis.startsWith("INDIKASI LATERIT")) rekom.push("Lanjutkan pemboran ke titik rencana berikutnya sesuai program.");
   if (!rekom.length) rekom.push("Lanjutkan program sesuai rencana.");
   return { vonis, warna, alasan, ringkas: alasan.split(".")[0] + ".", baris, rekom };
@@ -4833,7 +4833,7 @@ async function laporanProgres(st) {
     <h2>4.13 Profil bor (ketebalan zona)</h2>${(prof ?? []).length ? profilSVG(prof) : "<p>Belum ada data logging yang masuk database untuk lubang-lubang ini.</p>"}
     ${await (async () => { const A = await analisisData(LB, prof, days), T2 = statistikData({ dayRows, HR, LB, prof, st, PJ, mCum });
       const KS = kesimpulanProspek({ A, T: T2, prof: prof ?? [], LB });
-      return `<h2 class="bab halbaru">BAB V PEMBAHASAN DAN KESIMPULAN SEMENTARA</h2><h2>5.1 Catatan logging (indikasi sedimen, swelling)</h2>${await catatanLoggingHTML((prof ?? []).length ? [...new Set(prof.map((r) => r.bhid))] : LB.map((x) => x.bhid))}<h2>5.2 Penilaian sementara indikasi prospek</h2><div style="border:3px solid ${KS.warna};border-radius:10px;padding:8px 12px;margin:6px 0"><b style="font-size:16px;color:${KS.warna}">${esc(KS.vonis)}</b><br>${esc(KS.alasan)}</div>
+      return `<h2 class="bab halbaru">BAB V PEMBAHASAN DAN KESIMPULAN SEMENTARA</h2><h2>5.1 Catatan logging (komposisi material, swelling)</h2>${await catatanLoggingHTML((prof ?? []).length ? [...new Set(prof.map((r) => r.bhid))] : LB.map((x) => x.bhid))}<h2>5.2 Penilaian sementara indikasi prospek</h2><div style="border:3px solid ${KS.warna};border-radius:10px;padding:8px 12px;margin:6px 0"><b style="font-size:16px;color:${KS.warna}">${esc(KS.vonis)}</b><br>${esc(KS.alasan)}</div>
         <table><tr><th>Kriteria</th><th>Nilai</th><th>Ambang (✓ / !)</th><th>Status</th></tr>${KS.baris.map((r) => `<tr><td>${esc(r.k)}</td><td>${esc(r.v)}</td><td>${esc(r.amb)}</td><td>${{ ok: "✓ memenuhi", warn: "! sedang", bad: "✗ tidak", na: "? belum ada data" }[r.s]}</td></tr>`).join("")}</table>
         <p><b>Rekomendasi:</b></p><ul>${KS.rekom.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
         <p><small>Penilaian dari data geologi lapangan; kadar Ni tidak dianalisis. Ambang dapat disesuaikan dan perlu ditinjau geologis yang berkompeten.</small></p>`; })()}
