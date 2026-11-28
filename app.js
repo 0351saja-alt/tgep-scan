@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.113";
+const APP_VERSION = "2026-11-28.114";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -2429,8 +2429,7 @@ async function ujiDetail(bhid, fokus = null) {
   const P = (I ?? []).filter(bad), lb = L ?? {}, bolehSinkron = isStaff();
   // v.113: 🔄 Sinkronkan — core DDR mengikuti Form Logging (meter LOSS di DDR disesuaikan) setelah konfirmasi; swelling: DDR maksimal = interval
   const swell = (r) => n(r.core_log_m) > n(r.interval_m) + 0.005 && n(r.core_ddr_m) >= n(r.interval_m) - 0.005;
-  const tombolSinkron = (r) => !/CORE BEDA/.test(r.chk_uji) ? "" : swell(r) ? `<p class="muted" style="margin:4px 0;font-size:12px">ℹ️ Swelling: core logging (${f2(r.core_log_m)} m) lebih panjang dari interval (${f2(r.interval_m)} m); DDR sudah maksimal 100 % — tidak perlu disinkronkan.</p>`
-    : bolehSinkron ? `<button data-sk="${n(r.depth_from)}|${n(r.depth_to)}" style="width:auto;margin-top:6px">🔄 Sinkronkan — DDR ikuti Form Logging (${f2(r.core_ddr_m)} → ${f2(Math.min(n(r.core_log_m), n(r.interval_m)))} m)</button>` : "";
+  const tombolSinkron = (r) => !/CORE BEDA/.test(r.chk_uji) || !bolehSinkron ? "" : `${swell(r) || n(r.core_log_m) > n(r.interval_m) + 0.005 ? `<p class="muted" style="margin:4px 0;font-size:12px">ℹ️ Swelling: core logging (${f2(r.core_log_m)} m) lebih panjang dari interval (${f2(r.interval_m)} m) → setelah sinkron recovery DDR ${f2((100 * n(r.core_log_m)) / n(r.interval_m))} % (&gt; 100 %).</p>` : ""}<button data-sk="${n(r.depth_from)}|${n(r.depth_to)}" style="width:auto;margin-top:6px">🔄 Sinkronkan — DDR ikuti Form Logging (${f2(r.core_ddr_m)} → ${f2(n(r.core_log_m))} m)</button>`;
   const ddrTbl = (a, b) => { const rs = runs(a, b); return rs.length ? `<table style="font-size:12px;margin-top:4px"><tr><th>DDR</th><th>Run (m)</th><th>Meter</th><th>Core</th><th></th></tr>${rs.map((x) => `<tr><td>${esc(x.tanggal)} · ${x.shift === "MALAM" ? "Night" : "Day"} · ${esc(x.rig)}</td><td>${f2(x.dari_m)}–${f2(x.sampai_m)}</td><td>${f2(x.meter)}</td><td>${f2(x.core_m)}</td><td><button class="sec" data-dd="${x.ddr_id}" style="padding:2px 8px;width:auto">Lihat DDR</button></td></tr>`).join("")}</table>` : `<p class="err" style="margin:4px 0">Tidak ada run DDR yang mencakup interval ini.</p>`; };
   const jelas = (r) => { const cl = n(r.core_log_m), cd = n(r.core_ddr_m), d = n(r.selisih_core_m);
     if (/CORE BEDA/.test(r.chk_uji)) return `Form Logging mencatat core <b>${f2(cl)} m</b>, DDR (jumlah run di interval ini) <b>${f2(cd)} m</b> → selisih <b>${d > 0 ? "+" : ""}${f2(d)} m</b> (${d > 0 ? "logging lebih panjang dari DDR" : "DDR lebih panjang dari logging"}). Periksa panjang core di core box: salah satu dokumen perlu dikoreksi.`;
@@ -2448,7 +2447,7 @@ async function ujiDetail(bhid, fokus = null) {
       ${(I ?? []).map((r) => `<tr style="${bad(r) ? "background:#F6C9C3" : ""}"><td>${f2(r.depth_from)}</td><td>${f2(r.depth_to)}</td><td>${esc(r.geozone_id ?? "")}</td><td>${f2(r.core_log_m)}</td><td>${f2(r.core_ddr_m)}</td><td>${f2(r.selisih_core_m)}</td><td>${esc(r.chk_uji ?? "")}</td></tr>`).join("")}</table></div></details>`;
   box.querySelectorAll("[data-dd]").forEach((b) => (b.onclick = () => printDDR(b.dataset.dd)));
   box.querySelectorAll("[data-sk]").forEach((b) => (b.onclick = async () => { const [a, z] = b.dataset.sk.split("|").map(Number), r = P.find((x) => Math.abs(n(x.depth_from) - a) < 1e-6);
-    const al = prompt(`Konfirmasi sinkron ${bhid} ${fmtD(a)}–${fmtD(z)} m\n\nCore DDR ${f2(r?.core_ddr_m)} m akan diubah menjadi ${f2(Math.min(n(r?.core_log_m), n(r?.interval_m)))} m mengikuti Form Logging (meter loss di run DDR disesuaikan). Perubahan tercatat di riwayat DDR.\n\nTulis alasan / hasil cek core box:`, "Sudah dicek di core box, panjang core sesuai Form Logging");
+    const al = prompt(`Konfirmasi sinkron ${bhid} ${fmtD(a)}–${fmtD(z)} m\n\nCore DDR ${f2(r?.core_ddr_m)} m akan diubah menjadi ${f2(n(r?.core_log_m))} m mengikuti Form Logging (meter loss di run DDR disesuaikan). Perubahan tercatat di riwayat DDR.\n\nTulis alasan / hasil cek core box:`, "Sudah dicek di core box, panjang core sesuai Form Logging");
     if (!al?.trim()) return; b.disabled = true; b.textContent = "Menyinkronkan…";
     try { const { data, error } = await sb.rpc("sinkron_core_ddr", { p_bhid: bhid, p_from: a, p_to: z, p_alasan: al.trim() }); if (error) throw error;
       toast(`✓ ${data?.diubah ?? 0} run DDR disesuaikan${(data?.run ?? []).length ? ": " + data.run.map((x) => `${x.run} m core ${fmtD(+x.lama)}→${fmtD(+x.baru)}`).join(", ") : ""}${Math.abs(+data?.sisa || 0) > 0.005 ? ` · sisa ${fmtD(+data.sisa)} m perlu disesuaikan manual` : ""}`);
@@ -3268,7 +3267,7 @@ async function dashView(v) {
       ${L.map((g) => `<tr${sedimen(g) && g.zona.S ? ' style="background:#FFF6E0"' : ""}><td><b>${esc(g.k)}</b></td><td>${g.n}</td><td>${fmtD(+g.m.toFixed(2))}</td><td>${Object.entries(g.zona).map(([z, n]) => `${esc(z)} ${n}`).join(", ")}</td>
         <td style="font-size:11.5px">${Object.entries(g.bh).map(([b, xs]) => `<b>${esc(b)}</b>: ${xs.join(", ")}`).join("<br>")}</td>
         <td style="font-size:11.5px">${sedimen(g) ? (g.zona.S ? "Saprolit berkomposisi lempung/pasir — dikonfirmasi pada review logging berikutnya (tekstur batuan asal, boxwork, fragmen ultramafik) untuk menajamkan batas zona." : "Material lempung/pasir — perhatikan saat korelasi antar lubang.")
-          : g.k === "Swelling (SW)" ? "Core mengembang; panjang core &gt; interval. Recovery dihitung maks. 100 %." : "Informasi dari geologist."}</td></tr>`).join("")}</table></div>
+          : g.k === "Swelling (SW)" ? "Core mengembang (swelling); panjang core &gt; interval, recovery &gt; 100 %." : "Informasi dari geologist."}</td></tr>`).join("")}</table></div>
       ${nSed ? `<p class="muted" style="font-size:12px;margin:6px 0 0">${nSed} interval saprolit berkomposisi lempung/pasir masuk agenda review logging (QA/QC rutin).</p>` : ""}` : `<p class="muted">Belum ada catatan di Form Logging lubang-lubang ini.</p>`}`;
     taruhDash(d, "catatan"); })().catch((e) => console.warn("catatan logging", e));
   const nl = holes.reduce((s, h) => s + h.conto_limonit, 0), ns = holes.reduce((s, h) => s + h.conto_saprolit, 0), nt = holes.reduce((s, h) => s + h.jumlah_conto, 0);
@@ -3390,7 +3389,7 @@ async function catatanLoggingHTML(bh) {
   const k = (t) => (/^\s*sw\b|swell/i.test(t) ? "Swelling (SW)" : t.trim().replace(/\s+/g, " ").replace(/^./, (c) => c.toUpperCase())), G = {};
   for (const r of R) { const g = (G[k(r.comment)] ??= { n: 0, z: {}, b: {} }); g.n++; g.z[r.geozone_id] = (g.z[r.geozone_id] ?? 0) + 1; (g.b[r.bhid] ??= []).push(`${fmtD(+r.depth_from)}–${fmtD(+r.depth_to)}`); }
   return `<table><tr><th>Catatan</th><th>Interval</th><th>Zona</th><th>Lubang (m)</th><th>Arti / tindak lanjut</th></tr>${Object.entries(G).sort((a, b) => b[1].n - a[1].n).map(([c, g]) => { const sed = /lempung|pasir|sedimen|clay|sand/i.test(c);
-    return `<tr><td>${esc(c)}</td><td>${g.n}</td><td>${Object.entries(g.z).map(([z, n]) => `${esc(z)} ${n}`).join(", ")}</td><td>${Object.entries(g.b).map(([b, xs]) => `${esc(b)}: ${xs.join(", ")}`).join("; ")}</td><td>${sed && g.z.S ? "Saprolit berkomposisi lempung/pasir; dikonfirmasi pada review logging (QA/QC) untuk penajaman batas zona dalam pemodelan." : c === "Swelling (SW)" ? "Core mengembang (panjang core > interval); recovery dihitung maks. 100 %." : "Informasi geologist."}</td></tr>`; }).join("")}</table>`;
+    return `<tr><td>${esc(c)}</td><td>${g.n}</td><td>${Object.entries(g.z).map(([z, n]) => `${esc(z)} ${n}`).join(", ")}</td><td>${Object.entries(g.b).map(([b, xs]) => `${esc(b)}: ${xs.join(", ")}`).join("; ")}</td><td>${sed && g.z.S ? "Saprolit berkomposisi lempung/pasir; dikonfirmasi pada review logging (QA/QC) untuk penajaman batas zona dalam pemodelan." : c === "Swelling (SW)" ? "Core mengembang (swelling, panjang core > interval); recovery > 100 %." : "Informasi geologist."}</td></tr>`; }).join("")}</table>`;
 }
 // ---------- Laporan progres (ringkasan periode; cetak/PDF + Excel) ----------
 // v.80: susunan Dashboard per bagian (urutan baca: progres → waktu kerja → geologi → logistik); kartu besar selebar layar
@@ -3453,7 +3452,7 @@ async function statistikConto(Chart, box, bhids) {
   const ZN = Object.fromEntries((ZONA ?? []).map((z) => [z.code, z])), nama = (k) => (k ? ZN[k]?.nama ?? (BAKU[k] ? `${BAKU[k]} (${k})` : k) : "(tanpa zona)"), warna = (k, i) => ZN[k]?.warna ?? ["#7A8B83", "#57B8C9", "#8E5BB5", "#D4B12A"][i % 4];
   const URUT = { TP: 1, SED: 2, L: 3, LIM: 3, S: 4, SAP: 4, BZ: 5, BD: 6, BR: 6 };
   const kunci = [...new Set(G.map((g) => g.zone ?? ""))].sort((a, b) => ((ZN[a]?.urut ?? URUT[a] ?? 99) - (ZN[b]?.urut ?? URUT[b] ?? 99)) || a.localeCompare(b));
-  const panjang = (g) => +g.to - +g.from, tengah = (g) => (+g.to + +g.from) / 2, rec = (g) => (g.recovery_pct != null ? +g.recovery_pct : g.core_length != null && panjang(g) > 0 ? Math.min(100, (100 * +g.core_length) / panjang(g)) : NaN);
+  const panjang = (g) => +g.to - +g.from, tengah = (g) => (+g.to + +g.from) / 2, rec = (g) => (g.recovery_pct != null ? +g.recovery_pct : g.core_length != null && panjang(g) > 0 ? (100 * +g.core_length) / panjang(g) : NaN); // v.114: swelling > 100 %
   const S = kunci.map((k, i) => { const xs = G.filter((g) => (g.zone ?? "") === k); return { k, nama: nama(k), warna: warna(k, i), xs, n: xs.length, lubang: new Set(xs.map((g) => g.holeid)).size,
     P: statRingkas(xs.map(panjang)), D: statRingkas(xs.map(tengah)), R: statRingkas(xs.map(rec)) }; });
   const f2 = (x) => (x == null ? "–" : (+x.toFixed(2)).toLocaleString("id-ID")), tot = G.length;
@@ -4166,22 +4165,23 @@ function pencarSVG(P, o) {
 function recoverySVG(P) {
   const W = 400, H = 250, L = 42, R = 10, T = 40, B = 34, ok = P.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y)); if (!ok.length) return "";
   const xmax = Math.max(5, Math.ceil(Math.max(...ok.map((p) => p.x)) / 5) * 5), step = xmax > 20 ? 5 : xmax > 10 ? 2 : 1;
-  const X = (v) => L + ((W - L - R) * v) / xmax, Y = (v) => H - B - ((H - T - B) * Math.min(v, 110)) / 110;
-  const n = ok.length, nOk = ok.filter((p) => p.y >= 90).length, nSw = ok.filter((p) => p.y > 100.5).length, rata = ok.reduce((a, p) => a + Math.min(p.y, 100), 0) / n;
+  const ymax = Math.max(110, Math.ceil(Math.max(...ok.map((p) => p.y)) / 10) * 10 + 5);
+  const X = (v) => L + ((W - L - R) * v) / xmax, Y = (v) => H - B - ((H - T - B) * Math.min(v, ymax)) / ymax;
+  const n = ok.length, nOk = ok.filter((p) => p.y >= 90).length, nSw = ok.filter((p) => p.y > 100.5).length, rata = ok.reduce((a, p) => a + p.y, 0) / n;
   let g = `<text x="4" y="14" font-size="12.5" font-weight="700">Recovery tiap interval vs kedalaman</text>
     <text x="4" y="28" font-size="10.5" fill="#4b5a52">${n} interval · ${Math.round((100 * nOk) / n)} % ≥ 90 % · rata-rata ${rata.toFixed(1)} %${nSw ? ` · ${nSw} swelling` : ""}</text>`;
-  for (const [a, b, w] of [[90, 110, "#1E9E6914"], [80, 90, "#E0A1001c"], [0, 80, "#D628280f"]]) g += `<rect x="${L}" y="${Y(b)}" width="${W - L - R}" height="${Y(a) - Y(b)}" fill="${w}"/>`;
-  for (let v = 0; v <= 100; v += 20) g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#e6ebe7"/><text x="${L - 4}" y="${Y(v) + 3}" font-size="9.5" text-anchor="end" fill="#6b7a72">${v}</text>`;
+  for (const [a, b, w] of [[90, ymax, "#1E9E6914"], [80, 90, "#E0A1001c"], [0, 80, "#D628280f"]]) g += `<rect x="${L}" y="${Y(b)}" width="${W - L - R}" height="${Y(a) - Y(b)}" fill="${w}"/>`;
+  for (let v = 0; v <= ymax; v += 20) g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#e6ebe7"/><text x="${L - 4}" y="${Y(v) + 3}" font-size="9.5" text-anchor="end" fill="#6b7a72">${v}</text>`;
   for (let v = 0; v <= xmax; v += step) g += `<line x1="${X(v)}" x2="${X(v)}" y1="${T}" y2="${H - B}" stroke="#f0f3f1"/><text x="${X(v)}" y="${H - B + 12}" font-size="9.5" text-anchor="middle" fill="#6b7a72">${v}</text>`;
   g += `<line x1="${L}" x2="${W - R}" y1="${Y(90)}" y2="${Y(90)}" stroke="#1E9E69" stroke-width="1.2" stroke-dasharray="5 3"/><text x="${L + 3}" y="${Y(90) + 10}" font-size="9" fill="#1E9E69">target 90 %</text>
     <line x1="${L}" x2="${L}" y1="${T}" y2="${H - B}" stroke="#888"/><line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="#888"/>`;
   g += ok.map((p) => { const cx = X(p.x).toFixed(1), tt = `<title>${esc(p.t)} · recovery ${p.y.toFixed(1)} %${p.y > 100.5 ? " (swelling)" : ""}</title>`;
-    if (p.y > 100.5) { const cy = Y(100); return `<path d="M${cx} ${cy - 6} L${+cx - 5} ${cy + 3} L${+cx + 5} ${cy + 3} Z" fill="${esc(p.c)}" stroke="#111" stroke-width=".7" opacity=".9">${tt}</path>`; }
+    if (p.y > 100.5) { const cy = Y(p.y); return `<path d="M${cx} ${cy - 6} L${+cx - 5} ${cy + 3} L${+cx + 5} ${cy + 3} Z" fill="${esc(p.c)}" stroke="#111" stroke-width=".7" opacity=".9">${tt}</path>`; }
     return `<circle cx="${cx}" cy="${Y(p.y).toFixed(1)}" r="4.2" fill="${esc(p.c)}" fill-opacity=".85" stroke="#111" stroke-width=".7">${tt}</circle>`; }).join("");
   g += `<text x="${(W + L) / 2}" y="${H - 6}" font-size="10.5" text-anchor="middle">kedalaman tengah interval (m)</text><text x="11" y="${(H - B + T) / 2}" font-size="10.5" text-anchor="middle" transform="rotate(-90 11 ${(H - B + T) / 2})">recovery (%)</text>`;
-  const Z = {}; for (const p of ok) { const z = (Z[p.z] ??= { nama: p.zn, c: p.c, n: 0, s: 0 }); z.n++; z.s += Math.min(p.y, 100); }
+  const Z = {}; for (const p of ok) { const z = (Z[p.z] ??= { nama: p.zn, c: p.c, n: 0, s: 0 }); z.n++; z.s += p.y; }
   const leg = Object.values(Z).map((z) => `<span style="display:inline-flex;align-items:center;gap:4px;margin:0 10px 2px 0;white-space:nowrap"><span style="width:10px;height:10px;border-radius:50%;background:${esc(z.c)};border:1px solid #333"></span>${esc(z.nama)} <span style="color:#6b7a72">(${z.n} int · ${(z.s / z.n).toFixed(1)} %)</span></span>`).join("")
-    + (nSw ? `<span style="white-space:nowrap;color:#6b7a72">▲ = swelling (core &gt; interval, dihitung 100 %)</span>` : "");
+    + (nSw ? `<span style="white-space:nowrap;color:#6b7a72">▲ = swelling (core &gt; interval, recovery &gt; 100 %)</span>` : "");
   return `<div style="background:#fbfcfb;border:1px solid #e3e8e1;border-radius:8px;padding:4px 6px 6px"><svg viewBox="0 0 ${W} ${H}" width="100%" style="font-family:Arial,sans-serif;max-height:230px">${g}</svg>
     <div style="font:11px Arial,sans-serif;line-height:1.5;padding:0 4px">${leg}</div></div>`;
 }
@@ -4191,7 +4191,7 @@ async function recoveryData(LB, HR = [], prof = []) {
   const ZW = {}; for (const r of prof ?? []) ZW[r.zona] ??= { nama: r.nama_zona, warna: r.warna };
   const agg = (xs) => { let L = 0, C = 0, n = 0, low = 0, sw = 0; for (const g of xs) { const len = +g.to - +g.from; if (!(len > 0)) continue;
       let c = g.core_length != null && g.core_length !== "" ? +g.core_length : g.recovery_pct != null && g.recovery_pct !== "" ? (len * +g.recovery_pct) / 100 : null; if (c == null || !Number.isFinite(c)) continue;
-      if (c > len) { c = len; sw++; } // v.71: core > interval = swelling → recovery interval maks. 100 % (sama dengan Dashboard/v_dash_hole)
+      if (c > len + 0.005) sw++; // v.114: swelling dihitung apa adanya → recovery bisa > 100 % (sama dengan Dashboard/v_dash_hole)
       L += len; C += c; n++; if (c / len < 0.9) low++; } return { v: L ? (100 * C) / L : null, m: L, n, low, sw }; };
   const warnaR = (v) => (v == null ? "#9CA3AF" : v >= 90 ? "#1E9E69" : v >= 80 ? "#E0A100" : "#D62828");
   const RDR = await petaRedrill().catch(() => ({})); // v.71: lubang lama yang sudah di-redrill tidak ditampilkan (mis. DH-NPG 08 → 08R)
@@ -4446,7 +4446,7 @@ async function presentasiHTML(D) {
       ${card(`${RC.okLubang}/${RC.nLubang}`, "Lubang ≥ 90 %", "")}${card(RC.nInt ? `${RC.low}/${RC.nInt}` : "–", "Interval < 90 %", RC.nInt ? `${RC.mInt.toFixed(1)} m ter-logging` : "belum ada logging", RC.low ? "#E0A100" : "#1E9E69")}</div>
       <h3 style="margin:4px 0 4px">Recovery per layer</h3>${RC.layer.length ? barH(RC.layer.map((z) => ({ ...z, label: z.nama })), { lw: 110, rh: 24, max: 100 }) : `<p class="ket" style="font-size:13px">Recovery per layer muncul setelah Form Logging lubang disetujui verifier.</p>`}
       ${RC.titik.length >= 2 ? recoverySVG(RC.titik) : ""}
-      <p class="ket">Recovery = Σ panjang core ÷ Σ panjang interval (core lebih panjang dari interval karena swelling dihitung 100 %). Recovery rendah di satu layer menurunkan keterwakilan conto layer tersebut.</p></div></div>`
+      <p class="ket">Recovery = Σ panjang core ÷ Σ panjang interval (core lebih panjang dari interval karena swelling dihitung apa adanya, recovery bisa &gt; 100 %). Recovery rendah di satu layer menurunkan keterwakilan conto layer tersebut.</p></div></div>`
     : `<p class="kosong">Belum ada data recovery (Form Logging atau laporan harian).</p>`, "per lubang & per layer"));
   S.push(slide("Hubungan & sebaran layer", `<div class="dua" style="grid-template-columns:1.3fr 1fr;align-items:start"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start">
     ${pencarSVG(A.hub.eohL, { judul: "Kedalaman vs tebal limonit", sx: "kedalaman akhir (m)", sy: "limonit (m)", maxH: 190 })}${pencarSVG(A.hub.eohS, { judul: "Kedalaman vs tebal saprolit", sx: "kedalaman akhir (m)", sy: "saprolit (m)", maxH: 190 })}

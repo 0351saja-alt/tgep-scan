@@ -1,0 +1,8 @@
+-- v81 (28/11/2026): SWELLING tidak lagi dipotong 100 % — recovery dihitung apa adanya (core > interval → recovery > 100 %).
+-- Dinamis (replace pada pg_get_viewdef, security_invoker dipertahankan):
+--   v_sample_qc: core_recovery tanpa LEAST(100, …); v_dash_hole: LEAST(q.core_length,q.run)→q.core_length, LEAST(x.core_m,x.meter)→x.core_m;
+--   v_ddr_list: recovery DDR tanpa LEAST(core, meter); v_uji_silang_lubang: log_core & ddr core tanpa LEAST;
+--   v_uji_silang_interval: recovery_log_pct tanpa LEAST(core_log_m, interval_m).
+-- sinkron_core_ddr (lihat v80): target = core logging (tanpa batas interval); sisa swelling ditambahkan ke run terpanjang
+--   di interval, remark "Swelling x m (sinkron Form Logging)". Uji rollback 13 6–7 m: run 6–6.5 core 0.50→0.70, rec interval 120 %, OK.
+-- Hasil: DH-NPG 13 recovery 104,1 % (sebelumnya 100 %); uji silang 13 kini "TOTAL CORE BEDA 0.35 m" sampai disinkronkan.
