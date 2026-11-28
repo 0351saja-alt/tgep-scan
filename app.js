@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.84";
+const APP_VERSION = "2026-11-28.85";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3067,7 +3067,7 @@ async function dashView(v) {
     <div id="dSlide" style="background:#3a4741;border-radius:14px;padding:6px 3px;margin-bottom:12px"><p style="color:#fff;font-family:Arial;padding:16px;margin:0">Menyusun tampilan presentasi…</p></div>
     <details class="card" id="rinci" open><summary style="font-weight:700;cursor:pointer">Indikator & grafik dashboard</summary><div id="kpi" style="margin-top:8px"></div>
     <style>.dsek{margin-top:14px}.dsek>h3.dsj{margin:0 0 8px;padding:6px 10px;border-left:5px solid #1E9E69;background:#EEF6F1;border-radius:6px;font-size:15px}
-      .dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;align-items:start}.dgrid>.card{margin:0}.dgrid>.dpenuh{grid-column:1/-1}.dsek:not(:has(.dgrid>*)){display:none}</style>
+      .dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;align-items:start}.dgrid>.card h3{font-size:14px}.dgrid>.card{margin:0}.dgrid>.dpenuh{grid-column:1/-1}.dsek:not(:has(.dgrid>*)){display:none}</style>
     <div id="ch">${DASH_SEKSI.map(([k, j]) => `<section class="dsek" data-sek="${k}"><h3 class="dsj">${j}</h3><div class="dgrid"></div></section>`).join("")}</div></details>`;
   if (online()) laporanProgres({ from: st.from, to: st.to, rig: st.rig, proj: sessionStorage.getItem("filterProyek") || "", slide: true, wadah: wadahDi($("#dSlide"), "16:9") }).catch((e) => { if ($("#dSlide")) $("#dSlide").innerHTML = `<p style="color:#fff;padding:16px">Tampilan presentasi gagal: ${esc(e.message)}</p>`; });
   $("#topo3d").onchange = (e) => { localStorage.setItem("topo3d", e.target.value); $("#go").onclick(); };
@@ -3110,8 +3110,11 @@ async function dashView(v) {
     c.innerHTML = `<h3 style="margin:0 0 6px">Pengiriman operator ${st.to}</h3><p>Lengkap <b>${kp.filter((r) => r.status === "LENGKAP").length}</b> · sebagian <b>${kp.filter((r) => r.status === "SEBAGIAN").length}</b> · belum <b>${kp.filter((r) => r.status === "BELUM").length}</b> · data tertahan di HP <b>${hp.length}</b> orang</p>${bel.length ? `<p class="err">${bel.map((r) => `${esc(r.nama)} (${esc(r.rig ?? "-")}): ${esc((r.kurang ?? []).join(", "))}`).join(" · ")}</p>` : ""}<button class="sec" id="toRek" style="width:auto">Buka Rekap operator</button>`;
     $("#kpi").after(c); c.querySelector("#toRek").onclick = () => { tab = "rekap"; localStorage.setItem("tab", tab); render(); }; }
   const { Chart } = await import("./vendor/chart.js");
+  // v.85: tampilan ringkas — legenda pie di samping, huruf & kotak legenda kecil
+  Chart.defaults.font.size = 11; Chart.defaults.plugins.legend.labels.boxWidth = 12; Chart.defaults.plugins.legend.labels.padding = 8;
+  for (const t of ["pie", "doughnut"]) { const o = Chart.overrides?.[t]; if (o) { o.plugins ??= {}; o.plugins.legend ??= {}; o.plugins.legend.position = "right"; o.aspectRatio = 1.95; } }
   if (basi()) return;
-  const box = (id, title) => { const d = document.createElement("div"); d.className = "card"; d.innerHTML = `<h3 style="margin:0 0 6px">${title}</h3><canvas id="${id}" ${DASH_TEMPAT[id]?.[2] ? 'width="1000" height="230"' : 'height="230"'}></canvas>`; taruhDash(d, id); return d.querySelector("canvas"); }; // v.84: grafik selebar layar dibuat pendek (rasio 1000:230)
+  const box = (id, title) => { const d = document.createElement("div"); d.className = "card"; d.innerHTML = `<h3 style="margin:0 0 6px">${title}</h3><canvas id="${id}" ${DASH_TEMPAT[id]?.[2] ? 'width="1000" height="210"' : 'width="420" height="215"'}></canvas>`; taruhDash(d, id); return d.querySelector("canvas"); }; // v.84: grafik selebar layar dibuat pendek (rasio 1000:230)
   const pal = ["#1E9E69", "#E8892B", "#2F6FB0", "#C8281F", "#8E5BB5", "#7A8B83", "#D4B12A", "#12251E", "#57B8C9", "#B5651D"];
   const by = (xs, kf, vf) => xs.reduce((m, x) => ((m[kf(x)] = (m[kf(x)] ?? 0) + (Number(vf(x)) || 0)), m), {});
   const hist = (vals, edges) => edges.slice(0, -1).map((e, i) => vals.filter((x) => x >= e && (i === edges.length - 2 ? x <= edges[i + 1] : x < edges[i + 1])).length);
@@ -3148,7 +3151,7 @@ async function dashView(v) {
         <div style="flex:0 1 120px"><label>Lebar kelas</label><select id="hgW">${[["auto", "Otomatis"], ["0.5", "0,5 m"], ["1", "1 m"], ["2", "2 m"], ["5", "5 m"]].map(([v, l]) => `<option value="${v}" ${String(G.lebar) === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
         ${LAY.map(([k, nama]) => `<div style="flex:0 0 auto;text-align:center"><label>${nama}</label><input type="color" data-hw="${k}" value="${G.warna[k]}" style="width:46px;height:32px;padding:0;border:1px solid #ccd;border-radius:6px"></div>`).join("")}
         <button class="sec" id="hgR" style="flex:0 0 auto;width:auto;padding:6px 10px">Reset</button></div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">${LAY.map(([k]) => `<div><canvas id="c7${k}" height="210"></canvas></div>`).join("")}</div>`;
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">${LAY.map(([k]) => `<div><canvas id="c7${k}" width="360" height="190"></canvas></div>`).join("")}</div>`;
     taruhDash(d, "c7");
     const isi = (warna, gaya, ctx) => { if (gaya === "polos") return warna + "CC"; if (gaya === "garis") return "rgba(0,0,0,0)";
       if (gaya === "gradasi") { const g = ctx.createLinearGradient(0, 0, 0, 210); g.addColorStop(0, warna + "EE"); g.addColorStop(1, warna + "33"); return g; }
@@ -3174,6 +3177,24 @@ async function dashView(v) {
     d.querySelectorAll("[data-hw]").forEach((x) => (x.oninput = () => { G.warna[x.dataset.hw] = x.value; gambar(); }));
     d.querySelector("#hgR").onclick = () => { G = structuredClone(BAWAAN); d.querySelector("#hgG").value = G.gaya; d.querySelector("#hgW").value = G.lebar; d.querySelectorAll("[data-hw]").forEach((x) => (x.value = G.warna[x.dataset.hw])); gambar(); };
     gambar(); }
+  // v.85: catatan logging (kolom komentar Form Logging) dikelompokkan; catatan lempung/pasir/sedimen di zona saprolit diberi tanda verifikasi
+  (async () => { const bhs = holes.map((h) => h.bhid); if (!bhs.length) return;
+    const { data: CM } = await sb.from("sample").select("bhid,depth_from,depth_to,geozone_id,comment").in("bhid", bhs).not("comment", "is", null).order("bhid").order("depth_from").limit(5000);
+    const rows = (CM ?? []).filter((x) => String(x.comment ?? "").trim() && !/^transkripsi/i.test(x.comment));
+    const kunci = (t) => (/^\s*sw\b|swell/i.test(t) ? "Swelling (SW)" : t.trim().replace(/\s+/g, " ").replace(/^./, (c) => c.toUpperCase()));
+    const G = {}; for (const r of rows) { const k = kunci(r.comment), g = (G[k] ??= { k, n: 0, m: 0, zona: {}, bh: {} }); g.n++; g.m += +r.depth_to - +r.depth_from; g.zona[r.geozone_id ?? "?"] = (g.zona[r.geozone_id ?? "?"] ?? 0) + 1;
+      (g.bh[r.bhid] ??= []).push(`${fmtD(+r.depth_from)}–${fmtD(+r.depth_to)}${/^\s*sw/i.test(r.comment) ? ` (${esc(r.comment.replace(/^\s*sw\s*:?\s*/i, "SW "))})` : ""}`); }
+    const sedimen = (g) => /lempung|pasir|sedimen|clay|sand|transport/i.test(g.k);
+    const L = Object.values(G).sort((a, b) => b.n - a.n), d = document.createElement("div"); d.className = "card";
+    const nSed = L.filter(sedimen).reduce((a, g) => a + (g.zona.S ?? 0), 0);
+    d.innerHTML = `<h3 style="margin:0 0 6px">Catatan logging <span class="muted" style="font-weight:400;font-size:12px">· ${rows.length} interval bercatatan di ${new Set(rows.map((r) => r.bhid)).size} lubang</span></h3>
+      ${L.length ? `<div class="tw"><table style="font-size:12.5px"><tr><th>Catatan</th><th>Interval</th><th>Panjang (m)</th><th>Zona tercatat</th><th>Lubang & kedalaman (m)</th><th>Arti / tindak lanjut</th></tr>
+      ${L.map((g) => `<tr${sedimen(g) && g.zona.S ? ' style="background:#FFF6E0"' : ""}><td><b>${esc(g.k)}</b></td><td>${g.n}</td><td>${fmtD(+g.m.toFixed(2))}</td><td>${Object.entries(g.zona).map(([z, n]) => `${esc(z)} ${n}`).join(", ")}</td>
+        <td style="font-size:11.5px">${Object.entries(g.bh).map(([b, xs]) => `<b>${esc(b)}</b>: ${xs.join(", ")}`).join("<br>")}</td>
+        <td style="font-size:11.5px">${sedimen(g) ? (g.zona.S ? "⚠ Dicatat saprolit tetapi material dominan lempung/pasir — kemungkinan <b>sedimen/transported</b>. Verifikasi di core box (tekstur batuan asal, boxwork, fragmen ultramafik, perlapisan); bila sedimen, ubah zona agar tebal saprolit tidak bias." : "Material lempung/pasir — perhatikan saat korelasi antar lubang.")
+          : g.k === "Swelling (SW)" ? "Core mengembang; panjang core &gt; interval. Recovery dihitung maks. 100 %." : "Informasi dari geologist."}</td></tr>`).join("")}</table></div>
+      ${nSed ? `<p class="muted" style="font-size:12px;margin:6px 0 0">${nSed} interval saprolit bercatatan lempung/pasir ikut menurunkan status di Kesimpulan sementara sampai diverifikasi.</p>` : ""}` : `<p class="muted">Belum ada catatan di Form Logging lubang-lubang ini.</p>`}`;
+    taruhDash(d, "catatan"); })().catch((e) => console.warn("catatan logging", e));
   const nl = holes.reduce((s, h) => s + h.conto_limonit, 0), ns = holes.reduce((s, h) => s + h.conto_saprolit, 0), nt = holes.reduce((s, h) => s + h.jumlah_conto, 0);
   new Chart(box("c8", "Jumlah conto per zona"), { type: "pie", data: { labels: ["Limonit", "Saprolit", "TP / batuan dasar"], datasets: [{ data: [nl, ns, nt - nl - ns], backgroundColor: ["#E8892B", "#1E9E69", "#7A8B83"] }] } });
   const re = [0, 50, 70, 80, 90, 95, 100.01];
@@ -3213,7 +3234,7 @@ function computeKPI(days, tm, cu, holes) {
 // v.80: susunan Dashboard per bagian (urutan baca: progres → waktu kerja → geologi → logistik); kartu besar selebar layar
 const DASH_SEKSI = [["prog", "1. Progres pemboran"], ["waktu", "2. Waktu kerja & standby (DDR)"], ["geo", "3. Geologi & kualitas core"], ["log", "4. BBM & material"]];
 const DASH_TEMPAT = { c1: ["prog", 1, 1], c2: ["prog", 2], c12: ["waktu", 1], c11: ["waktu", 2], c3: ["waktu", 3], c4: ["waktu", 4],
-  c9: ["geo", 1], c8: ["geo", 2], c7: ["geo", 3, 1], c10: ["geo", 4], stat: ["geo", 5, 1], c5: ["log", 1], c6: ["log", 2] };
+  c9: ["geo", 1], c8: ["geo", 2], c10: ["geo", 3], c7: ["geo", 4, 1], catatan: ["geo", 5, 1], stat: ["geo", 6, 1], c5: ["log", 1], c6: ["log", 2] };
 function taruhDash(el, key) {
   const [sek, urut, penuh] = DASH_TEMPAT[key] ?? ["log", 99], g = document.querySelector(`#ch [data-sek="${sek}"] .dgrid`) ?? document.getElementById("ch");
   el.style.order = urut; if (penuh) el.classList.add("dpenuh"); g.appendChild(el);
@@ -3285,7 +3306,7 @@ async function statistikConto(Chart, box, bhids) {
       <tr style="font-weight:700;background:#F1F5F3"><td>Total</td><td>${tot}</td><td>100</td><td>${new Set(G.map((g) => g.holeid)).size}</td>${(() => { const P = statRingkas(G.map(panjang)), D = statRingkas(G.map(tengah)), R = statRingkas(G.map(rec));
         return `<td>${f2(P?.mean)}</td><td>${f2(P?.med)}</td><td>${f2(P?.min)}</td><td>${f2(P?.max)}</td><td>${f2(P?.sd)}</td><td>${f2(D?.mean)}</td><td>${f2(D?.min)}</td><td>${f2(D?.max)}</td><td>${R ? f2(R.mean) : "–"}</td>`; })()}</tr></table></div>
       <p class="muted" style="font-size:12px">Ketuk baris layer untuk melihat daftar contonya. Layer atau litologi baru otomatis muncul begitu ada di Form Logging yang disetujui.</p>
-      <canvas id="cS1" height="200"></canvas>` : `<p class="muted">Belum ada conto di database (Form Logging yang disetujui verifier).</p>`}`;
+      <canvas id="cS1" width="1000" height="200"></canvas>` : `<p class="muted">Belum ada conto di database (Form Logging yang disetujui verifier).</p>`}`;
   taruhDash(c, "stat");
   c.querySelectorAll("[data-lay]").forEach((tr) => (tr.onclick = () => daftar(S[+tr.dataset.lay])));
   if (!tot) return;
