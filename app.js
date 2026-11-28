@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.89";
+const APP_VERSION = "2026-11-28.90";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -7053,6 +7053,7 @@ const terbilang = (n) => { const a = ["", "satu", "dua", "tiga", "empat", "lima"
   if (n < 2000) return ("seribu " + terbilang(n - 1000)).trim(); return (terbilang(Math.floor(n / 1000)) + " ribu " + terbilang(n % 1000)).trim(); };
 const tglTerbilang = (t) => { try { const d = new Date(t + "T12:00:00"); return `hari ${d.toLocaleDateString("id-ID", { weekday: "long" })} tanggal ${terbilang(d.getDate())} bulan ${d.toLocaleDateString("id-ID", { month: "long" })} tahun ${terbilang(d.getFullYear())} (${d.toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" })})`; } catch { return t; } };
 const BASTP_CEK = ["Seluruh titik dalam daftar telah dikerjakan (atau perubahan disetujui tertulis)", "Kedalaman aktual telah diverifikasi", "Seluruh core dan sampel telah diserahkan", "Data pemboran dan dokumentasi (DDR, drilling log, foto core) telah lengkap"];
+const SITE_REP = { nama: "Haryo Purnomo", jabatan: "Site Representative" }; // v.90: penanda tangan pihak PT Nusa Prima Gemilang di BA
 const BULAN_ROMAWI = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
 async function baView(v) {
   if (!online()) { v.innerHTML = `<div class="card"><h2>Berita Acara</h2><p class="muted">Perlu sinyal internet.</p></div>`; return; }
@@ -7064,6 +7065,15 @@ async function baView(v) {
   const ddrB = (await sb.from("v_ddr_baris").select("tanggal,rig,bhid,jenis,dari_m,sampai_m,meter,core_m").limit(5000)).data ?? [];
   const CL = (await sb.from("v_dh_collar").select("holeid,east,north,rl,coord_source,coord_akurasi_m")).data ?? []; // v.63: koordinat terbaru + akurasi untuk BA
   const RDR = await petaRedrill().catch(() => ({})); // v.65: lubang lama → lubang redrill; BASTP & dokumentasi memakai lubang redrill
+  // v.90: wellsite geologist per titik = penanda tangan WELL SITE terbanyak di DDR titik itu (cadangan: pengirim Form Logging)
+  const WSG = await (async () => { const W = {}; try {
+    const [{ data: D }, { data: G }] = await Promise.all([sb.from("ddr").select("id,bhid,ddr_signature(slot,signer_name)").not("bhid", "is", null).limit(3000), sb.from("scan_job").select("bhid_hint,created_by").limit(3000)]);
+    const rapi = (n) => String(n ?? "").trim().replace(/\s+/g, " ").replace(/\b\p{L}/gu, (c) => c.toUpperCase()), hit = {};
+    for (const d of D ?? []) for (const g of d.ddr_signature ?? []) if (g.slot === "WELLSITE" && g.signer_name) { const k = (hit[d.bhid] ??= {}); const n = rapi(g.signer_name); k[n] = (k[n] ?? 0) + 1; }
+    for (const [b, k] of Object.entries(hit)) W[b] = Object.entries(k).sort((a, c) => c[1] - a[1])[0][0];
+    const ids = [...new Set((G ?? []).map((g) => g.created_by).filter(Boolean))], { data: U } = ids.length ? await sb.from("app_user").select("user_id,full_name").in("user_id", ids) : { data: [] };
+    for (const g of G ?? []) { const b = bakuBH(g.bhid_hint ?? ""); if (b && !W[b]) { const u = (U ?? []).find((x) => x.user_id === g.created_by); if (u?.full_name) W[b] = rapi(u.full_name); } }
+  } catch {} return W; })();
   const bhs = [...new Set([...(H ?? []).map((h) => h.bhid), ...(LG ?? []).map((g) => g.bhid), ...ddrB.map((x) => x.bhid)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
   const akhir = (b) => (EV ?? []).filter((e) => e.bhid === b).sort((x, y) => String(y.captured_at).localeCompare(String(x.captured_at)))[0];
   // v.57: titik juga dianggap selesai bila rig yang sama sudah pindah ke titik lain di DDR berikutnya (mis. 08R selesai 22/11, RIG 2 lanjut 08 pada 23/11)
@@ -7086,7 +7096,10 @@ async function baView(v) {
   const KUNCI_BA = ["east", "north", "rl", "sistem", "akurasi", "rig", "mulai", "stop", "status", "kedalaman", "coring", "open", "recovery", "conto", "limonit", "saprolit", "alasan", "redrill"];
   const segarIsiBA = (I, rk) => { let n = 0; const man = new Set(I.manual ?? []);
     for (const k of KUNCI_BA) { const v = rk[k] ?? ""; if (man.has(k) || v === "" || String(I[k] ?? "") === String(v)) continue; I[k] = v; n++; } return n; };
-  const segarBA = (r) => { if (r.jenis !== "BA_STOP" || r.status === "FINAL") return r; const I = { ...(r.isi ?? {}) }; segarIsiBA(I, ringkas(I.bhid || r.bhid)); return { ...r, isi: I }; };
+  const segarBA = (r) => { if (r.status === "FINAL") return r; const I = { ...(r.isi ?? {}) }, man = new Set(I.manual ?? []);
+    if (r.jenis === "BA_STOP") { segarIsiBA(I, ringkas(I.bhid || r.bhid)); const w = WSG[I.bhid || r.bhid]; if (w && !man.has("geologist")) { I.geologist = w; I.geologist_jabatan = "Wellsite Geologist"; } }
+    if (!I.penerima && !man.has("penerima")) I.penerima = SITE_REP.nama; if (!I.penerima_jabatan || /pengawas lapangan|perwakilan pemberi kerja/i.test(I.penerima_jabatan)) I.penerima_jabatan = SITE_REP.jabatan; // v.90
+    return { ...r, isi: I }; };
   const titikPeriode = (f, t) => bhs.filter((b) => !RDR[b]).filter((b) => { const r = ringkas(b); return selesai(b) && r.stop >= f && r.stop <= t; }).map(barisT);
   const nomor = (jenis, b) => { const d = new Date(); return `${jenis === "BASTP" ? "BASTP" : "BA-STOP"}/TGEP/${b ? b.replace(/\s+/g, "") + "/" : ""}${BULAN_ROMAWI[d.getMonth()]}/${d.getFullYear()}`; };
   const daftar = async () => { const { data } = await sb.from("berita_acara").select("id,jenis,nomor,bhid,dari,sampai,status,created_at,created_by").order("created_at", { ascending: false }).limit(100);
@@ -7102,11 +7115,11 @@ async function baView(v) {
     if (!data?.length) return alert("Tidak bisa dihapus: BA yang sudah FINAL hanya bisa dihapus admin, dan BA DRAFT hanya oleh pembuatnya atau admin.");
     if ($("#baEd")?.querySelector("#eaN")) $("#baEd").innerHTML = ""; toast("🗑 Berita acara dihapus"); daftar(); };
   const prof = (await sb.from("signature_profile").select("full_name,title").eq("user_id", session.user.id).maybeSingle()).data;
-  const ttdAwal = (jenis) => jenis === "BASTP"
-    ? { direktur: KOP.direktur, direktur_jabatan: KOP.jabatanDir, penerima: "", penerima_jabatan: "Perwakilan Pemberi Kerja", penerima_pt: KOP.pemberi, tempat: "Luwuk", tanggal: todayWIB() }
-    : { geologist: prof?.full_name ?? me?.full_name ?? "", geologist_jabatan: "Wellsite Geologist", penerima: "", penerima_jabatan: "Pengawas Lapangan", penerima_pt: KOP.pemberi, tempat: "Luwuk", tanggal: todayWIB() };
+  const ttdAwal = (jenis, b) => jenis === "BASTP"
+    ? { direktur: KOP.direktur, direktur_jabatan: KOP.jabatanDir, penerima: SITE_REP.nama, penerima_jabatan: SITE_REP.jabatan, penerima_pt: KOP.pemberi, tempat: "Luwuk", tanggal: todayWIB() }
+    : { geologist: WSG[b] ?? prof?.full_name ?? me?.full_name ?? "", geologist_jabatan: "Wellsite Geologist", penerima: SITE_REP.nama, penerima_jabatan: SITE_REP.jabatan, penerima_pt: KOP.pemberi, tempat: "Luwuk", tanggal: todayWIB() };
   $("#baBuat").onclick = async () => { const b = $("#baB").value; if (!b) return;
-    const isi = { ...ringkas(b), ...ttdAwal("BA_STOP"), catatan: "", pernyataan: "Pada hari ini telah dilakukan pemberhentian pemboran (stop bor) pada titik tersebut di atas dengan rincian sebagai berikut. Berita acara ini dibuat dengan sebenarnya untuk dipergunakan sebagaimana mestinya." };
+    const isi = { ...ringkas(b), ...ttdAwal("BA_STOP", b), catatan: "", pernyataan: "Pada hari ini telah dilakukan pemberhentian pemboran (stop bor) pada titik tersebut di atas dengan rincian sebagai berikut. Berita acara ini dibuat dengan sebenarnya untuk dipergunakan sebagaimana mestinya." };
     const { data, error } = await sb.from("berita_acara").insert({ jenis: "BA_STOP", nomor: nomor("BA_STOP", b), bhid: b, isi }).select("id").single(); if (error) return ($("#baE").textContent = error.message);
     await daftar(); edit(data.id); };
   $("#baBuat2").onclick = async () => { const f = $("#baF").value, t = $("#baT").value, t0 = t; if (!f || !t || f > t) return ($("#baE").textContent = "Isi periode dengan benar.");
@@ -7186,8 +7199,8 @@ async function tanyaPenandatangan(r) {
   return new Promise((res) => {
     const m = modal(`<h3 style="margin-top:0">Penanda tangan ${bast ? "Pihak Kedua" : "pihak pemberi kerja"}</h3>
       <p class="muted" style="margin-top:0">${bast ? "BASTP" : "BA stop bor " + esc(r.bhid ?? "")} · siapa yang tanda tangan dari ${esc(I.penerima_pt || KOP.pemberi)}?</p>
-      <label>Nama</label><input id="tpN" list="tpNL" value="${esc(I.penerima ?? "")}" placeholder="nama lengkap"><datalist id="tpNL">${nama.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
-      <label>Jabatan</label><input id="tpJ" list="tpJL" value="${esc(I.penerima_jabatan ?? (bast ? "Perwakilan Pemberi Kerja" : "Pengawas Lapangan"))}"><datalist id="tpJL">${jab.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
+      <label>Nama</label><input id="tpN" list="tpNL" value="${esc(I.penerima || SITE_REP.nama)}" placeholder="nama lengkap"><datalist id="tpNL">${nama.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
+      <label>Jabatan</label><input id="tpJ" list="tpJL" value="${esc(!I.penerima_jabatan || /pengawas lapangan|perwakilan pemberi kerja/i.test(I.penerima_jabatan) ? SITE_REP.jabatan : I.penerima_jabatan)}"><datalist id="tpJL">${jab.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
       <label>Perusahaan</label><input id="tpP" value="${esc(I.penerima_pt || KOP.pemberi)}">
       <div class="row" style="margin-top:10px;flex-wrap:wrap"><button id="tpOk">Simpan & cetak</button><button class="sec" id="tpKosong">Cetak tanpa nama (diisi tangan)</button><button class="sec" id="tpX" style="flex:0">Batal</button></div><div id="tpE" class="err"></div>`);
     const q = (x) => m.querySelector(x);
@@ -7213,15 +7226,15 @@ async function cetakBA(id, opsi = {}) {
     const E = ev ?? [], C = (cp ?? []).filter((c) => !coreDitolak(c));
     const pilih = (xs, n) => (xs.length <= n ? xs : Array.from({ length: n }, (_, i) => xs[Math.round((i * (xs.length - 1)) / (n - 1))])); // sebar merata
     const patok = E.filter((e) => e.event_type === "FOTO_PATOK"), selesai = E.filter((e) => ["SELESAI_BOR", "FOTO_DRILL_PAD", "FOTO_AKHIR"].includes(e.event_type));
-    const kerja = pilih(E.filter((e) => !["FOTO_PATOK", "FOTO_DRILL_PAD", "FOTO_AKHIR", "SELESAI_BOR", "MASUK", "KELUAR"].includes(e.event_type)), 8);
+    const kerja = pilih(E.filter((e) => !["FOTO_PATOK", "FOTO_DRILL_PAD", "FOTO_AKHIR", "SELESAI_BOR", "MASUK", "KELUAR"].includes(e.event_type)), 12);
     const [u, uc] = await Promise.all([signedUrls("progress-photos", [...patok, ...selesai, ...kerja].map((e) => e.photo_path)), signedUrls("core-photos", C.flatMap((c) => [c.preview_path, c.photo_path]))]);
     const d2 = (x) => (x == null ? "" : fmtD(x));
     const fe = (e) => `<figure><img src="${u[e.photo_path] ?? ""}" alt=""><figcaption>${esc(EV[e.event_type] ?? e.event_type)} · ${esc(fmtT(new Date(e.captured_at)))}${e.depth_to != null ? ` · ${d2(e.depth_from)}–${d2(e.depth_to)} m` : ""}${e.reason ? " · " + esc(e.reason) : ""}${e.lat != null ? ` · GPS ${(+e.lat).toFixed(6)}, ${(+e.lon).toFixed(6)}${e.gps_accuracy_m != null ? ` ±${fmtD(e.gps_accuracy_m)} m` : ""}` : ""}${u[e.photo_path] ? "" : " · <i>(foto sudah dipindah ke Google Drive)</i>"}</figcaption></figure>`;
     const fc = (c) => { const x = uc[c.preview_path] ?? uc[c.photo_path]; return `<figure><img src="${x ?? ""}" alt="" style="object-fit:contain;background:#f2f2f2"><figcaption>Kotak ${esc(c.box_no ?? "")} · ${esc(c.photo_type ?? "")} · ${d2(c.depth_from)}–${d2(c.depth_to)} m${x ? "" : " · <i>(di Google Drive)</i>"}</figcaption></figure>`; };
     const bag = (judul, xs, f, kosong) => `<h3>${judul}</h3>${xs.length ? `<div class="fg">${xs.map(f).join("")}</div>` : `<p class="m">${kosong}</p>`}`;
     return `<section class="alir lamp"><h2>LAMPIRAN${no ? " " + no : ""} — DOKUMENTASI TITIK ${esc(bh)}</h2><div class="no">Nomor BA: ${esc(r.nomor ?? "")}</div>
-      ${bag("A. Foto patok", patok, fe, "Foto patok belum ada di aplikasi.")}${bag("B. Foto selesai bor / drill pad", selesai, fe, "Foto selesai bor / drill pad belum ada di aplikasi.")}
-      ${bag("C. Foto pengerjaan", kerja, fe, "Foto pengerjaan belum ada di aplikasi.")}${bag(`D. Foto core box (${C.length})`, C, fc, "Foto core box belum ada di aplikasi.")}</section>`; };
+      ${bag("A. Foto drill pad / selesai bor", selesai, fe, "Foto drill pad / selesai bor belum ada di aplikasi.")}${bag("B. Foto aktivitas pemboran", kerja, fe, "Foto aktivitas belum ada di aplikasi.")}
+      ${bag("C. Foto patok", patok, fe, "Foto patok belum ada di aplikasi.")}${bag(`D. Foto core box (${C.length})`, C, fc, "Foto core box belum ada di aplikasi.")}</section>`; };
   const RDRc = bast ? await petaRedrill().catch(() => ({})) : {}; // BASTP: dokumentasi lubang lama yang sudah di-redrill = dokumentasi lubang redrill-nya
   const daftarLamp = bast ? [...new Set((I.titik ?? []).map((t) => RDRc[t.bhid] ?? t.bhid).filter(Boolean))] : [r.bhid].filter(Boolean);
   const foto = (await Promise.all(daftarLamp.map((b, i) => lampiranTitik(b, bast && daftarLamp.length > 1 ? i + 1 : "")))).join("");
@@ -7251,7 +7264,7 @@ async function cetakBA(id, opsi = {}) {
     <tr><td>2.</td><td>Nama</td><td>: <b>${esc(I.penerima || "......................................")}</b></td></tr><tr><td></td><td>Jabatan</td><td>: ${esc(I.penerima_jabatan || "......................................")}</td></tr><tr><td></td><td>Perusahaan</td><td>: ${esc(I.penerima_pt || KOP.pemberi)}</td></tr>${I.penerima_alamat ? `<tr><td></td><td>Alamat</td><td>: ${esc(I.penerima_alamat)}</td></tr>` : ""}
     <tr><td></td><td colspan="2">Dalam hal ini bertindak untuk dan atas nama ${esc(I.penerima_pt || KOP.pemberi)} selaku pemberi kerja, selanjutnya disebut <b>PIHAK KEDUA</b>.</td></tr></table>
   <p>${esc(I.pernyataan ?? "")}</p><h3>1. Hasil pekerjaan pemboran</h3>`
-  : `<p>Pada ${esc(tglTerbilang(I.tanggal ?? ""))}, bertempat di lokasi pemboran ${esc(I.bhid ?? "")}, kami yang bertanda tangan di bawah ini, ${esc(I.geologist || "Wellsite Geologist")} (${esc(I.geologist_jabatan ?? "Wellsite Geologist")}, ${KOP.pt}) dan ${esc(I.penerima || "perwakilan lapangan")} (${esc(I.penerima_jabatan ?? "Pengawas Lapangan")}, ${esc(I.penerima_pt || KOP.pemberi)}), menyatakan bahwa:</p><p>${esc(I.pernyataan ?? "")}</p>`}
+  : `<p>Pada ${esc(tglTerbilang(I.tanggal ?? ""))}, bertempat di lokasi pemboran ${esc(I.bhid ?? "")}, kami yang bertanda tangan di bawah ini, ${esc(I.geologist || "Wellsite Geologist")} (${esc(I.geologist_jabatan ?? "Wellsite Geologist")}, ${KOP.pt}) dan ${esc(I.penerima || "perwakilan lapangan")} (${esc(I.penerima_jabatan || SITE_REP.jabatan)}, ${esc(I.penerima_pt || KOP.pemberi)}), menyatakan bahwa:</p><p>${esc(I.pernyataan ?? "")}</p>`}
   ${isi}
   ${bast ? `<h3>3. Data, dokumen dan database yang diserahkan</h3><table class="d"><tr><th style="width:24px">No</th><th>Item</th><th style="width:70px">Diserahkan</th><th>Keterangan</th></tr>${(I.serah ?? []).map((c, i) => `<tr><td>${i + 1}</td><td>${esc(c.t)}</td><td style="text-align:center"><b>${esc(c.ya)}</b></td><td>${esc(c.ket ?? "")}</td></tr>`).join("")}</table>` : ""}
   ${I.catatan ? `<p><b>Catatan:</b> ${esc(I.catatan)}</p>` : ""}${bast && I.penutup ? `<p>${esc(I.penutup)}</p>` : ""}
@@ -7259,7 +7272,7 @@ async function cetakBA(id, opsi = {}) {
   ${bast ? `<div class="ttd"><div>PIHAK PERTAMA<br>Yang menyerahkan,<br><b>${KOP.pt}</b><div class="sp"></div><span class="nm">${esc(I.direktur || KOP.direktur)}</span><br>${esc(I.direktur_jabatan || KOP.jabatanDir)}</div>
     <div>PIHAK KEDUA<br>Yang menerima,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b><div class="sp"></div><span class="nm">${esc(I.penerima || "(......................)")}</span><br>${esc(I.penerima_jabatan ?? "")}</div></div>`
   : `<div class="ttd"><div>Dibuat oleh,<br><b>${KOP.pt}</b><br>${esc(I.geologist_jabatan ?? "Wellsite Geologist")}<div class="sp"></div><span class="nm">${esc(I.geologist || "(......................)")}</span></div>
-    <div>Disaksikan oleh,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b><br>${esc(I.penerima_jabatan ?? "Pengawas Lapangan")}<div class="sp"></div><span class="nm">${esc(I.penerima || "(......................)")}</span></div></div>`}</div>
+    <div>Disaksikan oleh,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b><br>${esc(I.penerima_jabatan || SITE_REP.jabatan)}<div class="sp"></div><span class="nm">${esc(I.penerima || "(......................)")}</span></div></div>`}</div>
   </section>${foto}</div>
   </body></html>`); w.document.close();
 }
