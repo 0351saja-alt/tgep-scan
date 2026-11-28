@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.126";
+const APP_VERSION = "2026-11-28.127";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -4284,10 +4284,14 @@ function barH(rows, o = {}) { // rows: [{label, v, c, sub}]
       <text x="${L + w + 6}" y="${y + rh / 2 + 4}" font-size="12" font-weight="700">${esc(r.t ?? String(r.v))}</text>${r.sub ? `<text x="${W - 2}" y="${y + rh / 2 + 4}" font-size="10.5" text-anchor="end" fill="#6b7a72">${esc(r.sub)}</text>` : ""}`; }).join("")}</svg>`;
 }
 function stackH(rows, kunci, o = {}) { // rows: [{label, parts:{k:v}}], kunci: [[k, warna]]
-  const W = o.w ?? 560, rh = 28, H = rows.length * rh + 34, L = o.lw ?? 90;
+  // v.127: persentase tiap kegiatan selalu terbaca — label di dalam batang bila cukup lebar, dan ringkasan % non-utama (standby, perbaikan, dst.) di kanan
+  const W = o.w ?? 560, rh = 28, H = rows.length * rh + 34, L = o.lw ?? 90, KAN = o.kanan ?? 175, BW = W - L - KAN - 6;
   if (!rows.length) return `<svg viewBox="0 0 ${W} 50" width="100%"><text x="${W / 2}" y="30" font-size="13" text-anchor="middle" fill="#6b7a72">belum ada data</text></svg>`;
-  let g = rows.map((r, i) => { const tot = kunci.reduce((s, [k]) => s + (+r.parts[k] || 0), 0) || 1; let x = L; const y = 6 + i * rh;
-    return `<text x="${L - 6}" y="${y + 16}" font-size="12" text-anchor="end">${esc(r.label)}</text>` + kunci.map(([k, c]) => { const w = ((W - L - 10) * (+r.parts[k] || 0)) / tot; const out = w > 0 ? `<rect x="${x}" y="${y + 3}" width="${w}" height="${rh - 8}" fill="${c}"><title>${esc(k)}: ${Math.round(+r.parts[k] / 60 * 10) / 10} jam</title></rect>${w > 34 ? `<text x="${x + w / 2}" y="${y + 17}" font-size="10" text-anchor="middle" fill="#fff">${Math.round((100 * (+r.parts[k] || 0)) / tot)}%</text>` : ""}` : ""; x += w; return out; }).join(""); }).join("");
+  let g = rows.map((r, i) => { const tot = kunci.reduce((s, [k]) => s + (+r.parts[k] || 0), 0) || 1; let x = L; const y = 6 + i * rh, pc = (k) => Math.round((1000 * (+r.parts[k] || 0)) / tot) / 10;
+    const it = kunci.slice(1).filter(([k]) => +r.parts[k] > 0).map(([k, c]) => `<tspan fill="${c}" font-weight="700">${esc(k)} ${pc(k).toLocaleString("id-ID")}%</tspan>`), X0 = L + BW + 6;
+    const kanan = it.length > 2 ? `<tspan x="${X0}" dy="-5">${it.slice(0, 2).join(" ")}</tspan><tspan x="${X0}" dy="11">${it.slice(2).join(" ")}</tspan>` : it.join(" ");
+    return `<text x="${L - 6}" y="${y + 16}" font-size="12" text-anchor="end">${esc(r.label)}</text>` + kunci.map(([k, c]) => { const w = (BW * (+r.parts[k] || 0)) / tot; const out = w > 0 ? `<rect x="${x}" y="${y + 3}" width="${w}" height="${rh - 8}" fill="${c}"><title>${esc(k)}: ${Math.round(+r.parts[k] / 60 * 10) / 10} jam (${pc(k)}%)</title></rect>${w > 24 ? `<text x="${x + w / 2}" y="${y + 17}" font-size="${w > 34 ? 10 : 8.5}" text-anchor="middle" fill="#fff">${Math.round(pc(k))}%</text>` : ""}` : ""; x += w; return out; }).join("")
+      + `<text x="${L + BW + 6}" y="${y + 16}" font-size="9">${kanan}</text>`; }).join("");
   g += kunci.map(([k, c], i) => `<rect x="${L + i * 96}" y="${H - 18}" width="10" height="10" fill="${c}"/><text x="${L + 14 + i * 96}" y="${H - 9}" font-size="10.5">${esc(k)}</text>`).join("");
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="font-family:Arial,sans-serif">${g}</svg>`;
 }
