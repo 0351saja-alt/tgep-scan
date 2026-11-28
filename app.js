@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.125";
+const APP_VERSION = "2026-11-28.126";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -4424,16 +4424,18 @@ async function presentasiHTML(D) {
     ${card(T.sEOH.n ? f(T.sEOH.mean) + " m" : "–", "Kedalaman akhir rata-rata", T.sEOH.n ? `${f(T.sEOH.min)}–${f(T.sEOH.max)} m ${kecil(T.sEOH)}` : "belum ada")}${card(T.sRec.n ? f(T.sRec.mean, 0) + "%" : "–", "Recovery core", T.sRec.n ? `${T.recOk}/${T.sRec.n} lubang ≥ 90%` : "", T.sRec.n && T.sRec.min < 90 ? "#D62828" : "#1E9E69")}
     ${card(f(T.sisa, 0) + " m", "Sisa ke target", `target ${f(T.tgtM, 0)} m`, "#E0A100")}${card(T.eta ?? "–", "Perkiraan selesai", T.hariLagi ? `±${T.hariLagi} hari, laju sekarang` : "", "#12251E")}
     ${card(f(stb, 1) + " jam", "Standby + perbaikan", sbRows[0] ? esc(String(sbRows[0][0]).slice(0, 34)) : "", stb > 0 ? "#E0A100" : "#1E9E69")}${card(`${hit("PROGRES")} · ${hit("RENCANA")}`, "Sedang dibor · rencana", "")}</div>
-    <div style="display:grid;grid-template-columns:1.1fr 1fr 1.05fr;gap:6px 18px;margin-top:6px">
-      <div><h3>Meter bor harian per rig</h3>${A.rigs.length ? rigHarianSVG(days, A.rigs, { w: 600, h: 270, maxH: 250 }) : grafik}</div>
-      <div><h3>Meter & produktivitas per rig</h3>${barH(mRig, { lw: 64, rh: 24, maxH: 90 })}<h3 style="margin-top:6px">Pembagian waktu kerja per rig</h3>${stackH(waktuRig, kegKunci, { lw: 64 })}</div>
-      <div><h3>Ringkasan per rig</h3><table class="t kc"><tr><th>Rig</th>${["Hari", "Meter", "m/hari", "m/jam", "Lubang", "Rec %", "Ganti MB"].map((h) => `<th class="r">${h}</th>`).join("")}</tr>
-        ${A.perRig.map((x, k) => { const rc = recRig.find((y) => y.label === x.r), gm = ganti.find((y) => y.label === x.r); return `<tr><td><span class="sw" style="background:${WARNA_RIG[k % WARNA_RIG.length]}"></span><b>${esc(x.r)}</b></td><td class="r">${x.hari}</td><td class="r"><b>${f(x.meter)}</b></td><td class="r">${f(x.sm.mean)}</td><td class="r">${x.jam ? f(x.meter / x.jam, 2) : "–"}</td><td class="r">${x.lubang} (${x.selesai})</td><td class="r" style="${rc && rc.t !== "–" && parseFloat(rc.t) < 90 ? "color:#D62828;font-weight:700" : ""}">${rc?.t ?? "–"}</td><td class="r">${gm ? `${gm.t} / ${esc(gm.sub)}` : "–"}</td></tr>`; }).join("")}</table>
-        <h3 style="margin-top:6px">Kendala utama</h3><ul class="tl">${sbRows.slice(0, 3).map((r) => `<li>${esc(r[0])} — ${r[1]} jam</li>`).join("") || "<li>Tidak ada standby/perbaikan tercatat.</li>"}</ul></div></div>
+    <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:6px 22px;margin-top:6px">
+      <div><h3>Meter bor harian per rig</h3>${A.rigs.length ? rigHarianSVG(days, A.rigs, { w: 680, h: 230, maxH: 205 }) : grafik}</div>
+      <div><h3>Meter & produktivitas per rig</h3>${barH(mRig, { lw: 64, rh: 24, maxH: 80 })}<h3 style="margin-top:6px">Pembagian waktu kerja per rig</h3>${stackH(waktuRig, kegKunci, { lw: 64 })}</div></div>
+    <div style="display:grid;grid-template-columns:2.6fr 1fr;gap:6px 22px;margin-top:4px">
+      <div><h3>Ringkasan per rig</h3><table class="t kc"><tr><th>Rig</th>${["Hari", "Meter", "m/hari", "Maks", "m/jam", "Lubang (selesai)", "Σ kedalaman", "Limonit", "Saprolit", "Rec %", "Ganti MB / run"].map((h) => `<th class="r">${h}</th>`).join("")}</tr>
+        ${A.perRig.map((x, k) => { const rc = recRig.find((y) => y.label === x.r), gm = ganti.find((y) => y.label === x.r); return `<tr><td><span class="sw" style="background:${WARNA_RIG[k % WARNA_RIG.length]}"></span><b>${esc(x.r)}</b></td><td class="r">${x.hari}</td><td class="r"><b>${f(x.meter)}</b></td><td class="r">${f(x.sm.mean)}</td><td class="r">${f(x.sm.max)}</td><td class="r">${x.jam ? f(x.meter / x.jam, 2) : "–"}</td><td class="r">${x.lubang} (${x.selesai})</td><td class="r">${f(x.totDalam)}</td><td class="r">${x.L.n ? f(x.L.mean) : "–"}</td><td class="r">${x.S.n ? f(x.S.mean) : "–"}</td><td class="r" style="${rc && rc.t !== "–" && parseFloat(rc.t) < 90 ? "color:#D62828;font-weight:700" : ""}">${rc?.t ?? "–"}</td><td class="r">${gm ? `${gm.t} / ${esc(gm.sub)}` : "–"}</td></tr>`; }).join("")}</table></div>
+      <div><h3>Kendala utama</h3><ul class="tl">${sbRows.slice(0, 3).map((r) => `<li>${esc(r[0])} — ${r[1]} jam</li>`).join("") || "<li>Tidak ada standby/perbaikan tercatat.</li>"}</ul></div></div>
     <h3 style="margin-top:4px">Kalender meter bor harian per rig <span style="font-weight:400;color:#6b7a72;font-size:11.5px">· angka = meter · bingkai merah = tanpa P2H / P2H bermasalah</span></h3>${heatRig(days, RG)}</div>`, "statistik harian · produksi · waktu per rig"));
   S.push(slide(klien ? "Performa rig: kepatuhan & kendala" : "Performa rig: biaya, kepatuhan & kendala", `<div class="dua" style="grid-template-columns:1fr 1fr;gap:16px 26px">
     <div>${klien ? `<h3 style="margin:0 0 4px">Pemakaian cairan bor per jenis (DDR)</h3>${barH(cairRows.filter((r) => !BARANG_BBM.test(r.label)), { lw: 120 })}` : `<h3 style="margin:0 0 4px">BBM per rig (total & per meter)</h3>${barH(bbmRig, { lw: 70 })}<h3 style="margin:12px 0 4px">Pemakaian cairan per jenis (DDR)</h3>${barH(cairRows, { lw: 120 })}`}</div>
-    <div><h3 style="margin:0 0 4px">Kepatuhan P2H & DDR bertanda tangan (hari aktif)</h3>${barH(kpRig, { lw: 110, rh: 22 })}<h3 style="margin:12px 0 4px">Penyebab standby & perbaikan</h3>${barH(sbCause, { lw: 170 })}</div></div>`, klien ? "cairan · P2H · DDR · standby" : "BBM · cairan · P2H · DDR · standby"));
+    <div><h3 style="margin:0 0 4px">Kepatuhan P2H & DDR bertanda tangan (hari aktif)</h3>${barH(kpRig, { lw: 110, rh: 22 })}<h3 style="margin:12px 0 4px">Penyebab standby & perbaikan</h3>${barH(sbCause, { lw: 170 })}</div></div>
+    <div class="dua" style="grid-template-columns:1fr 1fr;gap:10px 26px;margin-top:10px"><div><h3 style="margin:0 0 4px">Recovery core rata-rata per rig</h3>${barH(recRig, { lw: 70 })}</div><div><h3 style="margin:0 0 4px">Ganti mata bor & jumlah run</h3>${barH(ganti, { lw: 70 })}</div></div>`, klien ? "cairan · P2H · DDR · standby" : "BBM · cairan · P2H · DDR · standby"));
   // ===== 3. Peta pemboran + grafik per lubang =====
   S.push(slide("Peta pemboran & grafik per lubang", `<div class="peta">${petaGraf}</div>`, `${LB.length} titik · kotak = kolom zona / kedalaman vs rencana · Rec = recovery`));
   // ===== 4. Geologi =====
