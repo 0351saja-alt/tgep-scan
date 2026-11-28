@@ -1,0 +1,3 @@
+-- v72 (28/11/2026): v_peta_lubang — kedalaman = borehole.total_depth dulu (lalu kedalaman foto progres); SELESAI_BOR tanpa status akhir
+--   tapi stop_date terisi → 'EOH'. DH-NPG 09 dikonfirmasi EOH (stop_date 2026-11-27, total_depth 11; data_edit_log).
+--   Hasil: 08R 19, 09 11, 12 18, 13 8,5, 14R 8 m semua EOH.

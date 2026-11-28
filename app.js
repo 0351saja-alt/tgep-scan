@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.88";
+const APP_VERSION = "2026-11-28.89";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3119,6 +3119,17 @@ async function dashView(v) {
     X.writeFile(wb, `TGEP_Dashboard_${st.from}_${st.to}.xlsx`); } catch (e) { alert(e.message); } };
   $("#kpi").innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">${K.map(([l, val, note]) => `<div style="background:#fff;border-radius:10px;padding:10px;border-left:5px solid ${note === "!" ? "#C8281F" : "#1E9E69"}"><div class="muted" style="font-size:12px">${esc(l)}</div><div style="font-size:22px;font-weight:700">${esc(val)}</div></div>`).join("")}</div>
     <p class="muted" style="margin-top:8px">Periode ${st.from} s/d ${st.to}${st.rig ? " · rig " + esc(st.rig) : " · semua rig"}. ${isClient() ? `Akun client: data rig proyek Anda${clientGeo() ? " termasuk data geologi yang sudah disetujui" : " (meter, jam, standby, P2H, DDR)"}.` : "Data geologi (tebal zona, conto) mencakup semua lubang yang sudah disetujui."}</p>`;
+  // v.89: progres titik di bagian atas — titik selesai (EOH/STB) dibanding total titik rencana; lubang lama yang di-redrill tidak dihitung dua kali
+  (async () => { const L = ((await ambilLubangPeta()).data ?? []).filter((x) => !pf || pf.bhids.includes(x.bhid) || x.status === "RENCANA");
+    const pj = JSON.parse(localStorage.getItem("projects") || "[]").find((p) => p.code === (sessionStorage.getItem("filterProyek") || "")) ?? null;
+    const sel = L.filter((x) => ["EOH", "STB", "SELESAI"].includes(x.status)), prog = L.filter((x) => x.status === "PROGRES"), ren = L.filter((x) => x.status === "RENCANA");
+    const total = Math.max(+pj?.target_lubang || 0, L.length), pct = total ? (100 * sel.length) / total : 0, mtr = sel.reduce((a, x) => a + (+x.kedalaman || 0), 0);
+    const d = document.createElement("div"); d.style.cssText = "background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px;border-left:6px solid #1E9E69;box-shadow:0 1px 4px rgba(0,0,0,.06)";
+    d.innerHTML = `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><b style="font-size:15px">Progres titik bor</b><span style="font:800 26px Arial;color:#1E9E69">${pct.toLocaleString("id-ID", { maximumFractionDigits: 1 })} %</span>
+      <span class="muted">${sel.length} dari ${total} titik selesai (EOH/STB) · ${prog.length} sedang dibor · ${ren.length} rencana · ${mtr.toLocaleString("id-ID", { maximumFractionDigits: 1 })} m di titik selesai</span></div>
+      <div style="height:14px;background:#E6EEE9;border-radius:7px;overflow:hidden;margin-top:6px;display:flex"><div style="width:${pct}%;background:#1E9E69"></div><div style="width:${total ? (100 * prog.length) / total : 0}%;background:#E0A100"></div></div>
+      <div style="font-size:11.5px;margin-top:5px;color:#4b5a52">Selesai: ${sel.map((x) => esc(x.bhid)).join(", ") || "–"}${prog.length ? ` · Sedang dibor: ${prog.map((x) => esc(x.bhid)).join(", ")}` : ""}. Lubang redrill menggantikan lubang lamanya (tidak dihitung dua kali).</div>`;
+    $("#kpi")?.prepend(d); })().catch(() => {});
   const klien = isClient() && !clientGeo();
   const { data: kp } = isClient() ? { data: [] } : await sb.from("v_kepatuhan_harian").select("nama,rig,status,kurang,antrean").eq("tanggal", st.to);
   if (basi()) return;
@@ -7060,7 +7071,7 @@ async function baView(v) {
   const pindah = (b) => { const t = ddrAkhir(b); if (!t) return null; const rg = new Set(ddrB.filter((x) => x.bhid === b).map((x) => x.rig));
     const n = ddrB.filter((x) => rg.has(x.rig) && x.bhid && x.bhid !== b && String(x.tanggal) > t).sort((x, y) => String(x.tanggal).localeCompare(String(y.tanggal)))[0]; return n ? { stop: t, ke: n.bhid } : null; };
   const selesai = (b) => !!akhir(b) || !!(H ?? []).find((h) => h.bhid === b && h.stop_date) || !!pindah(b);
-  $("#baB").innerHTML = bhs.map((b) => `<option value="${esc(b)}">${esc(b)}${selesai(b) ? " — selesai" : " — belum tercatat selesai"}</option>`).join("") || `<option value="">Belum ada titik</option>`;
+  $("#baB").innerHTML = bhs.filter((b) => !RDR[b]).map((b) => `<option value="${esc(b)}">${esc(b)}${selesai(b) ? " — selesai" : " — belum tercatat selesai"}</option>`).join("") || `<option value="">Belum ada titik</option>`; // v.89: lubang lama yang sudah di-redrill tidak ditawarkan
   const d0 = new Date(Date.now() - 6 * 864e5).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" }); $("#baF").value = d0;
   const ringkas = (b) => { const xs = ddrB.filter((x) => x.bhid === b), h = (H ?? []).find((y) => y.bhid === b) ?? {}, g = (LG ?? []).find((y) => y.bhid === b) ?? {}, e = akhir(b);
     const cor = xs.filter((x) => x.jenis === "CORING"), mC = cor.reduce((s, x) => s + +x.meter, 0), mO = xs.filter((x) => x.jenis !== "CORING").reduce((s, x) => s + +x.meter, 0), cc = cor.filter((x) => x.core_m != null);
