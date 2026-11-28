@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.114";
+const APP_VERSION = "2026-11-28.115";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -7353,7 +7353,8 @@ async function dbUtamaView(v) {
   const unduhLog = async (b) => { try { const { data, error } = await sb.from("v_dh_geology").select("*").eq("holeid", b).order("from"); if (error) throw error; await xlUnduh(`Form_Logging_${b}_database`, [[`Logging ${b}`, bersih(data ?? [])]]); } catch (e) { alert(e.message); } };
   const F = { // tiap item: {bh, judul, ket, buka}
     DDR: (ddr.data ?? []).filter((d) => !klien || d.status === "SIGNED").map((d) => ({ bh: d.bhid || "", t: d.report_date, judul: `DDR ${d.report_date} · ${d.shift === "MALAM" ? "Night" : "Day"} · ${d.rig ?? ""}`, ket: "lengkap ditandatangani", buka: () => (d.id ? printDDR(d.id) : ddrClientModal(d)) })),
-    DATA: (dsAllowed() ?? Object.keys(DATASETS).filter((k) => !DATASETS[k].admin || me?.role === "admin")).map((k, i) => ({ bh: "Semua kategori", t: String(i).padStart(3, "0"), k, tombol: "⬇️ Unduh", judul: `${DATASETS[k].t}.xlsx`, ket: "Excel dari database (data terbaru saat diunduh)", buka: () => unduhDS(k), lihat: () => lihatDS(k) })),
+    // v.115: client — folder Excel hanya 6 tabel data bor standar (Collar, Survey, Geologi + recovery, Density, Assay, QAQC)
+    DATA: (klien ? ["collar", "survey", "geology", "density", "assay", "qaqc"].filter((k) => (dsAllowed() ?? []).includes(k)) : Object.keys(DATASETS).filter((k) => !DATASETS[k].admin || me?.role === "admin")).map((k, i) => ({ bh: "Semua kategori", t: String(i).padStart(3, "0"), k, tombol: "⬇️ Unduh", judul: `${DATASETS[k].t}.xlsx`, ket: "Excel dari database (data terbaru saat diunduh)", buka: () => unduhDS(k), lihat: () => lihatDS(k) })),
     LOGGING: [...Object.entries(nGeo).map(([b, n]) => ({ bh: b, t: "0", judul: `Data Form Logging ${b} (Excel dari database)`, ket: `${n} interval`, tombol: "⬇️ Unduh", buka: () => unduhLog(b), lihat: () => lihatLog(b) })), ...(lg.data ?? []).filter((j) => j.photo_path).map((j) => ({ bh: j.bhid_hint || "", t: j.reviewed_at ?? j.captured_at, judul: `Scan Form Logging hal. ${j.page_no ?? "-"}`, ket: `disetujui ${tgl(j.reviewed_at)}`, buka: () => bukaFile("scan-photos", j.photo_path) }))],
     KIRIM: (kp.data ?? []).map((k) => ({ bh: bhKs(k.no_kirim) || (String(k.catatan ?? "").match(/DH-NPG \d+R?/i)?.[0] ?? ""), t: k.tanggal, judul: k.no_kirim, ket: `${k.tanggal} · ${k.penerima_ttd_at ? "DITERIMA" : k.status}`, buka: () => cetakKirim(k.id) })),
     BA: (ba.data ?? []).filter((r) => !klien || r.status !== "BATAL").map((r) => ({ bh: r.bhid || "(BASTP)", t: r.created_at, judul: `${r.jenis === "BASTP" ? "BASTP" : "BA stop bor"} ${r.nomor ?? ""}`, ket: r.jenis === "BASTP" ? `${r.dari ?? ""} s/d ${r.sampai ?? ""} · ${r.status}` : r.status, buka: () => cetakBA(r.id, { lihat: true }) })),
