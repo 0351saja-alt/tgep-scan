@@ -224,7 +224,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.78";
+const APP_VERSION = "2026-11-28.79";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3134,19 +3134,44 @@ async function dashView(v) {
   new Chart(box("c11", "Distribusi jam DDR per kegiatan (jam)"), { type: "bar", data: { labels: Object.keys(hk).length ? Object.keys(hk) : ["(belum ada DDR)"], datasets: [{ label: "jam", data: Object.values(hk).map((m) => +(m / 60).toFixed(2)), backgroundColor: "#2F6FB0" }] }, options: { indexAxis: "y" } });
   new Chart(box("c12", "Drilling / Working / Standby (DDR)"), { type: "pie", data: { labels: Object.keys(hg).length ? Object.keys(hg) : ["(belum ada DDR)"], datasets: [{ data: Object.keys(hg).length ? Object.values(hg) : [1], backgroundColor: ["#1E9E69", "#E8892B", "#C8281F"] }] } });
   if (klien) { pasangKlikGrafik(Chart); return; }
-  // v.78: histogram tebal GABUNGAN — satu grafik, kelas sama lebar untuk semua layer, batang rapat tanpa celah & berarsir,
-  // ditumpuk per layer (Limonit, Saprolit, Boulder, Bedrock). Boulder/bedrock hanya lubang yang menembus layer itu (tebal > 0).
-  { const arsir = (warna) => { const c = document.createElement("canvas"); c.width = c.height = 8; const x = c.getContext("2d"); x.fillStyle = warna + "33"; x.fillRect(0, 0, 8, 8);
-      x.strokeStyle = warna; x.lineWidth = 1.6; x.beginPath(); x.moveTo(0, 8); x.lineTo(8, 0); x.moveTo(-2, 2); x.lineTo(2, -2); x.moveTo(6, 10); x.lineTo(10, 6); x.stroke(); return x.createPattern(c, "repeat"); };
+  // v.79: histogram tebal per layer — 4 panel terpisah (Limonit, Saprolit, Boulder, Bedrock), batang rapat tanpa celah, kelas sama lebar.
+  // Template bisa diganti di Dashboard: gaya isi (arsir / polos / garis / kotak-kotak / titik), lebar kelas, warna tiap layer — disimpan di HP ini.
+  { const HK = "histTebalGaya", BAWAAN = { gaya: "arsir", lebar: "auto", warna: { L: "#E8892B", S: "#1E9E69", BD: "#3B82F6", BR: "#1E3A8A" } };
+    let G; try { G = { ...BAWAAN, ...JSON.parse(localStorage.getItem(HK) || "{}") }; G.warna = { ...BAWAAN.warna, ...(G.warna ?? {}) }; } catch { G = structuredClone(BAWAAN); }
+    const LAY = [["L", "Limonit", "tebal_limonit", false], ["S", "Saprolit", "tebal_saprolit", false], ["BD", "Boulder", "tebal_boulder", true], ["BR", "Bedrock", "tebal_bedrock", true]];
+    const d = document.createElement("div"); d.className = "card";
+    d.innerHTML = `<h3 style="margin:0 0 6px">Histogram tebal zona per lubang</h3>
+      <div class="row" style="flex-wrap:wrap;gap:6px;align-items:end;margin-bottom:6px">
+        <div style="flex:0 1 150px"><label>Model / gaya isi</label><select id="hgG">${[["arsir", "Arsir miring"], ["polos", "Polos (solid)"], ["garis", "Garis tepi saja"], ["kotak", "Kotak-kotak"], ["titik", "Titik-titik"], ["gradasi", "Gradasi"]].map(([v, l]) => `<option value="${v}" ${G.gaya === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+        <div style="flex:0 1 120px"><label>Lebar kelas</label><select id="hgW">${[["auto", "Otomatis"], ["0.5", "0,5 m"], ["1", "1 m"], ["2", "2 m"], ["5", "5 m"]].map(([v, l]) => `<option value="${v}" ${String(G.lebar) === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+        ${LAY.map(([k, nama]) => `<div style="flex:0 0 auto;text-align:center"><label>${nama}</label><input type="color" data-hw="${k}" value="${G.warna[k]}" style="width:46px;height:32px;padding:0;border:1px solid #ccd;border-radius:6px"></div>`).join("")}
+        <button class="sec" id="hgR" style="flex:0 0 auto;width:auto;padding:6px 10px">Reset</button></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">${LAY.map(([k]) => `<div><canvas id="c7${k}" height="210"></canvas></div>`).join("")}</div>`;
+    $("#ch").appendChild(d);
+    const isi = (warna, gaya, ctx) => { if (gaya === "polos") return warna + "CC"; if (gaya === "garis") return "rgba(0,0,0,0)";
+      if (gaya === "gradasi") { const g = ctx.createLinearGradient(0, 0, 0, 210); g.addColorStop(0, warna + "EE"); g.addColorStop(1, warna + "33"); return g; }
+      const c = document.createElement("canvas"); c.width = c.height = 8; const x = c.getContext("2d"); x.fillStyle = warna + "26"; x.fillRect(0, 0, 8, 8); x.strokeStyle = warna; x.fillStyle = warna; x.lineWidth = 1.4; x.beginPath();
+      if (gaya === "kotak") { x.moveTo(0, 0.5); x.lineTo(8, 0.5); x.moveTo(0.5, 0); x.lineTo(0.5, 8); x.stroke(); }
+      else if (gaya === "titik") { x.arc(4, 4, 1.4, 0, 2 * Math.PI); x.fill(); }
+      else { x.moveTo(0, 8); x.lineTo(8, 0); x.moveTo(-2, 2); x.lineTo(2, -2); x.moveTo(6, 10); x.lineTo(10, 6); x.stroke(); }
+      return x.createPattern(c, "repeat"); };
     const fm = (v) => String(+v.toFixed(2)).replace(".", ",");
-    const L = [["Limonit", "tebal_limonit", "#E8892B", false], ["Saprolit", "tebal_saprolit", "#1E9E69", false], ["Boulder", "tebal_boulder", "#3B82F6", true], ["Bedrock", "tebal_bedrock", "#1E3A8A", true]]
-      .map(([nama, k, warna, pos]) => ({ nama, warna, vals: holes.map((h) => Number(h[k])).filter((v) => Number.isFinite(v) && (!pos || v > 0)) }));
-    const mx = Math.max(0, ...L.flatMap((l) => l.vals)), w = mx <= 4 ? 0.5 : mx <= 25 ? 1 : 2, nb = Math.max(4, Math.ceil((mx + 1e-9) / w)), ed = Array.from({ length: nb + 1 }, (_, i) => +(i * w).toFixed(2));
-    new Chart(box("c7", "Histogram tebal zona per lubang"), { type: "bar",
-      data: { labels: ed.slice(0, -1).map((e, i) => `${fm(e)}–${fm(ed[i + 1])}`), datasets: L.map((l) => ({ label: `${l.nama} (${l.vals.length} lubang${l.vals.length ? `, rata ${fm(l.vals.reduce((a, b) => a + b, 0) / l.vals.length)} m` : ""})`,
-        data: hist(l.vals, ed), backgroundColor: arsir(l.warna), borderColor: l.warna, borderWidth: 1.5, barPercentage: 1, categoryPercentage: 1 })) },
-      options: { plugins: { legend: { labels: { boxWidth: 14 } } }, scales: { x: { stacked: true, title: { display: true, text: "tebal (m)" }, grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true } },
-        y: { stacked: true, beginAtZero: true, title: { display: true, text: "jumlah lubang" }, ticks: { precision: 0 } } } } }); }
+    const gambar = () => { try { localStorage.setItem(HK, JSON.stringify(G)); } catch {}
+      for (const [k, nama, kol, pos] of LAY) {
+        const cv = document.getElementById(`c7${k}`); Chart.getChart(cv)?.destroy();
+        const warna = G.warna[k], vals = holes.map((h) => Number(h[kol])).filter((v) => Number.isFinite(v) && (!pos || v > 0)), mx = Math.max(0, ...vals);
+        const w = G.lebar !== "auto" ? +G.lebar : mx <= 3 ? 0.5 : mx <= 10 ? 1 : mx <= 20 ? 2 : 5, nb = Math.max(4, Math.ceil((mx + 1e-9) / w)), ed = Array.from({ length: nb + 1 }, (_, i) => +(i * w).toFixed(2));
+        const rata = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+        new Chart(cv, { type: "bar",
+          data: { labels: ed.slice(0, -1).map((e, i) => `${fm(e)}–${fm(ed[i + 1])}`), datasets: [{ label: nama, data: hist(vals, ed), backgroundColor: isi(warna, G.gaya, cv.getContext("2d")), borderColor: warna, borderWidth: G.gaya === "garis" ? 2.5 : 1.5, barPercentage: 1, categoryPercentage: 1 }] },
+          options: { plugins: { legend: { display: false }, title: { display: true, text: vals.length ? `${nama} · ${vals.length} lubang · rata-rata ${fm(rata)} m` : `${nama} · belum ada lubang`, color: warna, font: { size: 13, weight: "600" } } },
+            scales: { x: { title: { display: true, text: "tebal (m)" }, grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true } }, y: { beginAtZero: true, title: { display: true, text: "jumlah lubang" }, ticks: { precision: 0 }, suggestedMax: 3 } } } });
+      } };
+    d.querySelector("#hgG").onchange = (e) => { G.gaya = e.target.value; gambar(); };
+    d.querySelector("#hgW").onchange = (e) => { G.lebar = e.target.value; gambar(); };
+    d.querySelectorAll("[data-hw]").forEach((x) => (x.oninput = () => { G.warna[x.dataset.hw] = x.value; gambar(); }));
+    d.querySelector("#hgR").onclick = () => { G = structuredClone(BAWAAN); d.querySelector("#hgG").value = G.gaya; d.querySelector("#hgW").value = G.lebar; d.querySelectorAll("[data-hw]").forEach((x) => (x.value = G.warna[x.dataset.hw])); gambar(); };
+    gambar(); }
   const nl = holes.reduce((s, h) => s + h.conto_limonit, 0), ns = holes.reduce((s, h) => s + h.conto_saprolit, 0), nt = holes.reduce((s, h) => s + h.jumlah_conto, 0);
   new Chart(box("c8", "Jumlah conto per zona"), { type: "pie", data: { labels: ["Limonit", "Saprolit", "TP / batuan dasar"], datasets: [{ data: [nl, ns, nt - nl - ns], backgroundColor: ["#E8892B", "#1E9E69", "#7A8B83"] }] } });
   const re = [0, 50, 70, 80, 90, 95, 100.01];
