@@ -2,7 +2,22 @@
 import { createClient } from "./vendor/supabase.js";
 import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+// v.86: penjaga sesi — bila server menolak permintaan data karena sesi habis (401) padahal aplikasi masih menganggap login
+// (mis. token gagal diperbarui saat sinyal putus), coba perbarui sesi; bila gagal, kembali ke layar masuk dengan pesan jelas.
+let _cekSesi = 0;
+const fetchJaga = async (input, init) => {
+  const r = await fetch(input, init);
+  if (r.status === 401 && /\/rest\/v1\/|\/storage\/v1\//.test(String(input?.url ?? input)) && Date.now() - _cekSesi > 15000 && typeof session !== "undefined" && session) {
+    _cekSesi = Date.now();
+    setTimeout(async () => { try {
+      const { data, error } = await sb.auth.refreshSession();
+      if (data?.session && !error) { session = data.session; await loadMe(); render(); return; }
+      if (navigator.onLine) { session = null; try { localStorage.setItem("pesanLogin", "Sesi Anda sudah habis. Silakan masuk lagi."); } catch {} render(); }
+    } catch {} }, 0);
+  }
+  return r;
+};
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true }, global: { fetch: fetchJaga } });
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const app = $("#app");
@@ -224,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.85";
+const APP_VERSION = "2026-11-28.86";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -383,8 +398,8 @@ async function bukaLinkView(bucket, path) {
 }
 function loginView() {
   const qp = new URLSearchParams(location.search);
-  const dicabut = localStorage.getItem("aksesDicabut");
-  const after = dicabut ? `<div class="card" style="background:#F6C9C3"><b>Akun Anda sudah ${esc(dicabut)} oleh admin.</b> Semua akses dan data aplikasi di HP ini sudah ditutup. Untuk memakai aplikasi lagi, <a href="daftar.html">daftar ulang</a> lalu tunggu persetujuan admin.</div>` : qp.get("daftar") === "ok" ? `<div class="card" style="background:#DCEFE4"><b>Pendaftaran terkirim.</b> Akun Anda menunggu persetujuan admin TGEP. Setelah disetujui, masuk dengan email dan kata sandi yang Anda buat.</div>` : "";
+  const dicabut = localStorage.getItem("aksesDicabut"), pesanL = localStorage.getItem("pesanLogin"); if (pesanL) localStorage.removeItem("pesanLogin");
+  const after = pesanL && !dicabut ? `<div class="card" style="background:#FFF4D6"><b>${esc(pesanL)}</b> Data yang belum terkirim tetap aman di antrean HP dan akan dikirim setelah masuk.</div>` : dicabut ? `<div class="card" style="background:#F6C9C3"><b>Akun Anda sudah ${esc(dicabut)} oleh admin.</b> Semua akses dan data aplikasi di HP ini sudah ditutup. Untuk memakai aplikasi lagi, <a href="daftar.html">daftar ulang</a> lalu tunggu persetujuan admin.</div>` : qp.get("daftar") === "ok" ? `<div class="card" style="background:#DCEFE4"><b>Pendaftaran terkirim.</b> Akun Anda menunggu persetujuan admin TGEP. Setelah disetujui, masuk dengan email dan kata sandi yang Anda buat.</div>` : "";
   app.innerHTML = after + `<div class="card"><h2>Masuk</h2><p class="muted">Akun dibuat oleh admin. Setelah sekali masuk, aplikasi tetap bisa memotret saat offline.</p>
   <label>Email</label><input id="em" type="email" autocomplete="username"><label>Kata sandi</label><input id="pw" type="password" autocomplete="current-password">
   <div style="margin-top:12px"><button id="go">Masuk</button></div><div id="e" class="err"></div>
