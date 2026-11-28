@@ -1,0 +1,3 @@
+-- v71 (28/11/2026): project.laporan jsonb (naskah laporan kegiatan per proyek: latar belakang, tujuan, SOW, lokasi, kondisi umum,
+--   geologi regional, profil laterit, metodologi, QA/QC, penutup) + RPC simpan_naskah_laporan(p_code, p_laporan) untuk staf.
+--  App v.88: Laporan PDF lengkap = sampul, daftar isi, BAB I Pendahuluan … BAB VI Penutup; tombol ✍️ Naskah laporan di Dashboard.
