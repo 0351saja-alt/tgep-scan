@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.97";
+const APP_VERSION = "2026-11-28.98";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -7017,6 +7017,13 @@ async function editKirim(id, selesai) {
     m.remove(); toast(`✓ ${n} isian diperbarui — unduh ulang PDF bila perlu`); selesai?.(); };
 }
 // v.40: Form pengiriman sample ke preparasi — PDF A4 dengan kop surat PT Terra Grapindo Eco Prima (sama dengan Berita Acara)
+// v.98: blok tanda tangan berbentuk tabel berbaris tetap — judul, area TTD (tinggi sama), nama, jabatan/keterangan — agar kolom kiri & kanan selalu sejajar
+function ttdTabel(cols) {
+  const td = (k, cls) => cols.map((c) => `<td class="${cls}">${c[k] ?? ""}</td>`).join("");
+  return `<table class="ttdT"><colgroup>${cols.map(() => `<col style="width:${(100 / cols.length).toFixed(2)}%">`).join("")}</colgroup>
+    <tr>${td("hd", "hd")}</tr><tr>${td("img", "im")}</tr><tr>${td("nm", "nm2")}</tr><tr>${td("ket", "kt")}</tr></table>`;
+}
+const CSS_TTDT = `table.ttdT{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:16px;break-inside:avoid;page-break-inside:avoid} table.ttdT td{border:0!important;text-align:center;padding:2px 14px;vertical-align:top} table.ttdT td.hd{vertical-align:bottom;line-height:1.35} table.ttdT td.im{height:92px;vertical-align:middle;padding:4px 14px} table.ttdT td.im img{max-height:86px;max-width:100%;object-fit:contain} table.ttdT td.im .kosong{height:86px} table.ttdT td.nm2{font-weight:bold;text-decoration:underline;padding-top:4px} table.ttdT td.kt{font-size:.92em;line-height:1.3} table.ttdT .te{font-size:8.5px;color:#666;display:block}`;
 async function cetakKirim(id) {
   const [{ data: k }, { data: it }] = await Promise.all([sb.from("kirim_preparasi").select("*").eq("id", id).single(), sb.from("v_kirim_preparasi").select("*").eq("kirim_id", id).order("urut")]);
   if (!k) return alert("Form pengiriman tidak ditemukan.");
@@ -7031,7 +7038,7 @@ async function cetakKirim(id) {
   <style>@page{size:A4 portrait;margin:0} html{background:#eee} body{font-family:Cambria,Caladea,"Times New Roman",serif;font-size:12px;color:#111;box-sizing:border-box;width:210mm;max-width:100%;margin:12px auto;padding:0;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25)} @media print{html{background:#fff} body{width:210mm;margin:0;box-shadow:none}}
   table.lay,table.lay>*>tr>td{border:0;padding:0;margin:0;width:100%} .kopA{display:block;width:210mm;max-width:100%} table.lay>tbody>tr>td.isi{padding:2mm 16mm 4mm} .kakiSp{height:28mm} .kaki{width:210mm;max-width:100%} .kaki img{display:block;width:100%}
   h1{text-align:center;font-size:15px;margin:12px 0 2px;text-decoration:underline} .no{text-align:center;margin-bottom:10px} p{text-align:justify;text-justify:inter-word;hyphens:auto;-webkit-hyphens:auto;line-height:1.45} table{border-collapse:collapse;width:100%;margin:6px 0} td,th{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top} th{background:#e6efe9}
-  table.d td,table.d th{font-size:10.5px} table.d td.r{text-align:right} tr{break-inside:avoid} .blok{break-inside:avoid;page-break-inside:avoid} .ttd{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:18px;text-align:center} .ttd div{min-height:110px} .sp{height:62px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666}
+  table.d td,table.d th{font-size:10.5px} table.d td.r{text-align:right} tr{break-inside:avoid} .blok{break-inside:avoid;page-break-inside:avoid} ${CSS_TTDT} .ttd{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:18px;text-align:center} .ttd div{min-height:110px} .sp{height:62px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666}
   @media print{button{display:none} .kaki{position:fixed;bottom:0;left:0}}</style></head><body>
   <table class="lay"><thead><tr><td><img class="kopA" src="${KOP_HEADER}"></td></tr></thead><tfoot><tr><td><div class="kakiSp"></div></td></tr></tfoot><tbody><tr><td class="isi">
   <h1>FORM PENGIRIMAN SAMPLE</h1><div class="no">Nomor: ${esc(k.no_kirim)}${k.status === "DRAFT" ? ' <span class="m">(DRAF)</span>' : ""}</div>
@@ -7040,8 +7047,8 @@ async function cetakKirim(id) {
   ${I.map((r) => `<tr><td>${esc(r.urut)}</td><td>${esc(r.bhid ?? "")}</td><td>${esc(r.sample_no ?? "")}</td><td>${esc(r.sample_id ?? "")}</td><td class="r">${n2(r.depth_from)}</td><td class="r">${n2(r.depth_to)}</td><td>${esc(r.geozone_id ?? "")}</td><td class="r">${n2(r.core_length)}</td><td class="r">${n2(r.berat_kg)}</td><td>${esc(r.no_kantong ?? "")}</td><td>${esc(r.catatan ?? "")}</td></tr>`).join("")}
   <tr><th colspan="8" style="text-align:right">Total ${I.length} sample</th><th style="text-align:right">${n2(tot)}</th><th colspan="2"></th></tr></table>
   <div class="blok"><p>Luwuk, ${esc(tglPanjang(k.tanggal))}</p>
-  <div class="ttd"><div>Pengirim,<br><b>${KOP.pt}</b><div class="sp">${ttdU ? `<img src="${esc(ttdU)}" alt="" style="height:62px;max-width:90%;object-fit:contain">` : ""}</div><span class="nm">${esc(k.pengirim || "(......................)")}</span>${k.pengirim_jabatan ? `<br>${esc(k.pengirim_jabatan)}` : ""}${k.pengirim_ttd_at ? `<br><span class="m" style="font-size:9px">Ditandatangani elektronik ${esc(fmtT(new Date(k.pengirim_ttd_at)))}</span>` : ""}</div>
-    <div>Penerima,<br><b>${esc(k.tujuan || TUJUAN_KIRIM)}</b><div class="sp"></div><span class="nm">${esc(k.penerima || "(......................)")}</span></div></div></div>
+  ${ttdTabel([{ hd: `Pengirim,<br><b>${KOP.pt}</b>`, img: ttdU ? `<img src="${esc(ttdU)}" alt="">` : `<div class="kosong"></div>`, nm: esc(k.pengirim || "(......................)"), ket: `${esc(k.pengirim_jabatan ?? "")}${k.pengirim_ttd_at ? `<span class="te">Ditandatangani elektronik ${esc(fmtT(new Date(k.pengirim_ttd_at)))}</span>` : ""}` },
+    { hd: `Penerima,<br><b>${esc(k.tujuan || TUJUAN_KIRIM)}</b>`, img: `<div class="kosong"></div>`, nm: esc(k.penerima || "(......................)"), ket: "" }])}</div>
   </td></tr></tbody></table>
   <div class="kaki"><img src="${KOP_FOOTER}"></div>
   </body></html>`); w.document.close();
@@ -7277,8 +7284,8 @@ async function cetakBA(id, opsi = {}) {
   if (!bast && r.status !== "FINAL" && isStaff()) { try { await sb.rpc("ttd_ba_wellsite", { p_ba: r.id }); } catch {} } // v.92: TTD wellsite otomatis dari TTD terdaftar
   const { data: SG } = await sb.from("ba_signature").select("slot,signer_name,signer_title,signature_path,method,signed_at").eq("ba_id", r.id);
   const SU = await signedUrls("signatures", (SG ?? []).map((g) => g.signature_path)).catch(() => ({}));
-  const ttdImg = (slot) => { const g = (SG ?? []).find((x) => x.slot === slot), u = g && SU[g.signature_path];
-    return g ? `<div class="sp" style="height:70px;display:flex;align-items:center;justify-content:center">${u ? `<img src="${esc(u)}" alt="" style="max-height:66px;max-width:90%;object-fit:contain">` : ""}</div><div style="font-size:8.5px;color:#666">TTD elektronik ${esc(fmtT(new Date(g.signed_at)))}</div>` : `<div class="sp"></div>`; };
+  const ttdG = (slot) => { const g = (SG ?? []).find((x) => x.slot === slot), u = g && SU[g.signature_path]; return u ? `<img src="${esc(u)}" alt="">` : `<div class="kosong"></div>`; };
+  const ttdT = (slot) => { const g = (SG ?? []).find((x) => x.slot === slot); return g ? `<span class="te">TTD elektronik ${esc(fmtT(new Date(g.signed_at)))}</span>` : ""; };
   if (r.status !== "FINAL") { I.penerima = SITE_REP.nama; I.penerima_jabatan = SITE_REP.jabatan; I.penerima_pt = KOP.pemberi; }
   const w = jendelaDok(bast ? "BASTP" : `BA stop bor ${r.bhid}`, "A4P");
   // v.60: LAMPIRAN foto — halaman baru (mulai dari atas kertas) setelah tanda tangan: foto patok, foto selesai bor, foto pengerjaan, foto core box.
@@ -7317,7 +7324,7 @@ async function cetakBA(id, opsi = {}) {
   .src{box-sizing:border-box;width:210mm;background:#fff;padding:2mm 20mm}
   @media print{.hal{margin:0;box-shadow:none;height:296.5mm;break-after:page;page-break-after:always} .hal:last-child{break-after:auto;page-break-after:auto}}
   h1{text-align:center;font-size:15px;margin:14px 0 2px;text-decoration:underline} .no{text-align:center;margin-bottom:12px} p{text-align:justify;text-justify:inter-word;hyphens:auto;-webkit-hyphens:auto;line-height:1.45} table.p td{text-align:justify} table{border-collapse:collapse;width:100%;margin:6px 0} td,th{border:1px solid #999;padding:4px 6px;text-align:left;vertical-align:top} th{background:#e6efe9} table.d td,table.d th{font-size:10px;padding:3px}
-  .blok{break-inside:avoid;page-break-inside:avoid} .ttd{break-inside:avoid;display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px;text-align:center} .ttd div{min-height:120px} .sp{height:70px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666} table.p td{border:0;padding:1px 4px} .fg{display:grid;grid-template-columns:1fr 1fr;gap:8px} .fg img{width:100%;border:1px solid #ccc} figure{margin:0} figcaption{font-size:9.5px;color:#444} .satu .ttd{margin-top:10px} .satu .ttd div{min-height:0} .satu .sp{height:52px} .satu td,.satu th{padding:2px 5px} .satu p{margin:4px 0;line-height:1.35} .satu h3{margin:7px 0 3px} .satu table{margin:3px 0} .lamp h2{text-align:center;font-size:14px;margin:6px 0 2px;text-decoration:underline} .lamp h3{margin:10px 0 4px;font-size:12.5px} .lamp figure{break-inside:avoid;page-break-inside:avoid} .lamp .fg img{height:62mm;object-fit:cover}
+  .blok{break-inside:avoid;page-break-inside:avoid} ${CSS_TTDT} .ttd{break-inside:avoid;display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:22px;text-align:center} .ttd div{min-height:120px} .sp{height:70px} .nm{font-weight:bold;text-decoration:underline} .m{color:#666} table.p td{border:0;padding:1px 4px} .fg{display:grid;grid-template-columns:1fr 1fr;gap:8px} .fg img{width:100%;border:1px solid #ccc} figure{margin:0} figcaption{font-size:9.5px;color:#444} .satu .ttd{margin-top:10px} .satu .ttd div{min-height:0} .satu .sp{height:52px} .satu td,.satu th{padding:2px 5px} .satu p{margin:4px 0;line-height:1.35} .satu h3{margin:7px 0 3px} .satu table{margin:3px 0} .lamp h2{text-align:center;font-size:14px;margin:6px 0 2px;text-decoration:underline} .lamp h3{margin:10px 0 4px;font-size:12.5px} .lamp figure{break-inside:avoid;page-break-inside:avoid} .lamp .fg img{height:62mm;object-fit:cover}
 
   </style></head><body>
   <div class="src" data-kh="${KOP_HEADER}" data-kf="${KOP_FOOTER}"><section class="alir${bast ? "" : " satu"}"${bast ? "" : ' data-satu="1"'}>
@@ -7333,10 +7340,10 @@ async function cetakBA(id, opsi = {}) {
   ${bast ? `<h3>3. Data, dokumen dan database yang diserahkan</h3><table class="d"><tr><th style="width:24px">No</th><th>Item</th><th style="width:70px">Diserahkan</th><th>Keterangan</th></tr>${(I.serah ?? []).map((c, i) => `<tr><td>${i + 1}</td><td>${esc(c.t)}</td><td style="text-align:center"><b>${esc(c.ya)}</b></td><td>${esc(c.ket ?? "")}</td></tr>`).join("")}</table>` : ""}
   ${I.catatan ? `<p><b>Catatan:</b> ${esc(I.catatan)}</p>` : ""}${bast && I.penutup ? `<p>${esc(I.penutup)}</p>` : ""}
   <div class="blok tahan"><p>${esc(I.tempat ?? "")}, ${esc(tglPanjang(I.tanggal ?? ""))}</p>
-  ${bast ? `<div class="ttd"><div>PIHAK PERTAMA<br>Yang menyerahkan,<br><b>${KOP.pt}</b>${ttdImg("DIREKTUR")}<span class="nm">${esc(I.direktur || KOP.direktur)}</span><br>${esc(I.direktur_jabatan || KOP.jabatanDir)}</div>
-    <div>PIHAK KEDUA<br>Yang menerima,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b>${ttdImg("SITE_REP")}<span class="nm">${esc(I.penerima || "(......................)")}</span><br>${esc(I.penerima_jabatan ?? "")}</div></div>`
-  : `<div class="ttd"><div>Dibuat oleh,<br><b>${KOP.pt}</b><br>${esc(I.geologist_jabatan ?? "Wellsite Geologist")}${ttdImg("WELLSITE")}<span class="nm">${esc(I.geologist || "(......................)")}</span></div>
-    <div>Disaksikan oleh,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b><br>${esc(I.penerima_jabatan || SITE_REP.jabatan)}${ttdImg("SITE_REP")}<span class="nm">${esc(I.penerima || "(......................)")}</span></div></div>`}</div>
+  ${bast ? ttdTabel([{ hd: `PIHAK PERTAMA<br>Yang menyerahkan,<br><b>${KOP.pt}</b>`, img: ttdG("DIREKTUR"), nm: esc(I.direktur || KOP.direktur), ket: esc(I.direktur_jabatan || KOP.jabatanDir) + ttdT("DIREKTUR") },
+      { hd: `PIHAK KEDUA<br>Yang menerima,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b>`, img: ttdG("SITE_REP"), nm: esc(I.penerima || "(......................)"), ket: esc(I.penerima_jabatan ?? "") + ttdT("SITE_REP") }])
+  : ttdTabel([{ hd: `Dibuat oleh,<br><b>${KOP.pt}</b><br>${esc(I.geologist_jabatan ?? "Wellsite Geologist")}`, img: ttdG("WELLSITE"), nm: esc(I.geologist || "(......................)"), ket: ttdT("WELLSITE") },
+      { hd: `Disaksikan oleh,<br><b>${esc(I.penerima_pt || KOP.pemberi)}</b><br>${esc(I.penerima_jabatan || SITE_REP.jabatan)}`, img: ttdG("SITE_REP"), nm: esc(I.penerima || "(......................)"), ket: ttdT("SITE_REP") }])}</div>
   </section>${foto}</div>
   </body></html>`); w.document.close();
 }
