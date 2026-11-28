@@ -239,7 +239,7 @@ async function antreanModal() {
       if (H[k] && H[k].box === it.box_no) { H[k] = { box: Math.max(0, (it.box_no ?? 1) - 1), to: Number(it.depth_from) || 0 }; localStorage.setItem("coreHist", JSON.stringify(H)); } }
     await qDel(it.client_uuid); m.remove(); antreanModal(); cekAntreLama(); if (typeof render === "function") render(); }));
 }
-const APP_VERSION = "2026-11-28.106";
+const APP_VERSION = "2026-11-28.107";
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     const cek = () => reg.update().catch(() => {});
@@ -3250,7 +3250,10 @@ const tanpaBBM = (rows) => (isClient() ? (rows ?? []).map((r) => Object.fromEntr
 const BARANG_BBM = /bbm|solar|bensin|pertalite|pertamax|dexlite|oli|pelumas|grease|hydraulic|hidrolik|fuel|minyak/i;
 const isClient = () => me?.role === "client", clientGeo = () => isClient() && !!myTugas?.akses_geologi;
 const CLIENT_RIG_DS = ["kinerja", "progres", "ddr", "jam", "p2h", "aktivitas"], CLIENT_GEO_DS = ["collar", "survey", "geology", "density", "assay", "qaqc", "lubang", "profil"];
-const dsAllowed = () => isClient() ? [...CLIENT_RIG_DS, ...(clientGeo() ? CLIENT_GEO_DS : [])] : null;
+// v.107: client membaca semua pilihan data seperti verifikator (baca saja). Data geologi tetap mengikuti centang "boleh lihat data geologi";
+// yang tidak dibuka: Arsip terhapus (admin) dan Rekap operator harian (pemantauan kru internal).
+const CLIENT_GEO_DS2 = [...CLIENT_GEO_DS, "foto", "ujilubang", "ujiinterval", "logging", "koreksi", "preparasi", "belumkirim", "corefile", "scanfile"];
+const dsAllowed = () => (isClient() ? Object.keys(DATASETS).filter((k) => !DATASETS[k].admin && k !== "kepatuhan" && (clientGeo() || !CLIENT_GEO_DS2.includes(k))) : null);
 const GEO_KPI = ["Lubang berdata", "Jumlah conto", "Rata tebal limonit", "Rata tebal saprolit", "Conto bermasalah (QC)", "Foto core lengkap"];
 function computeKPI(days, tm, cu, holes) {
   const s = (xs, k) => xs.reduce((a, x) => a + (Number(x[k]) || 0), 0), pct = (a, b) => (b ? Math.round((100 * a) / b) + "%" : "-");

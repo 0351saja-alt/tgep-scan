@@ -1,0 +1,7 @@
+-- v78 (28/11/2026): akun client membaca data seperti verifikator (BACA SAJA, tidak bisa ubah/hapus).
+-- Menerapkan isi v76 (kirim sample untuk client: kolom TTD penerima, kirim_sample_isi, ttd_terima_sample, policy baca kirim)
+-- tanpa DROP POLICY. Tambahan baca client ber-penugasan proyek (private.is_client_proyek()):
+--   marking (semua pembacaan koordinat), form_photo (semua arsip formulir proyek), sample_edit_log (riwayat koreksi; perlu akses geologi).
+-- grant execute private.is_client_proyek(), private.client_boleh_kirim(text) to authenticated.
+-- Tetap tidak dibuka ke client: Arsip terhapus (admin) dan Rekap operator harian (pemantauan kru internal).
+-- Definisi lengkap: migrasi v78_client_akses_baca_seperti_verifier di Supabase.
